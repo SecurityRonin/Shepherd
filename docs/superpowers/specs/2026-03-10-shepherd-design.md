@@ -324,6 +324,81 @@ shep aa  # approve all
 | Cross-platform | ✓ (Tauri) | Experimental | ✗ (macOS) | ✗ (macOS) | ✗ (macOS) | ✓ |
 | Lightweight binary | ✓ (~600KB) | ✗ (~150MB) | ✓ | ✓ | ✗ (~1GB) | ✓ |
 
+## Error Handling & Recovery
+
+### Agent Crash Recovery
+
+- **Crash detection:** PTY process exit with non-zero code, or no output for configurable timeout (default: 5min)
+- **Auto-restart:** Configurable per-agent. Default: prompt user. Option: auto-restart up to N times with exponential backoff.
+- **State preservation:** Last 1000 lines of terminal output saved to SQLite before PTY cleanup. Task moves to "Error" state (red) on Kanban.
+- **Worktree safety:** Crashed agent's worktree is never auto-deleted. User can inspect, manually fix, or assign to a new agent.
+- **Hung agent detection:** If agent produces no output for >5min (configurable), Shepherd shows a warning badge. User can kill, restart, or wait.
+
+### Concurrency & Resource Management
+
+- **Default concurrent limit:** 10 agents (configurable in `config.toml`)
+- **Queue behavior:** Tasks beyond the limit stay in Queued column. FIFO scheduling. Priority override via drag-and-drop.
+- **Resource monitoring:** Shepherd tracks per-agent CPU and memory usage via process stats. Warning toast if total agent memory exceeds configurable threshold (default: 8GB).
+- **Graceful shutdown:** `shepherd stop` sends SIGTERM to all agents, waits 10s, then SIGKILL. Session state saved for resume.
+
+### Git Conflict Resolution
+
+- **Rebase conflicts during PR pipeline:** Pipeline pauses, task moves to Needs Input with "Merge conflict in X files" message. User can resolve in Focus mode terminal or abort.
+- **Worktree conflicts between agents:** Each agent gets its own worktree by default — conflicts are impossible. If two tasks use the same branch (user override), Shepherd warns at task creation.
+
+## Cross-Platform Strategy
+
+- **macOS:** Full feature set including native notifications, dock badge, menu bar icon, system sounds
+- **Linux:** Notifications via `notify-send` / D-Bus. Tray icon via system tray protocol. Sounds via `paplay` / PulseAudio.
+- **Windows:** Notifications via Windows Toast API. System tray icon. Sounds via Windows audio API.
+- **Platform abstraction:** Notification/sound/tray module behind a trait in Rust. Each platform implements the trait. Tauri 2.0 provides some of this out of the box.
+- **Launch priority:** macOS first (target audience), Linux second, Windows third.
+
+## YOLO Rules Engine Detail
+
+- **Default policy:** deny (if no rule matches, permission is required)
+- **Pattern syntax:** glob patterns for paths, regex for command/content matching
+- **Rule precedence:** deny rules checked first, then allow rules. First match wins within each category.
+- **Profiles scope:** Global rules in `~/.shepherd/rules.yaml`, project rules in `.shepherd/rules.yaml`. Project rules are additive (can add deny/allow, cannot override global deny).
+
+## Data Model (Core Entities)
+
+```
+tasks: id, title, prompt, agent_id, repo_path, branch, isolation_mode,
+       status (queued|running|input|review|error|done), created_at, updated_at
+
+sessions: id, task_id, pty_pid, terminal_log_path, started_at, ended_at
+
+permissions: id, task_id, tool_name, tool_args, decision (auto|approved|denied),
+             rule_matched, decided_at
+
+diffs: id, task_id, file_path, before_hash, after_hash, created_at
+
+profiles: id, name, config_json, is_default
+
+gate_results: id, task_id, gate_name, passed, output, ran_at
+```
+
+## WebSocket Events (Core)
+
+```
+server → client:
+  task:created, task:updated, task:deleted
+  terminal:output {task_id, data}
+  permission:requested {task_id, tool, args}
+  permission:resolved {task_id, decision}
+  gate:result {task_id, gate, passed}
+  notification {type, title, body}
+
+client → server:
+  task:create {title, agent, repo, isolation}
+  task:approve {task_id}
+  task:approve_all
+  task:cancel {task_id}
+  terminal:input {task_id, data}
+  terminal:resize {task_id, cols, rows}
+```
+
 ## V2 Features (Post-Launch)
 
 - **Best-of-N generation** — run same task on N agents, compare outputs
