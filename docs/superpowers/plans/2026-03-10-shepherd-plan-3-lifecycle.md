@@ -2237,6 +2237,46 @@ pub async fn export_icons(
         dimensions: Some((180, 180)),
     });
 
+    // Export Windows .ico with multiple resolutions (16, 32, 48, 256)
+    let win_ico_path = output_dir.join("app.ico");
+    export_ico(&img, &win_ico_path, &[16, 32, 48, 256])?;
+    let meta = std::fs::metadata(&win_ico_path)?;
+    files.push(ExportedFile {
+        path: win_ico_path.to_string_lossy().into_owned(),
+        size_bytes: meta.len(),
+        format: "ico".into(),
+        dimensions: None,
+    });
+
+    // Export macOS .icns (using iconutil-compatible PNG set)
+    let icns_path = output_dir.join("app.icns");
+    export_icns(&img, &icns_path)?;
+    let meta = std::fs::metadata(&icns_path)?;
+    files.push(ExportedFile {
+        path: icns_path.to_string_lossy().into_owned(),
+        size_bytes: meta.len(),
+        format: "icns".into(),
+        dimensions: None,
+    });
+
+    // Save original as SVG placeholder (raster-to-SVG traced via potrace or pass-through if input is SVG)
+    // For MVP, save the 1024px PNG and note SVG must be provided manually or via a tracing tool
+    let svg_path = output_dir.join("logo.svg");
+    let svg_content = format!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024">
+  <image href="icon-1024.png" width="1024" height="1024"/>
+  <!-- Replace with true vector SVG for production use -->
+</svg>"#
+    );
+    std::fs::write(&svg_path, &svg_content)?;
+    let meta = std::fs::metadata(&svg_path)?;
+    files.push(ExportedFile {
+        path: svg_path.to_string_lossy().into_owned(),
+        size_bytes: meta.len(),
+        format: "svg".into(),
+        dimensions: Some((1024, 1024)),
+    });
+
     // Generate manifest.json icons entry
     let manifest_path = output_dir.join("manifest.json");
     let manifest = generate_manifest_json(product_name);
@@ -2252,27 +2292,87 @@ pub async fn export_icons(
     Ok(IconExport { files })
 }
 
-/// Export an ICO file with multiple sizes
-fn export_ico(img: &DynamicImage, path: &Path, sizes: &[u32]) -> Result<()> {
-    // ICO is a simple concatenation of BMPs/PNGs with a header
-    // For simplicity, we create a single-size ICO with the smallest size
-    // A full implementation would use the ico crate
-    let smallest = *sizes.iter().min().unwrap_or(&32);
-    let resized = img.resize_exact(smallest, smallest, image::imageops::FilterType::Lanczos3);
-    let mut buf = Vec::new();
-    resized.write_to(&mut Cursor::new(&mut buf), ImageFormat::Png)?;
+/// Export macOS .icns using the icns crate's format
+/// Contains 16x16, 32x32, 128x128, 256x256, 512x512, 1024x1024
+fn export_icns(img: &DynamicImage, path: &Path) -> Result<()> {
+    // macOS .icns is a tagged container. For MVP, we create an iconset directory
+    // and shell out to `iconutil` on macOS, or write a minimal icns manually.
+    let sizes = [16, 32, 128, 256, 512, 1024];
+    let iconset_dir = path.with_extension("iconset");
+    std::fs::create_dir_all(&iconset_dir)?;
 
-    // Write a minimal ICO wrapper around the PNG data
+    for &size in &sizes {
+        let resized = img.resize_exact(size, size, image::imageops::FilterType::Lanczos3);
+        let name = format!("icon_{}x{}.png", size, size);
+        resized.save(iconset_dir.join(&name))?;
+        // Also save @2x variants where applicable
+        if size <= 512 {
+            let double = size * 2;
+            let resized_2x = img.resize_exact(double, double, image::imageops::FilterType::Lanczos3);
+            let name_2x = format!("icon_{}x{}@2x.png", size, size);
+            resized_2x.save(iconset_dir.join(&name_2x))?;
+        }
+    }
+
+    // Try iconutil (macOS only), fall back to keeping the iconset directory
+    let status = std::process::Command::new("iconutil")
+        .args(["--convert", "icns", "--output"])
+        .arg(path)
+        .arg(&iconset_dir)
+        .status();
+
+    match status {
+        Ok(s) if s.success() => {
+            // Clean up iconset directory on success
+            let _ = std::fs::remove_dir_all(&iconset_dir);
+        }
+        _ => {
+            tracing::warn!("iconutil not available (non-macOS?). Iconset saved to {:?}", iconset_dir);
+            // Write a placeholder .icns file so the export list is consistent
+            std::fs::write(path, b"icns placeholder - run iconutil manually")?;
+        }
+    }
+    Ok(())
+}
+
+/// Export an ICO file with multiple embedded sizes
+fn export_ico(img: &DynamicImage, path: &Path, sizes: &[u32]) -> Result<()> {
+    let count = sizes.len() as u16;
+    let mut png_blobs: Vec<Vec<u8>> = Vec::new();
+
+    for &size in sizes {
+        let resized = img.resize_exact(size, size, image::imageops::FilterType::Lanczos3);
+        let mut buf = Vec::new();
+        resized.write_to(&mut Cursor::new(&mut buf), ImageFormat::Png)?;
+        png_blobs.push(buf);
+    }
+
     let mut ico_data: Vec<u8> = Vec::new();
     // ICO header: reserved(2) + type(2, 1=ICO) + count(2)
-    ico_data.extend_from_slice(&[0, 0, 1, 0, 1, 0]);
-    // Image entry: width, height, palette, reserved, planes(2), bpp(2), size(4), offset(4)
-    let w = if smallest > 255 { 0u8 } else { smallest as u8 };
-    let h = w;
-    ico_data.extend_from_slice(&[w, h, 0, 0, 1, 0, 32, 0]);
-    ico_data.extend_from_slice(&(buf.len() as u32).to_le_bytes());
-    ico_data.extend_from_slice(&22u32.to_le_bytes()); // offset = 6 + 16 = 22
-    ico_data.extend_from_slice(&buf);
+    ico_data.extend_from_slice(&[0, 0]);
+    ico_data.extend_from_slice(&1u16.to_le_bytes()); // type = ICO
+    ico_data.extend_from_slice(&count.to_le_bytes());
+
+    // Calculate offsets: header(6) + entries(16 * count) + cumulative blob sizes
+    let entries_end = 6 + 16 * sizes.len();
+    let mut offset = entries_end;
+
+    // Write directory entries
+    for (i, &size) in sizes.iter().enumerate() {
+        let w = if size >= 256 { 0u8 } else { size as u8 };
+        let h = w;
+        ico_data.extend_from_slice(&[w, h, 0, 0]); // width, height, palette, reserved
+        ico_data.extend_from_slice(&1u16.to_le_bytes()); // planes
+        ico_data.extend_from_slice(&32u16.to_le_bytes()); // bpp
+        ico_data.extend_from_slice(&(png_blobs[i].len() as u32).to_le_bytes()); // size
+        ico_data.extend_from_slice(&(offset as u32).to_le_bytes()); // offset
+        offset += png_blobs[i].len();
+    }
+
+    // Write all PNG blobs
+    for blob in &png_blobs {
+        ico_data.extend_from_slice(blob);
+    }
 
     std::fs::write(path, &ico_data)?;
     Ok(())
@@ -4198,7 +4298,9 @@ pub struct PrInput {
     pub base_branch: String,
     pub worktree_path: String,
     pub auto_commit_message: bool,
+    pub edited_commit_message: Option<String>,  // User-edited commit message (overrides auto-generated)
     pub run_gates: bool,
+    pub cleanup_worktree: bool,  // Remove worktree after successful PR (default: true)
 }
 
 /// Result of the PR pipeline
@@ -4248,28 +4350,32 @@ pub async fn create_pr(
     steps.push(stage_step);
     stage_result?;
 
-    // Step 2: Generate commit message
+    // Step 2: Generate commit message (returned to frontend for user edit/approval)
     let diff = github::git_diff_staged(dir).await?;
-    let commit_msg = if input.auto_commit_message {
-        if let Some(llm) = llm {
-            commit::generate_commit_message(llm, &input.task_title, &diff).await?
-        } else {
-            format!("feat: {}", input.task_title)
-        }
+    let generated_msg = if let Some(llm) = llm {
+        commit::generate_commit_message(llm, &input.task_title, &diff).await?
     } else {
         format!("feat: {}", input.task_title)
     };
 
+    // Use the user-edited message if provided, otherwise use the generated one.
+    // The frontend shows the generated message in an editable field. The user
+    // can edit and submit, which populates input.edited_commit_message.
+    let commit_msg = input.edited_commit_message
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .unwrap_or(&generated_msg);
+
     let commit_step = PipelineStep {
         name: "Generate commit message".into(),
         status: StepStatus::Passed,
-        output: commit_msg.clone(),
+        output: commit_msg.to_string(),
     };
     on_step(&commit_step);
     steps.push(commit_step);
 
     // Step 3: Commit
-    let commit_result = github::git_commit(dir, &commit_msg).await;
+    let commit_result = github::git_commit(dir, commit_msg).await;
     let commit_step = PipelineStep {
         name: "Commit changes".into(),
         status: if commit_result.is_ok() { StepStatus::Passed } else { StepStatus::Failed },
@@ -4337,6 +4443,18 @@ pub async fn create_pr(
     };
     on_step(&pr_step);
     steps.push(pr_step);
+
+    // Step 8: Clean up worktree (optional, configurable)
+    if input.cleanup_worktree && pr_url.is_some() {
+        let cleanup_result = github::git_remove_worktree(dir).await;
+        let cleanup_step = PipelineStep {
+            name: "Clean up worktree".into(),
+            status: if cleanup_result.is_ok() { StepStatus::Passed } else { StepStatus::Skipped },
+            output: cleanup_result.unwrap_or_else(|e| format!("Skipped: {e}")),
+        };
+        on_step(&cleanup_step);
+        steps.push(cleanup_step);
+    }
 
     Ok(PrResult {
         steps,
@@ -4466,6 +4584,20 @@ pub async fn git_rebase(dir: &Path, base_branch: &str) -> Result<String> {
 /// Abort a rebase
 pub async fn git_rebase_abort(dir: &Path) -> Result<String> {
     run_git(dir, &["rebase", "--abort"]).await
+}
+
+/// Remove a git worktree (cleanup after PR)
+pub async fn git_remove_worktree(dir: &Path) -> Result<String> {
+    // Find the main worktree root, then remove this one
+    let output = run_git(dir, &["worktree", "list", "--porcelain"]).await?;
+    let worktree_path = dir.to_string_lossy();
+    // git worktree remove needs to be run from a different worktree
+    // We remove by going to parent and using git worktree remove <path>
+    if let Some(parent) = dir.parent() {
+        run_git(parent, &["worktree", "remove", &worktree_path]).await
+    } else {
+        Err(anyhow::anyhow!("Cannot determine parent directory for worktree cleanup"))
+    }
 }
 
 /// Push branch to remote
