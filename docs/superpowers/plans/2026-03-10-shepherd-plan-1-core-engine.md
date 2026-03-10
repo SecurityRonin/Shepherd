@@ -851,7 +851,7 @@ pub enum ServerEvent {
     PermissionRequested(PermissionEvent),
     PermissionResolved(PermissionEvent),
     GateResult { task_id: i64, gate: String, passed: bool },
-    Notification { title: String, body: String },
+    Notification { kind: String, title: String, body: String },  // kind: "permission"|"complete"|"error"
     StatusSnapshot(StatusSnapshot),
 }
 
@@ -1173,7 +1173,121 @@ supports_worktree = true
 
 - [ ] **Step 4: Create remaining adapter TOMLs**
 
-Create `adapters/codex.toml`, `adapters/opencode.toml`, `adapters/gemini-cli.toml`, `adapters/aider.toml` following the same structure but with agent-specific commands and patterns.
+```toml
+# adapters/codex.toml
+[agent]
+name = "Codex CLI"
+command = "codex"
+args = ["--full-auto"]
+args_interactive = []
+version_check = "codex --version"
+icon = "codex"
+
+[status]
+working_patterns = ["Reading ", "Writing ", "Running ", "Searching "]
+idle_patterns = ["$ ", "codex> "]
+input_patterns = ["[y/n", "approve", "Allow?"]
+error_patterns = ["Error:", "error:", "FAILED"]
+
+[permissions]
+approve = "y\n"
+approve_all = "Y\n"
+deny = "n\n"
+
+[capabilities]
+supports_hooks = false
+supports_prompt_arg = true
+supports_resume = false
+supports_mcp = false
+supports_worktree = true
+```
+
+```toml
+# adapters/opencode.toml
+[agent]
+name = "OpenCode"
+command = "opencode"
+args = []
+args_interactive = []
+version_check = "opencode --version"
+icon = "opencode"
+
+[status]
+working_patterns = ["Generating ", "Applying ", "Reading "]
+idle_patterns = ["> ", "opencode> "]
+input_patterns = ["[y/n", "Accept?", "approve"]
+error_patterns = ["Error:", "error:", "failed"]
+
+[permissions]
+approve = "y\n"
+approve_all = "y\n"
+deny = "n\n"
+
+[capabilities]
+supports_hooks = false
+supports_prompt_arg = true
+supports_resume = false
+supports_mcp = false
+supports_worktree = false
+```
+
+```toml
+# adapters/gemini-cli.toml
+[agent]
+name = "Gemini CLI"
+command = "gemini"
+args = []
+args_interactive = []
+version_check = "gemini --version"
+icon = "gemini"
+
+[status]
+working_patterns = ["Reading ", "Writing ", "Thinking ", "Generating "]
+idle_patterns = ["$ ", "gemini> "]
+input_patterns = ["[y/n", "Allow?", "Confirm"]
+error_patterns = ["Error:", "ERROR:", "failed"]
+
+[permissions]
+approve = "y\n"
+approve_all = "y\n"
+deny = "n\n"
+
+[capabilities]
+supports_hooks = false
+supports_prompt_arg = true
+supports_resume = false
+supports_mcp = false
+supports_worktree = false
+```
+
+```toml
+# adapters/aider.toml
+[agent]
+name = "Aider"
+command = "aider"
+args = ["--yes"]
+args_interactive = ["--no-auto-commits"]
+version_check = "aider --version"
+icon = "aider"
+
+[status]
+working_patterns = ["Applying ", "Editing ", "Committing "]
+idle_patterns = ["aider> ", "> "]
+input_patterns = ["[y/n", "Allow?", "Apply?"]
+error_patterns = ["Error:", "error:", "FAILED", "Can't"]
+
+[permissions]
+approve = "y\n"
+approve_all = "y\n"
+deny = "n\n"
+
+[capabilities]
+supports_hooks = false
+supports_prompt_arg = true
+supports_resume = false
+supports_mcp = false
+supports_worktree = true
+```
 
 - [ ] **Step 5: Add `tempfile` dev dependency and run tests**
 
@@ -1430,6 +1544,7 @@ use rusqlite::Connection;
 use shepherd_core::adapters::AdapterRegistry;
 use shepherd_core::config::types::ShepherdConfig;
 use shepherd_core::events::ServerEvent;
+use shepherd_core::pty::PtyManager;
 use shepherd_core::yolo::YoloEngine;
 use std::sync::Arc;
 use tokio::sync::{broadcast, Mutex};
@@ -1439,6 +1554,7 @@ pub struct AppState {
     pub config: ShepherdConfig,
     pub adapters: AdapterRegistry,
     pub yolo: YoloEngine,
+    pub pty: PtyManager,
     pub event_tx: broadcast::Sender<ServerEvent>,
 }
 ```
@@ -1457,52 +1573,49 @@ pub async fn health() -> Json<Value> {
 
 ```rust
 // crates/shepherd-server/src/routes/tasks.rs
-use axum::{extract::State, extract::Path, Json};
+use axum::{extract::State, extract::Path, http::StatusCode, Json};
 use serde_json::Value;
 use shepherd_core::db::{models::CreateTask, queries};
 use shepherd_core::events::{ServerEvent, TaskEvent};
 use std::sync::Arc;
 use crate::state::AppState;
 
-pub async fn list_tasks(State(state): State<Arc<AppState>>) -> Json<Value> {
+pub async fn list_tasks(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let db = state.db.lock().await;
-    let tasks = queries::list_tasks(&db).unwrap_or_default();
-    Json(serde_json::to_value(tasks).unwrap())
+    let tasks = queries::list_tasks(&db)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))))?;
+    Ok(Json(serde_json::to_value(tasks).unwrap()))
 }
 
 pub async fn create_task(
     State(state): State<Arc<AppState>>,
     Json(input): Json<CreateTask>,
-) -> Json<Value> {
+) -> Result<(StatusCode, Json<Value>), (StatusCode, Json<Value>)> {
     let db = state.db.lock().await;
-    match queries::create_task(&db, &input) {
-        Ok(task) => {
-            let _ = state.event_tx.send(ServerEvent::TaskCreated(TaskEvent {
-                id: task.id,
-                title: task.title.clone(),
-                agent_id: task.agent_id.clone(),
-                status: task.status.as_str().to_string(),
-                branch: task.branch.clone(),
-                repo_path: task.repo_path.clone(),
-            }));
-            Json(serde_json::to_value(task).unwrap())
-        }
-        Err(e) => Json(serde_json::json!({ "error": e.to_string() })),
-    }
+    let task = queries::create_task(&db, &input)
+        .map_err(|e| (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": e.to_string() }))))?;
+    let _ = state.event_tx.send(ServerEvent::TaskCreated(TaskEvent {
+        id: task.id,
+        title: task.title.clone(),
+        agent_id: task.agent_id.clone(),
+        status: task.status.as_str().to_string(),
+        branch: task.branch.clone(),
+        repo_path: task.repo_path.clone(),
+    }));
+    Ok((StatusCode::CREATED, Json(serde_json::to_value(task).unwrap())))
 }
 
 pub async fn delete_task(
     State(state): State<Arc<AppState>>,
     Path(id): Path<i64>,
-) -> Json<Value> {
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let db = state.db.lock().await;
-    match queries::delete_task(&db, id) {
-        Ok(()) => {
-            let _ = state.event_tx.send(ServerEvent::TaskDeleted { id });
-            Json(serde_json::json!({ "deleted": id }))
-        }
-        Err(e) => Json(serde_json::json!({ "error": e.to_string() })),
-    }
+    queries::delete_task(&db, id)
+        .map_err(|e| (StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": e.to_string() }))))?;
+    let _ = state.event_tx.send(ServerEvent::TaskDeleted { id });
+    Ok(Json(serde_json::json!({ "deleted": id })))
 }
 ```
 
@@ -1589,19 +1702,44 @@ async fn handle_client_event(event: ClientEvent, state: &AppState) {
         }
         ClientEvent::TaskApprove { task_id } => {
             tracing::info!("Approving task {task_id}");
-            // PTY interaction will be added in PTY manager task
+            // Look up the agent's adapter to get the approve string
+            let db = state.db.lock().await;
+            if let Ok(tasks) = shepherd_core::db::queries::list_tasks(&db) {
+                if let Some(task) = tasks.iter().find(|t| t.id == task_id) {
+                    let approve_str = state.adapters.get(&task.agent_id)
+                        .map(|a| a.permissions.approve.clone())
+                        .unwrap_or_else(|| "y\n".into());
+                    drop(db);
+                    let _ = state.pty.write_to(task_id, &approve_str).await;
+                }
+            }
         }
         ClientEvent::TaskApproveAll => {
             tracing::info!("Approving all pending");
+            let db = state.db.lock().await;
+            if let Ok(tasks) = shepherd_core::db::queries::list_tasks(&db) {
+                let pending: Vec<_> = tasks.iter()
+                    .filter(|t| t.status.as_str() == "input")
+                    .cloned()
+                    .collect();
+                drop(db);
+                for task in pending {
+                    let approve_str = state.adapters.get(&task.agent_id)
+                        .map(|a| a.permissions.approve.clone())
+                        .unwrap_or_else(|| "y\n".into());
+                    let _ = state.pty.write_to(task.id, &approve_str).await;
+                }
+            }
         }
         ClientEvent::TaskCancel { task_id } => {
             tracing::info!("Cancelling task {task_id}");
+            let _ = state.pty.kill(task_id).await;
         }
         ClientEvent::TerminalInput { task_id, data } => {
-            tracing::debug!("Terminal input for task {task_id}: {data}");
+            let _ = state.pty.write_to(task_id, &data).await;
         }
         ClientEvent::TerminalResize { task_id, cols, rows } => {
-            tracing::debug!("Terminal resize for task {task_id}: {cols}x{rows}");
+            let _ = state.pty.resize(task_id, cols, rows).await;
         }
         ClientEvent::Subscribe => {
             tracing::info!("Client subscribed");
@@ -1614,17 +1752,28 @@ async fn handle_client_event(event: ClientEvent, state: &AppState) {
 
 ```rust
 // crates/shepherd-server/src/main.rs
-mod routes;
-mod state;
-mod ws;
+pub mod routes;
+pub mod state;
+pub mod ws;
 
 use axum::{routing::{get, post, delete}, Router};
-use shepherd_core::{adapters::AdapterRegistry, config, db, yolo::YoloEngine};
+use shepherd_core::{adapters::AdapterRegistry, config, db, pty::PtyManager, yolo::YoloEngine};
 use state::AppState;
 use std::sync::Arc;
 use tokio::sync::{broadcast, Mutex};
 use tower_http::cors::CorsLayer;
 use tracing_subscriber::EnvFilter;
+
+pub fn build_router(state: Arc<AppState>) -> Router {
+    Router::new()
+        .route("/api/health", get(routes::health::health))
+        .route("/api/tasks", get(routes::tasks::list_tasks))
+        .route("/api/tasks", post(routes::tasks::create_task))
+        .route("/api/tasks/{id}", delete(routes::tasks::delete_task))
+        .route("/ws", get(ws::ws_handler))
+        .layer(CorsLayer::permissive())
+        .with_state(state)
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -1634,48 +1783,75 @@ async fn main() -> anyhow::Result<()> {
 
     let cfg = config::load_config(None)?;
     let port = cfg.port;
+    let max_agents = cfg.max_agents;
 
     // Database
     let db_path = config::shepherd_dir().join("db.sqlite");
     std::fs::create_dir_all(config::shepherd_dir())?;
     let conn = db::open(&db_path)?;
 
-    // Adapters
+    // Adapters — check both built-in and user directories
     let mut adapters = AdapterRegistry::new();
-    let builtin_dir = std::env::current_exe()?
+    // Built-in adapters: shipped alongside the binary in an `adapters/` sibling dir,
+    // or in the project root during development via CARGO_MANIFEST_DIR
+    if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
+        let dev_adapters = std::path::Path::new(&manifest_dir)
+            .join("../../adapters");
+        adapters.load_dir(&dev_adapters).ok();
+    }
+    let exe_adapters = std::env::current_exe()?
         .parent()
         .unwrap()
-        .join("../../../adapters");
-    adapters.load_dir(&builtin_dir).ok();
+        .join("adapters");
+    adapters.load_dir(&exe_adapters).ok();
     adapters.load_dir(&config::shepherd_dir().join("adapters")).ok();
     tracing::info!("Loaded {} adapters", adapters.len());
 
     // YOLO
     let yolo = YoloEngine::load(&config::shepherd_dir().join("rules.yaml"))?;
 
+    // PTY Manager
+    let pty = PtyManager::new(max_agents);
+
     // Event broadcast
     let (event_tx, _) = broadcast::channel(256);
+
+    // Forward PTY output to WebSocket broadcast as terminal:output events
+    let mut pty_rx = pty.subscribe_output();
+    let event_tx_clone = event_tx.clone();
+    tokio::spawn(async move {
+        while let Ok(output) = pty_rx.recv().await {
+            let data = String::from_utf8_lossy(&output.data).to_string();
+            let _ = event_tx_clone.send(shepherd_core::events::ServerEvent::TerminalOutput {
+                task_id: output.task_id,
+                data,
+            });
+        }
+    });
 
     let state = Arc::new(AppState {
         db: Arc::new(Mutex::new(conn)),
         config: cfg,
         adapters,
         yolo,
+        pty,
         event_tx,
     });
 
-    let app = Router::new()
-        .route("/api/health", get(routes::health::health))
-        .route("/api/tasks", get(routes::tasks::list_tasks))
-        .route("/api/tasks", post(routes::tasks::create_task))
-        .route("/api/tasks/{id}", delete(routes::tasks::delete_task))
-        .route("/ws", get(ws::ws_handler))
-        .layer(CorsLayer::permissive())
-        .with_state(state);
+    let app = build_router(state.clone());
 
     let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{port}")).await?;
     tracing::info!("Shepherd server listening on http://127.0.0.1:{port}");
-    axum::serve(listener, app).await?;
+
+    // Graceful shutdown on SIGTERM/SIGINT
+    let state_shutdown = state.clone();
+    axum::serve(listener, app)
+        .with_graceful_shutdown(async move {
+            let _ = tokio::signal::ctrl_c().await;
+            tracing::info!("Shutting down — stopping all agents...");
+            state_shutdown.pty.shutdown_all(std::time::Duration::from_secs(10)).await;
+        })
+        .await?;
     Ok(())
 }
 ```
@@ -1806,34 +1982,54 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Write PTY manager**
+- [ ] **Step 2: Write PTY manager with output streaming**
 
 ```rust
 // crates/shepherd-core/src/pty/mod.rs
 pub mod status;
 
 use anyhow::{Context, Result};
-use portable_pty::{native_pty_system, CommandBuilder, PtyPair, PtySize};
+use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use std::time::Instant;
+use tokio::sync::{broadcast, Mutex};
 
-pub struct PtyHandle {
-    pub pair: PtyPair,
-    pub child: Box<dyn portable_pty::Child + Send>,
+/// Data emitted from a PTY's output stream
+#[derive(Debug, Clone)]
+pub struct PtyOutput {
     pub task_id: i64,
+    pub data: Vec<u8>,
+}
+
+struct PtyHandle {
+    writer: Box<dyn Write + Send>,
+    child: Box<dyn portable_pty::Child + Send>,
+    master: Box<dyn portable_pty::MasterPty + Send>,
+    task_id: i64,
+    last_output: Instant,
 }
 
 pub struct PtyManager {
     handles: Arc<Mutex<HashMap<i64, PtyHandle>>>,
+    output_tx: broadcast::Sender<PtyOutput>,
+    max_agents: usize,
 }
 
 impl PtyManager {
-    pub fn new() -> Self {
+    pub fn new(max_agents: usize) -> Self {
+        let (output_tx, _) = broadcast::channel(1024);
         Self {
             handles: Arc::new(Mutex::new(HashMap::new())),
+            output_tx,
+            max_agents,
         }
+    }
+
+    /// Subscribe to output from all PTY processes
+    pub fn subscribe_output(&self) -> broadcast::Receiver<PtyOutput> {
+        self.output_tx.subscribe()
     }
 
     pub async fn spawn(
@@ -1843,6 +2039,15 @@ impl PtyManager {
         args: &[String],
         cwd: &str,
     ) -> Result<()> {
+        // Enforce concurrency limit
+        let current = self.handles.lock().await.len();
+        if current >= self.max_agents {
+            anyhow::bail!(
+                "Agent limit reached ({}/{}). Task will remain queued.",
+                current, self.max_agents
+            );
+        }
+
         let pty_system = native_pty_system();
         let pair = pty_system.openpty(PtySize {
             rows: 24,
@@ -1858,7 +2063,43 @@ impl PtyManager {
         let child = pair.slave.spawn_command(cmd)
             .context("Failed to spawn agent process")?;
 
-        let handle = PtyHandle { pair, child, task_id };
+        let writer = pair.master.try_clone_writer()
+            .context("Failed to clone PTY writer")?;
+
+        // Start output reader thread
+        let mut reader = pair.master.try_clone_reader()
+            .context("Failed to clone PTY reader")?;
+        let output_tx = self.output_tx.clone();
+        let handles_ref = self.handles.clone();
+        std::thread::spawn(move || {
+            let mut buf = [0u8; 4096];
+            loop {
+                match reader.read(&mut buf) {
+                    Ok(0) => break, // EOF — process exited
+                    Ok(n) => {
+                        let _ = output_tx.send(PtyOutput {
+                            task_id,
+                            data: buf[..n].to_vec(),
+                        });
+                        // Update last_output timestamp (best-effort, non-blocking)
+                        if let Ok(mut handles) = handles_ref.try_lock() {
+                            if let Some(handle) = handles.get_mut(&task_id) {
+                                handle.last_output = Instant::now();
+                            }
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+
+        let handle = PtyHandle {
+            writer,
+            child,
+            master: pair.master,
+            task_id,
+            last_output: Instant::now(),
+        };
         self.handles.lock().await.insert(task_id, handle);
 
         tracing::info!("Spawned PTY for task {task_id}: {command}");
@@ -1866,11 +2107,9 @@ impl PtyManager {
     }
 
     pub async fn write_to(&self, task_id: i64, data: &str) -> Result<()> {
-        let handles = self.handles.lock().await;
-        if let Some(handle) = handles.get(&task_id) {
-            let mut writer = handle.pair.master.try_clone_writer()
-                .context("Failed to clone PTY writer")?;
-            writer.write_all(data.as_bytes())?;
+        let mut handles = self.handles.lock().await;
+        if let Some(handle) = handles.get_mut(&task_id) {
+            handle.writer.write_all(data.as_bytes())?;
         }
         Ok(())
     }
@@ -1887,7 +2126,7 @@ impl PtyManager {
     pub async fn resize(&self, task_id: i64, cols: u16, rows: u16) -> Result<()> {
         let handles = self.handles.lock().await;
         if let Some(handle) = handles.get(&task_id) {
-            handle.pair.master.resize(PtySize {
+            handle.master.resize(PtySize {
                 rows,
                 cols,
                 pixel_width: 0,
@@ -1897,13 +2136,55 @@ impl PtyManager {
         Ok(())
     }
 
+    /// Check if the child process is still running (not just in the map)
     pub async fn is_alive(&self, task_id: i64) -> bool {
+        let mut handles = self.handles.lock().await;
+        if let Some(handle) = handles.get_mut(&task_id) {
+            // try_wait returns Ok(Some(status)) if exited, Ok(None) if still running
+            match handle.child.try_wait() {
+                Ok(Some(_)) => {
+                    // Process has exited — clean up
+                    handles.remove(&task_id);
+                    false
+                }
+                Ok(None) => true,
+                Err(_) => false,
+            }
+        } else {
+            false
+        }
+    }
+
+    /// Returns task IDs of agents that have been idle longer than the given duration
+    pub async fn stale_agents(&self, threshold: std::time::Duration) -> Vec<i64> {
         let handles = self.handles.lock().await;
-        handles.contains_key(&task_id)
+        let now = Instant::now();
+        handles
+            .values()
+            .filter(|h| now.duration_since(h.last_output) > threshold)
+            .map(|h| h.task_id)
+            .collect()
     }
 
     pub async fn count(&self) -> usize {
         self.handles.lock().await.len()
+    }
+
+    /// Graceful shutdown: send SIGTERM to all, wait, then force kill remaining
+    pub async fn shutdown_all(&self, grace_period: std::time::Duration) {
+        let task_ids: Vec<i64> = {
+            let handles = self.handles.lock().await;
+            handles.keys().cloned().collect()
+        };
+        // First pass: kill (sends SIGTERM on Unix)
+        for &id in &task_ids {
+            let _ = self.kill(id).await;
+        }
+        // Wait grace period
+        tokio::time::sleep(grace_period).await;
+        // Force cleanup anything remaining
+        self.handles.lock().await.clear();
+        tracing::info!("All PTY processes shut down");
     }
 }
 ```
@@ -1921,7 +2202,7 @@ Expected: All 26 tests pass (status detection tests + previous tests).
 
 ```bash
 git add crates/shepherd-core/src/pty/ crates/shepherd-core/Cargo.toml
-git commit -m "feat: add PTY manager with process spawn/kill and status detection"
+git commit -m "feat: add PTY manager with output streaming, crash detection, and concurrency limits"
 ```
 
 ---
@@ -2089,6 +2370,8 @@ git commit -m "feat: wire CLI commands to server REST API"
 
 - [ ] **Step 1: Write server integration test**
 
+The `shepherd-server` crate's `main.rs` already uses `pub mod` declarations and exposes `build_router()`, so integration tests can import and use them directly.
+
 ```rust
 // tests/integration/server_test.rs
 use reqwest::Client;
@@ -2100,7 +2383,6 @@ async fn start_test_server() -> (String, tokio::task::JoinHandle<()>) {
     let url = format!("http://127.0.0.1:{port}");
 
     let handle = tokio::spawn(async move {
-        // Start server on random port
         let cfg = shepherd_core::config::types::ShepherdConfig {
             port,
             ..Default::default()
@@ -2110,6 +2392,7 @@ async fn start_test_server() -> (String, tokio::task::JoinHandle<()>) {
         let yolo = shepherd_core::yolo::YoloEngine::new(
             shepherd_core::yolo::rules::RuleSet { deny: vec![], allow: vec![] }
         );
+        let pty = shepherd_core::pty::PtyManager::new(cfg.max_agents);
         let (event_tx, _) = tokio::sync::broadcast::channel(256);
 
         let state = std::sync::Arc::new(shepherd_server::state::AppState {
@@ -2117,14 +2400,12 @@ async fn start_test_server() -> (String, tokio::task::JoinHandle<()>) {
             config: cfg,
             adapters,
             yolo,
+            pty,
             event_tx,
         });
 
-        let app = axum::Router::new()
-            .route("/api/health", axum::routing::get(shepherd_server::routes::health::health))
-            .route("/api/tasks", axum::routing::get(shepherd_server::routes::tasks::list_tasks))
-            .route("/api/tasks", axum::routing::post(shepherd_server::routes::tasks::create_task))
-            .with_state(state);
+        // Use the shared build_router to guarantee test/production parity
+        let app = shepherd_server::build_router(state);
 
         let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{port}"))
             .await.unwrap();
@@ -2151,17 +2432,18 @@ async fn test_create_and_list_tasks() {
     let (url, _handle) = start_test_server().await;
     let client = Client::new();
 
-    // Create task
-    let resp: Value = client
+    // Create task — expect 201 Created
+    let resp = client
         .post(format!("{url}/api/tasks"))
         .json(&json!({
             "title": "Test task",
             "agent_id": "claude-code"
         }))
-        .send().await.unwrap()
-        .json().await.unwrap();
-    assert_eq!(resp["title"], "Test task");
-    assert_eq!(resp["status"], "queued");
+        .send().await.unwrap();
+    assert_eq!(resp.status(), 201);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["title"], "Test task");
+    assert_eq!(body["status"], "queued");
 
     // List tasks
     let tasks: Vec<Value> = client
@@ -2171,9 +2453,35 @@ async fn test_create_and_list_tasks() {
     assert_eq!(tasks.len(), 1);
     assert_eq!(tasks[0]["title"], "Test task");
 }
-```
 
-Note: This test requires making `state`, `routes`, and `ws` modules public in `shepherd-server`. Add `pub` to the `mod` declarations in `main.rs`, or restructure as a library + binary.
+#[tokio::test]
+async fn test_delete_task() {
+    let (url, _handle) = start_test_server().await;
+    let client = Client::new();
+
+    // Create a task first
+    let resp: Value = client
+        .post(format!("{url}/api/tasks"))
+        .json(&json!({ "title": "To delete", "agent_id": "claude-code" }))
+        .send().await.unwrap()
+        .json().await.unwrap();
+    let id = resp["id"].as_i64().unwrap();
+
+    // Delete it
+    let del: Value = client
+        .delete(format!("{url}/api/tasks/{id}"))
+        .send().await.unwrap()
+        .json().await.unwrap();
+    assert_eq!(del["deleted"], id);
+
+    // Verify it's gone
+    let tasks: Vec<Value> = client
+        .get(format!("{url}/api/tasks"))
+        .send().await.unwrap()
+        .json().await.unwrap();
+    assert!(tasks.is_empty());
+}
+```
 
 - [ ] **Step 2: Add `portpicker` test dependency**
 
@@ -2252,7 +2560,7 @@ git commit -m "chore: final build verification for Plan 1 core engine"
 - Agent adapter protocol (TOML spec + registry + 5 built-in adapters)
 - YOLO rules engine (deny/allow/ask with pattern matching)
 - HTTP/WebSocket server (axum) with task management
-- PTY manager (spawn, kill, resize, I/O, status detection)
+- PTY manager (spawn, kill, resize, I/O streaming, status detection, crash detection, concurrency limits, graceful shutdown)
 - CLI tool (status, new, approve, init)
 - Integration tests
 
