@@ -17,6 +17,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/api/tasks", post(routes::tasks::create_task))
         .route("/api/tasks/:id", delete(routes::tasks::delete_task))
         .route("/api/namegen", post(routes::namegen::generate_names))
+        .route("/api/logogen", post(routes::logogen::generate_logo))
+        .route("/api/logogen/export", post(routes::logogen::export_icons))
         .route("/ws", get(ws::ws_handler))
         .layer(CorsLayer::permissive())
         .with_state(state)
