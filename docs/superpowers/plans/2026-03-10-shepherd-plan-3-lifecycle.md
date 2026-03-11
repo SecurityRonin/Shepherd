@@ -6279,9 +6279,726 @@ git commit -m "test: add end-to-end lifecycle integration tests covering trigger
 
 ---
 
+## Chunk 5: Ecosystem Integrations — nono.sh, Obra Superpowers, context-mode (Tasks 17–19)
+
+These tasks integrate the three ecosystem tools that Shepherd advertises as "powered by". Each must have real substance, not just README credits.
+
+---
+
+### Task 17: nono.sh Sandbox Integration in PTY Manager
+
+**Goal:** Wrap agent process spawns in nono.sh kernel-level sandbox (Seatbelt on macOS, Landlock on Linux) so even YOLO mode can't touch SSH keys, AWS credentials, or shell configs.
+
+**Files:**
+- Create: `crates/shepherd-core/src/pty/sandbox.rs`
+- Modify: `crates/shepherd-core/src/pty/mod.rs` (wrap spawn logic)
+- Modify: `crates/shepherd-core/src/config/types.rs` (add sandbox config)
+- Test: `crates/shepherd-core/src/pty/sandbox.rs` (inline tests)
+
+- [ ] **Step 1: Write failing test for sandbox profile generation**
+
+```rust
+// crates/shepherd-core/src/pty/sandbox.rs
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_sandbox_profile_blocks_ssh() {
+        let profile = SandboxProfile::default();
+        assert!(profile.blocked_paths.iter().any(|p| p.contains(".ssh")));
+    }
+
+    #[test]
+    fn test_default_sandbox_profile_blocks_aws() {
+        let profile = SandboxProfile::default();
+        assert!(profile.blocked_paths.iter().any(|p| p.contains(".aws")));
+    }
+
+    #[test]
+    fn test_sandbox_command_wraps_with_nono() {
+        let profile = SandboxProfile::default();
+        let (cmd, args) = profile.wrap_command("claude", &["--auto".into()]);
+        assert_eq!(cmd, "nono");
+        assert!(args.contains(&"claude".to_string()));
+    }
+
+    #[test]
+    fn test_sandbox_disabled_passes_through() {
+        let profile = SandboxProfile::disabled();
+        let (cmd, args) = profile.wrap_command("claude", &["--auto".into()]);
+        assert_eq!(cmd, "claude");
+        assert_eq!(args, vec!["--auto"]);
+    }
+
+    #[test]
+    fn test_custom_blocked_paths() {
+        let mut profile = SandboxProfile::default();
+        profile.blocked_paths.push("/custom/secret".into());
+        assert!(profile.blocked_paths.iter().any(|p| p == "/custom/secret"));
+    }
+}
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `cargo test -p shepherd-core sandbox`
+Expected: FAIL — module not found.
+
+- [ ] **Step 3: Implement SandboxProfile and nono.sh wrapper**
+
+```rust
+// crates/shepherd-core/src/pty/sandbox.rs
+
+use std::path::PathBuf;
+
+/// Sandbox profile controlling what agents can access.
+/// Uses nono.sh (Seatbelt on macOS, Landlock on Linux) for kernel-level enforcement.
+#[derive(Debug, Clone)]
+pub struct SandboxProfile {
+    pub enabled: bool,
+    /// Paths blocked from agent access (read and write)
+    pub blocked_paths: Vec<String>,
+    /// Whether to block network access entirely
+    pub block_network: bool,
+    /// Additional nono.sh flags
+    pub extra_flags: Vec<String>,
+}
+
+impl Default for SandboxProfile {
+    fn default() -> Self {
+        let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
+        let home_str = home.to_string_lossy();
+        Self {
+            enabled: true,
+            blocked_paths: vec![
+                format!("{home_str}/.ssh"),
+                format!("{home_str}/.aws"),
+                format!("{home_str}/.gnupg"),
+                format!("{home_str}/.config/gcloud"),
+                format!("{home_str}/.azure"),
+                format!("{home_str}/.kube"),
+                format!("{home_str}/.bashrc"),
+                format!("{home_str}/.zshrc"),
+                format!("{home_str}/.profile"),
+                format!("{home_str}/.bash_profile"),
+                format!("{home_str}/.netrc"),
+                format!("{home_str}/.npmrc"),
+            ],
+            block_network: false,
+            extra_flags: vec![],
+        }
+    }
+}
+
+impl SandboxProfile {
+    pub fn disabled() -> Self {
+        Self {
+            enabled: false,
+            blocked_paths: vec![],
+            block_network: false,
+            extra_flags: vec![],
+        }
+    }
+
+    /// Wrap a command and args with nono.sh sandbox enforcement.
+    /// If sandbox is disabled, returns the command unchanged.
+    pub fn wrap_command(&self, command: &str, args: &[String]) -> (String, Vec<String>) {
+        if !self.enabled {
+            return (command.to_string(), args.to_vec());
+        }
+
+        let mut nono_args = Vec::new();
+
+        for path in &self.blocked_paths {
+            nono_args.push("--block".to_string());
+            nono_args.push(path.clone());
+        }
+
+        if self.block_network {
+            nono_args.push("--no-network".to_string());
+        }
+
+        for flag in &self.extra_flags {
+            nono_args.push(flag.clone());
+        }
+
+        // Separator then the actual command
+        nono_args.push("--".to_string());
+        nono_args.push(command.to_string());
+        nono_args.extend(args.iter().cloned());
+
+        ("nono".to_string(), nono_args)
+    }
+
+    /// Check if nono.sh is installed on the system
+    pub fn is_available() -> bool {
+        std::process::Command::new("nono")
+            .arg("--version")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    }
+}
+```
+
+- [ ] **Step 4: Add sandbox config to ShepherdConfig**
+
+```rust
+// Add to crates/shepherd-core/src/config/types.rs
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SandboxConfig {
+    #[serde(default = "default_sandbox_enabled")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub extra_blocked_paths: Vec<String>,
+    #[serde(default)]
+    pub block_network: bool,
+}
+
+fn default_sandbox_enabled() -> bool { true }
+
+impl Default for SandboxConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_sandbox_enabled(),
+            extra_blocked_paths: vec![],
+            block_network: false,
+        }
+    }
+}
+```
+
+Add `pub sandbox: SandboxConfig` to `ShepherdConfig` with `#[serde(default)]`.
+
+- [ ] **Step 5: Integrate sandbox into PtyManager::spawn**
+
+Modify `PtyManager::spawn` to accept an optional `SandboxProfile` and wrap the command:
+
+```rust
+// In pty/mod.rs spawn method, before CommandBuilder::new(command):
+let (actual_cmd, actual_args) = sandbox.wrap_command(command, args);
+let mut cmd = CommandBuilder::new(&actual_cmd);
+cmd.args(&actual_args);
+```
+
+Add a `new` constructor that accepts `SandboxProfile`:
+
+```rust
+pub fn new(max_agents: usize, sandbox: SandboxProfile) -> Self {
+```
+
+If `sandbox.enabled && !SandboxProfile::is_available()`, log a warning and fall back to disabled.
+
+- [ ] **Step 6: Run tests to verify they pass**
+
+Run: `cargo test -p shepherd-core sandbox`
+Expected: PASS (5 tests)
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add crates/shepherd-core/src/pty/sandbox.rs crates/shepherd-core/src/pty/mod.rs crates/shepherd-core/src/config/types.rs
+git commit -m "feat: add nono.sh kernel-level sandbox integration to PTY manager"
+```
+
+---
+
+### Task 18: Obra Superpowers Auto-Install
+
+**Goal:** Auto-detect and optionally install Obra Superpowers skills for supported agents. The toggle lives in Shepherd's config (`~/.shepherd/config.toml`), but detection and installation target each **agent's own config directory** (e.g., `~/.claude/` for Claude Code, `~/.codex/` for Codex). At project-scope, install targets the agent's project config (e.g., `.claude/CLAUDE.md`). On new task creation, if superpowers aren't detected for the chosen agent, offer to install.
+
+**Agent config locations:**
+| Agent | User-scope | Project-scope |
+|-------|-----------|---------------|
+| Claude Code | `~/.claude/plugins/cache/claude-plugins-official/superpowers/` | `.claude/settings.json` (plugin ref) |
+| Codex | `~/.codex/instructions.md` | `.codex/instructions.md` |
+| OpenCode | `~/.opencode/config.toml` | `.opencode/config.toml` |
+
+**Files:**
+- Create: `crates/shepherd-core/src/ecosystem/mod.rs`
+- Create: `crates/shepherd-core/src/ecosystem/superpowers.rs`
+- Modify: `crates/shepherd-core/src/config/types.rs` (add ecosystem config)
+- Modify: `crates/shepherd-core/src/lib.rs` (add module)
+- Test: inline tests in `superpowers.rs`
+
+- [ ] **Step 1: Write failing test for superpowers detection and install**
+
+```rust
+// crates/shepherd-core/src/ecosystem/superpowers.rs
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_detect_not_installed() {
+        let tmp = TempDir::new().unwrap();
+        let result = detect_for_agent("claude-code", tmp.path(), None);
+        assert!(!result.installed);
+    }
+
+    #[test]
+    fn test_detect_claude_code_user_scope() {
+        let tmp = TempDir::new().unwrap();
+        // Simulate ~/.claude/plugins/cache/claude-plugins-official/superpowers/
+        let skills_dir = tmp.path().join(".claude/plugins/cache/claude-plugins-official/superpowers");
+        std::fs::create_dir_all(&skills_dir).unwrap();
+        let result = detect_for_agent("claude-code", tmp.path(), None);
+        assert!(result.installed);
+        assert_eq!(result.scope, InstallScope::User);
+    }
+
+    #[test]
+    fn test_detect_claude_code_project_scope() {
+        let tmp = TempDir::new().unwrap();
+        let home = tmp.path().join("home");
+        let project = tmp.path().join("project");
+        std::fs::create_dir_all(project.join(".claude")).unwrap();
+        std::fs::write(
+            project.join(".claude/settings.json"),
+            r#"{"plugins":["superpowers"]}"#,
+        ).unwrap();
+        let result = detect_for_agent("claude-code", &home, Some(&project));
+        assert!(result.installed);
+        assert_eq!(result.scope, InstallScope::Project);
+    }
+
+    #[test]
+    fn test_install_config_targets_agent_dir() {
+        let config = InstallConfig::for_agent("claude-code", InstallScope::User).unwrap();
+        assert!(config.target_path.to_string_lossy().contains(".claude"));
+    }
+
+    #[test]
+    fn test_install_config_project_scope() {
+        let config = InstallConfig::for_agent("claude-code", InstallScope::Project).unwrap();
+        assert!(config.target_path.to_string_lossy().contains(".claude"));
+    }
+
+    #[test]
+    fn test_supported_agents() {
+        assert!(is_superpowers_compatible("claude-code"));
+        assert!(is_superpowers_compatible("codex"));
+        assert!(is_superpowers_compatible("opencode"));
+        assert!(!is_superpowers_compatible("aider"));
+        assert!(!is_superpowers_compatible("gemini-cli"));
+    }
+
+    #[test]
+    fn test_unsupported_agent_returns_none() {
+        let config = InstallConfig::for_agent("aider", InstallScope::User);
+        assert!(config.is_none());
+    }
+}
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `cargo test -p shepherd-core superpowers`
+Expected: FAIL — module not found.
+
+- [ ] **Step 3: Implement detection and install logic**
+
+```rust
+// crates/shepherd-core/src/ecosystem/superpowers.rs
+
+use std::path::{Path, PathBuf};
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum InstallScope {
+    User,
+    Project,
+}
+
+#[derive(Debug, Clone)]
+pub struct DetectionResult {
+    pub installed: bool,
+    pub scope: InstallScope,
+    pub path: Option<PathBuf>,
+    pub version: Option<String>,
+}
+
+/// Per-agent install configuration — targets the agent's own config directory
+#[derive(Debug, Clone)]
+pub struct InstallConfig {
+    pub agent: String,
+    pub scope: InstallScope,
+    /// Where to write config (e.g., ~/.claude/ or .claude/)
+    pub target_path: PathBuf,
+    /// Content to add/write to the agent's config
+    pub config_content: String,
+}
+
+/// Detect if superpowers is installed for a specific agent.
+/// `home` = user home dir (for user-scope detection in agent's config dir)
+/// `project_root` = optional project dir (for project-scope detection)
+pub fn detect_for_agent(agent: &str, home: &Path, project_root: Option<&Path>) -> DetectionResult {
+    // Check project-scope first (higher priority)
+    if let Some(project) = project_root {
+        if let Some(result) = detect_project_scope(agent, project) {
+            return result;
+        }
+    }
+    // Fall back to user-scope (agent's own config dir under home)
+    detect_user_scope(agent, home)
+}
+
+fn detect_user_scope(agent: &str, home: &Path) -> DetectionResult {
+    let path = match agent {
+        "claude-code" => home.join(".claude/plugins/cache/claude-plugins-official/superpowers"),
+        "codex" => home.join(".codex/superpowers"),
+        "opencode" => home.join(".opencode/superpowers"),
+        _ => return DetectionResult { installed: false, scope: InstallScope::User, path: None, version: None },
+    };
+    if path.exists() {
+        let version = detect_version(&path);
+        DetectionResult { installed: true, scope: InstallScope::User, path: Some(path), version }
+    } else {
+        DetectionResult { installed: false, scope: InstallScope::User, path: None, version: None }
+    }
+}
+
+fn detect_project_scope(agent: &str, project: &Path) -> Option<DetectionResult> {
+    let config_path = match agent {
+        "claude-code" => project.join(".claude/settings.json"),
+        "codex" => project.join(".codex/instructions.md"),
+        "opencode" => project.join(".opencode/config.toml"),
+        _ => return None,
+    };
+    if config_path.exists() {
+        let content = std::fs::read_to_string(&config_path).unwrap_or_default();
+        if content.contains("superpowers") {
+            return Some(DetectionResult {
+                installed: true,
+                scope: InstallScope::Project,
+                path: Some(config_path),
+                version: None,
+            });
+        }
+    }
+    None
+}
+
+fn detect_version(path: &Path) -> Option<String> {
+    std::fs::read_dir(path)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().ok().map(|t| t.is_dir()).unwrap_or(false))
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().to_string();
+            if name.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+                Some(name)
+            } else {
+                None
+            }
+        })
+        .max()
+}
+
+/// Check if an agent supports Obra Superpowers integration
+pub fn is_superpowers_compatible(agent: &str) -> bool {
+    matches!(agent, "claude-code" | "codex" | "opencode")
+}
+
+impl InstallConfig {
+    /// Create install config targeting the specific agent's config directory.
+    /// Returns None for unsupported agents.
+    pub fn for_agent(agent: &str, scope: InstallScope) -> Option<Self> {
+        let (target_path, config_content) = match (agent, &scope) {
+            ("claude-code", InstallScope::User) => (
+                PathBuf::from("~/.claude/CLAUDE.md"),
+                "# Obra Superpowers — brainstorming, planning, and agentic development\n\
+                 # Installed by Shepherd. See https://github.com/obra/superpowers\n".to_string(),
+            ),
+            ("claude-code", InstallScope::Project) => (
+                PathBuf::from(".claude/CLAUDE.md"),
+                "# Obra Superpowers — brainstorming, planning, and agentic development\n\
+                 # Installed by Shepherd. See https://github.com/obra/superpowers\n".to_string(),
+            ),
+            ("codex", InstallScope::User) => (
+                PathBuf::from("~/.codex/instructions.md"),
+                "# Obra Superpowers skills available. See https://github.com/obra/superpowers\n".to_string(),
+            ),
+            ("codex", InstallScope::Project) => (
+                PathBuf::from(".codex/instructions.md"),
+                "# Obra Superpowers skills available. See https://github.com/obra/superpowers\n".to_string(),
+            ),
+            ("opencode", InstallScope::User) => (
+                PathBuf::from("~/.opencode/config.toml"),
+                "# superpowers = true\n# See https://github.com/obra/superpowers\n".to_string(),
+            ),
+            ("opencode", InstallScope::Project) => (
+                PathBuf::from(".opencode/config.toml"),
+                "# superpowers = true\n# See https://github.com/obra/superpowers\n".to_string(),
+            ),
+            _ => return None,
+        };
+        Some(Self {
+            agent: agent.to_string(),
+            scope,
+            target_path,
+            config_content,
+        })
+    }
+}
+```
+
+- [ ] **Step 4: Add ecosystem module and config**
+
+```rust
+// crates/shepherd-core/src/ecosystem/mod.rs
+pub mod superpowers;
+pub mod context_mode;
+```
+
+Add `pub mod ecosystem;` to `lib.rs`.
+
+Add to `ShepherdConfig` — the toggle lives in Shepherd's config, controls whether to auto-detect/offer install:
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EcosystemConfig {
+    #[serde(default = "default_true")]
+    pub auto_detect_superpowers: bool,
+    #[serde(default = "default_true")]
+    pub auto_detect_context_mode: bool,
+    #[serde(default = "default_true")]
+    pub offer_install_on_new_task: bool,
+}
+fn default_true() -> bool { true }
+```
+
+- [ ] **Step 5: Run tests to verify they pass**
+
+Run: `cargo test -p shepherd-core superpowers`
+Expected: PASS (7 tests)
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add crates/shepherd-core/src/ecosystem/ crates/shepherd-core/src/lib.rs crates/shepherd-core/src/config/types.rs
+git commit -m "feat: add Obra Superpowers auto-detection targeting agent-specific config dirs"
+```
+
+---
+
+### Task 19: context-mode Auto-Install
+
+**Goal:** Auto-detect and optionally install context-mode MCP server for supported agents. Detection and installation target the **agent's own config directory** — for Claude Code, this means writing to `~/.claude/settings.json` (user-scope) or `.claude/settings.json` (project-scope) to register the MCP server. Toggle lives in Shepherd's config.
+
+**Agent config locations for context-mode:**
+| Agent | User-scope MCP config | Project-scope MCP config |
+|-------|----------------------|--------------------------|
+| Claude Code | `~/.claude/settings.json` → `mcpServers` | `.claude/settings.json` → `mcpServers` |
+
+Note: context-mode is currently a Claude Code MCP server only. Other agents may gain support later.
+
+**Files:**
+- Create: `crates/shepherd-core/src/ecosystem/context_mode.rs`
+- Modify: `crates/shepherd-core/src/ecosystem/mod.rs` (already added in Task 18)
+- Test: inline tests in `context_mode.rs`
+
+- [ ] **Step 1: Write failing test for context-mode detection and install**
+
+```rust
+// crates/shepherd-core/src/ecosystem/context_mode.rs
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::super::superpowers::InstallScope;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_detect_not_installed() {
+        let tmp = TempDir::new().unwrap();
+        let result = detect_for_agent("claude-code", tmp.path(), None);
+        assert!(!result.installed);
+    }
+
+    #[test]
+    fn test_detect_claude_code_user_scope() {
+        let tmp = TempDir::new().unwrap();
+        // Simulate ~/.claude/settings.json with context-mode MCP registered
+        let claude_dir = tmp.path().join(".claude");
+        std::fs::create_dir_all(&claude_dir).unwrap();
+        std::fs::write(
+            claude_dir.join("settings.json"),
+            r#"{"mcpServers":{"context-mode":{"command":"npx","args":["-y","context-mode"]}}}"#,
+        ).unwrap();
+        let result = detect_for_agent("claude-code", tmp.path(), None);
+        assert!(result.installed);
+        assert_eq!(result.scope, InstallScope::User);
+    }
+
+    #[test]
+    fn test_detect_claude_code_project_scope() {
+        let tmp = TempDir::new().unwrap();
+        let home = tmp.path().join("home");
+        let project = tmp.path().join("project");
+        std::fs::create_dir_all(project.join(".claude")).unwrap();
+        std::fs::write(
+            project.join(".claude/settings.json"),
+            r#"{"mcpServers":{"context-mode":{"command":"npx"}}}"#,
+        ).unwrap();
+        let result = detect_for_agent("claude-code", &home, Some(&project));
+        assert!(result.installed);
+        assert_eq!(result.scope, InstallScope::Project);
+    }
+
+    #[test]
+    fn test_install_config_generates_mcp_json() {
+        let config = InstallConfig::for_agent("claude-code", InstallScope::User).unwrap();
+        assert!(config.mcp_server_json.contains("context-mode"));
+        assert!(config.target_path.to_string_lossy().contains(".claude"));
+    }
+
+    #[test]
+    fn test_install_config_project_scope() {
+        let config = InstallConfig::for_agent("claude-code", InstallScope::Project).unwrap();
+        assert!(config.mcp_server_json.contains("context-mode"));
+        assert!(config.target_path.to_string_lossy().contains(".claude"));
+    }
+
+    #[test]
+    fn test_supported_agents() {
+        assert!(is_context_mode_compatible("claude-code"));
+        assert!(!is_context_mode_compatible("codex"));
+        assert!(!is_context_mode_compatible("aider"));
+    }
+
+    #[test]
+    fn test_unsupported_agent_returns_none() {
+        let config = InstallConfig::for_agent("aider", InstallScope::User);
+        assert!(config.is_none());
+    }
+}
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `cargo test -p shepherd-core context_mode`
+Expected: FAIL — module not found.
+
+- [ ] **Step 3: Implement detection and install logic**
+
+```rust
+// crates/shepherd-core/src/ecosystem/context_mode.rs
+
+use std::path::{Path, PathBuf};
+use super::superpowers::InstallScope;
+
+#[derive(Debug, Clone)]
+pub struct DetectionResult {
+    pub installed: bool,
+    pub scope: InstallScope,
+    pub path: Option<PathBuf>,
+}
+
+/// Per-agent install config — targets the agent's own config directory
+#[derive(Debug, Clone)]
+pub struct InstallConfig {
+    pub agent: String,
+    pub scope: InstallScope,
+    /// Where to write (e.g., ~/.claude/settings.json or .claude/settings.json)
+    pub target_path: PathBuf,
+    /// MCP server JSON to merge into the agent's settings
+    pub mcp_server_json: String,
+}
+
+const CONTEXT_MODE_MCP_ENTRY: &str = r#""context-mode": {
+      "command": "npx",
+      "args": ["-y", "context-mode"],
+      "env": {}
+    }"#;
+
+/// Detect if context-mode is installed for a specific agent.
+/// Checks agent's own config directory, not Shepherd's.
+pub fn detect_for_agent(agent: &str, home: &Path, project_root: Option<&Path>) -> DetectionResult {
+    // Check project-scope first (higher priority)
+    if let Some(project) = project_root {
+        if let Some(result) = detect_project_scope(agent, project) {
+            return result;
+        }
+    }
+    detect_user_scope(agent, home)
+}
+
+fn detect_user_scope(agent: &str, home: &Path) -> DetectionResult {
+    let settings_path = match agent {
+        "claude-code" => home.join(".claude/settings.json"),
+        _ => return DetectionResult { installed: false, scope: InstallScope::User, path: None },
+    };
+    check_settings_file(&settings_path, InstallScope::User)
+}
+
+fn detect_project_scope(agent: &str, project: &Path) -> Option<DetectionResult> {
+    let settings_path = match agent {
+        "claude-code" => project.join(".claude/settings.json"),
+        _ => return None,
+    };
+    let result = check_settings_file(&settings_path, InstallScope::Project);
+    if result.installed { Some(result) } else { None }
+}
+
+fn check_settings_file(path: &Path, scope: InstallScope) -> DetectionResult {
+    if path.exists() {
+        let content = std::fs::read_to_string(path).unwrap_or_default();
+        if content.contains("context-mode") {
+            return DetectionResult {
+                installed: true,
+                scope,
+                path: Some(path.to_path_buf()),
+            };
+        }
+    }
+    DetectionResult { installed: false, scope, path: None }
+}
+
+/// Check if an agent supports context-mode integration
+pub fn is_context_mode_compatible(agent: &str) -> bool {
+    matches!(agent, "claude-code")
+}
+
+impl InstallConfig {
+    /// Create install config targeting the agent's own settings file.
+    /// Returns None for unsupported agents.
+    pub fn for_agent(agent: &str, scope: InstallScope) -> Option<Self> {
+        let target_path = match (agent, &scope) {
+            ("claude-code", InstallScope::User) => PathBuf::from("~/.claude/settings.json"),
+            ("claude-code", InstallScope::Project) => PathBuf::from(".claude/settings.json"),
+            _ => return None,
+        };
+        Some(Self {
+            agent: agent.to_string(),
+            scope,
+            target_path,
+            mcp_server_json: format!("{{\n  \"mcpServers\": {{\n    {CONTEXT_MODE_MCP_ENTRY}\n  }}\n}}"),
+        })
+    }
+}
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `cargo test -p shepherd-core context_mode`
+Expected: PASS (7 tests)
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add crates/shepherd-core/src/ecosystem/context_mode.rs
+git commit -m "feat: add context-mode auto-detection targeting agent's own MCP config"
+```
+
+---
+
 ## Summary
 
-This plan adds **16 tasks** across **4 chunks**, implementing all of Shepherd's unique differentiator features:
+This plan adds **19 tasks** across **5 chunks**, implementing all of Shepherd's unique differentiator features:
 
 | Chunk | Tasks | What It Builds |
 |-------|-------|----------------|
@@ -6289,7 +7006,8 @@ This plan adds **16 tasks** across **4 chunks**, implementing all of Shepherd's 
 | 2 | 5–8 | Image generation, multi-format export, logo gen UI, North Star 13-phase wizard |
 | 3 | 9–12 | Quality gate runner (auto-detect), plugin gates, PR pipeline, gate/PR frontend |
 | 4 | 13–16 | Trigger engine (3 detectors), toast UI, CLI polish (completions), integration tests |
+| 5 | 17–19 | nono.sh sandbox in PTY, Obra Superpowers auto-install, context-mode auto-install |
 
-**Total new files:** ~30 Rust + ~6 TypeScript
-**Total tests:** ~70+ unit tests + 8 integration tests
-**Key dependencies added:** reqwest, async-trait, image, base64, clap_complete, tempfile
+**Total new files:** ~33 Rust + ~6 TypeScript
+**Total tests:** ~86+ unit tests + 8 integration tests
+**Key dependencies added:** reqwest, async-trait, image, base64, clap_complete, tempfile, dirs
