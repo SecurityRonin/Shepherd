@@ -347,8 +347,9 @@ If you find Shepherd useful, star the repo. It helps others find it.
 - [North Star Advisor](https://northstaradvisor.app/) for product-market fit and strategic planning
 - [Obra Superpowers](https://github.com/obra/superpowers) for brainstorming, planning, and agentic development workflows
 - [nono.sh](https://nono.sh) for kernel-level agent sandboxing (Landlock on Linux, Seatbelt on macOS)
+- [context-mode](https://github.com/mksglu/context-mode) for intelligent context window management and token optimization
 
-Strategy to spec to plan to code. No vibe-and-pray. No agent escapes the sandbox.
+Strategy to spec to plan to code. No vibe-and-pray. No agent escapes the sandbox. Every token counts.
 
 ## License
 
