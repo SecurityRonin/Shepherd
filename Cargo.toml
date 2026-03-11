@@ -5,6 +5,9 @@ members = [
     "crates/shepherd-server",
     "crates/shepherd-cli",
 ]
+exclude = [
+    "src-tauri",
+]
 
 [workspace.package]
 version = "0.1.0"
