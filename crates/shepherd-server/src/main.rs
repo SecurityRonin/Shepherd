@@ -61,6 +61,7 @@ async fn main() -> anyhow::Result<()> {
         yolo,
         pty,
         event_tx,
+        llm_provider: None,
     });
 
     let app = shepherd_server::build_router(state.clone());

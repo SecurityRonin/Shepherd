@@ -14,4 +14,5 @@ pub struct AppState {
     pub yolo: YoloEngine,
     pub pty: PtyManager,
     pub event_tx: broadcast::Sender<ServerEvent>,
+    pub llm_provider: Option<Box<dyn shepherd_core::llm::LlmProvider>>,
 }
