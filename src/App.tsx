@@ -1,6 +1,7 @@
 import React, { useCallback } from "react";
 import { Layout } from "./features/shared/Layout";
 import { KanbanBoard } from "./features/kanban/KanbanBoard";
+import { FocusView } from "./features/focus/FocusView";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useStore } from "./store";
@@ -49,9 +50,7 @@ const App: React.FC = () => {
       {viewMode === "overview" ? (
         <KanbanBoard />
       ) : (
-        <div className="flex items-center justify-center h-full text-shepherd-muted">
-          <p className="text-sm">Focus panel will render here (Task 11)</p>
-        </div>
+        <FocusView />
       )}
     </Layout>
   );
