@@ -3,27 +3,32 @@ import type { StalenessLevel } from "../../hooks/useTaskStaleness";
 
 export interface StatusIndicatorProps {
   level: StalenessLevel;
+  size?: "sm" | "md";
   "data-testid"?: string;
 }
 
-const STALENESS_COLORS: Record<StalenessLevel, string> = {
-  fresh: "#3fb950",
-  stale: "#d29922",
-  critical: "#f85149",
+const LEVEL_COLORS: Record<StalenessLevel, string> = {
+  fresh: "bg-shepherd-green",
+  stale: "bg-shepherd-yellow",
+  critical: "bg-shepherd-red animate-pulse",
+};
+
+const LEVEL_LABELS: Record<StalenessLevel, string> = {
+  fresh: "Active",
+  stale: "Idle >30s",
+  critical: "Idle >2min",
 };
 
 export const StatusIndicator: React.FC<StatusIndicatorProps> = ({
   level,
+  size = "sm",
   "data-testid": testId,
 }) => {
-  const color = STALENESS_COLORS[level];
+  const dotSize = size === "sm" ? "w-2 h-2" : "w-2.5 h-2.5";
 
   return (
-    <span
-      data-testid={testId}
-      className="inline-block h-2 w-2 rounded-full"
-      style={{ backgroundColor: color }}
-      title={`Status: ${level}`}
-    />
+    <div className="flex items-center gap-1" title={LEVEL_LABELS[level]} data-testid={testId}>
+      <div className={`${dotSize} rounded-full ${LEVEL_COLORS[level]}`} />
+    </div>
   );
 };

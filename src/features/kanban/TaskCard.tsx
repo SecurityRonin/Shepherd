@@ -45,15 +45,17 @@ export const TaskCard: React.FC<TaskCardProps> = ({
     <div
       className={`rounded-md border p-3 cursor-pointer transition-colors hover:border-shepherd-text/30 ${
         isError
-          ? "border-red-500/40 bg-red-500/5"
-          : "border-shepherd-border bg-shepherd-surface"
+          ? "border-shepherd-red/40 bg-red-500/5"
+          : isInput
+            ? "border-shepherd-orange/40 bg-shepherd-surface"
+            : "border-shepherd-border bg-shepherd-surface"
       }`}
       onClick={onClick}
       role="article"
     >
       {/* Row 1: Title + staleness dot */}
       <div className="flex items-center gap-2">
-        <span className="flex-1 text-sm font-medium text-shepherd-text truncate">
+        <span className="flex-1 text-sm font-medium text-shepherd-text leading-tight line-clamp-2">
           {task.title}
         </span>
         {isActive && (
@@ -98,7 +100,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
 
       {isError && (
         <div className="mt-2 text-xs text-red-400">
-          Task encountered an error
+          Error — click to investigate
         </div>
       )}
 

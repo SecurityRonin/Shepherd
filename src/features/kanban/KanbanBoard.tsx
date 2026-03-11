@@ -74,6 +74,7 @@ export const KanbanBoard: React.FC = () => {
             label={col.label}
             tasks={columnTasks}
             accentColor={col.accentColor}
+            isDraggable={col.status === "queued"}
             renderCard={(task) => {
               const taskPerms = pendingPermissions.filter(
                 (p) => p.task_id === task.id,
