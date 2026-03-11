@@ -192,7 +192,7 @@ GUI and CLI share the same server. Same state. Use both.
 
 **Logo Generator**: pick a style (minimal, geometric, mascot, abstract), get 4 variants, auto-export to SVG, PNG (all sizes), favicon, apple-touch-icon, macOS .icns, Windows .ico.
 
-**Full-stack SDD (Spec-Driven Development)**: powered by [North Star Advisor](https://northstaradvisor.app/) + [Obra Superpowers](https://obra.ai). North Star generates strategic foundations (brand guidelines, competitive landscape, user personas, architecture blueprints). Obra Superpowers turns ideas into specs through structured brainstorming, then specs into bite-sized TDD plans. Output feeds into every future agent session as context. Strategy to spec to plan to code.
+**Full-stack SDD (Spec-Driven Development)**: powered by [North Star Advisor](https://northstaradvisor.app/) + [Obra Superpowers](https://github.com/obra/superpowers). North Star generates strategic foundations (brand guidelines, competitive landscape, user personas, architecture blueprints). Obra Superpowers turns ideas into specs through structured brainstorming, then specs into bite-sized TDD plans. Output feeds into every future agent session as context. Strategy to spec to plan to code.
 
 ## Architecture
 
@@ -343,7 +343,7 @@ If you find Shepherd useful, star the repo. It helps others find it.
 ## Powered by full-stack SDD (Spec-Driven Development)
 
 - [North Star Advisor](https://northstaradvisor.app/) for product-market fit and strategic planning
-- [Obra Superpowers](https://obra.ai) for brainstorming, planning, and agentic development workflows
+- [Obra Superpowers](https://github.com/obra/superpowers) for brainstorming, planning, and agentic development workflows
 
 Strategy to spec to plan to code. No vibe-and-pray.
 
