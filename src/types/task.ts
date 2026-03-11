@@ -1,5 +1,12 @@
 export type TaskStatus = "queued" | "running" | "input" | "review" | "error" | "done";
 
+export interface FileDiff {
+  file_path: string;
+  before_content: string;
+  after_content: string;
+  language: string;
+}
+
 export interface Task {
   id: number;
   title: string;
@@ -12,6 +19,7 @@ export interface Task {
   created_at: string;
   updated_at: string;
   gate_results?: { gate: string; passed: boolean }[];
+  diffs?: FileDiff[];
 }
 
 export interface CreateTask {

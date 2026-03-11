@@ -1,8 +1,38 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { Task } from "../../../types/task";
 import { useStore } from "../../../store";
+
+// Mock Monaco DiffEditor — requires browser APIs not available in jsdom
+vi.mock("@monaco-editor/react", () => ({
+  DiffEditor: () => <div data-testid="mock-diff-editor" />,
+}));
+
+// Mock xterm.js — requires canvas/WebGL not available in jsdom
+vi.mock("@xterm/xterm", () => {
+  class MockTerminal {
+    open = vi.fn();
+    dispose = vi.fn();
+    loadAddon = vi.fn();
+    onData = vi.fn();
+    write = vi.fn();
+    cols = 80;
+    rows = 24;
+  }
+  return { Terminal: MockTerminal };
+});
+
+vi.mock("@xterm/addon-fit", () => {
+  class MockFitAddon {
+    fit = vi.fn();
+    activate = vi.fn();
+    dispose = vi.fn();
+  }
+  return { FitAddon: MockFitAddon };
+});
+
+vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
 
 // --- Test helpers ---
 
@@ -163,9 +193,9 @@ describe("FocusView", () => {
 
     // SessionSidebar is present (has Sessions heading)
     expect(screen.getByText("Sessions")).toBeInTheDocument();
-    // Terminal placeholder
-    expect(screen.getByText("Terminal (Task 12)")).toBeInTheDocument();
-    // DiffViewer placeholder
-    expect(screen.getByText("DiffViewer (Task 13)")).toBeInTheDocument();
+    // Terminal component (rendered with toolbar label)
+    expect(screen.getByText("Terminal")).toBeInTheDocument();
+    // DiffViewer shows empty state when no diffs
+    expect(screen.getByText("No file changes yet")).toBeInTheDocument();
   });
 });

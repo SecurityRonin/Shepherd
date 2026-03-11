@@ -1,5 +1,5 @@
 import type { StateCreator } from "zustand";
-import type { Task, TaskStatus } from "../types/task";
+import type { Task, TaskStatus, FileDiff } from "../types/task";
 import type { PermissionEvent, TaskEvent } from "../types/events";
 
 export interface TasksSlice {
@@ -8,6 +8,7 @@ export interface TasksSlice {
   setTasks: (tasks: TaskEvent[]) => void;
   upsertTask: (event: TaskEvent) => void;
   removeTask: (id: number) => void;
+  setTaskDiffs: (taskId: number, diffs: FileDiff[]) => void;
   setPendingPermissions: (perms: PermissionEvent[]) => void;
   addPendingPermission: (perm: PermissionEvent) => void;
   removePendingPermission: (permId: number) => void;
@@ -64,6 +65,18 @@ export const createTasksSlice: StateCreator<TasksSlice, [], [], TasksSlice> = (s
     set((state) => {
       const { [id]: _, ...remaining } = state.tasks;
       return { tasks: remaining };
+    });
+  },
+  setTaskDiffs: (taskId, diffs) => {
+    set((state) => {
+      const task = state.tasks[taskId];
+      if (!task) return state;
+      return {
+        tasks: {
+          ...state.tasks,
+          [taskId]: { ...task, diffs },
+        },
+      };
     });
   },
   setPendingPermissions: (perms) => {

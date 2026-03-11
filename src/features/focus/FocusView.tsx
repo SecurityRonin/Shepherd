@@ -2,6 +2,9 @@ import React, { useState, useCallback, useRef } from "react";
 import { useStore } from "../../store";
 import { AgentBadge } from "../shared/AgentBadge";
 import { SessionSidebar } from "./SessionSidebar";
+import { Terminal } from "./Terminal";
+import { DiffViewer } from "./DiffViewer";
+import { PermissionPrompt } from "./PermissionPrompt";
 
 const STATUS_COLORS: Record<string, string> = {
   queued: "bg-shepherd-muted",
@@ -32,7 +35,6 @@ export function formatTimeSince(dateStr: string): string {
 export const FocusView: React.FC = () => {
   const focusedTaskId = useStore((s) => s.focusedTaskId);
   const tasks = useStore((s) => s.tasks);
-  const pendingPermissions = useStore((s) => s.pendingPermissions);
 
   const task = focusedTaskId !== null ? tasks[focusedTaskId] : undefined;
 
@@ -80,11 +82,6 @@ export const FocusView: React.FC = () => {
   }
 
   const hasPermissionPrompt = task.status === "input";
-  // taskPermissions will be used by PermissionPrompt (Task 14)
-  const _taskPermissions = pendingPermissions.filter(
-    (p) => p.task_id === task.id,
-  );
-  void _taskPermissions;
   const dotColor = STATUS_COLORS[task.status] ?? "bg-shepherd-muted";
 
   return (
@@ -119,18 +116,12 @@ export const FocusView: React.FC = () => {
         <div className="flex-1 flex min-h-0">
           {/* Center panel: Terminal + Permission prompt */}
           <div className="flex-1 flex flex-col min-w-0">
-            {/* Terminal placeholder */}
-            <div className="flex-1 flex items-center justify-center text-shepherd-muted text-sm">
-              Terminal (Task 12)
-            </div>
+            {/* Terminal */}
+            <Terminal taskId={task.id} />
 
             {/* Permission prompt area (shown when task.status === "input") */}
             {hasPermissionPrompt && (
-              <div className="border-t border-shepherd-border p-3 bg-shepherd-surface">
-                <div className="flex items-center justify-center text-shepherd-muted text-sm">
-                  PermissionPrompt (Task 14)
-                </div>
-              </div>
+              <PermissionPrompt taskId={task.id} />
             )}
           </div>
 
@@ -140,12 +131,12 @@ export const FocusView: React.FC = () => {
             className="w-1 cursor-col-resize bg-shepherd-border hover:bg-shepherd-accent transition-colors flex-shrink-0"
           />
 
-          {/* Right panel: DiffViewer placeholder */}
+          {/* Right panel: DiffViewer */}
           <div
             style={{ width: rightPanelWidth }}
-            className="flex-shrink-0 flex items-center justify-center text-shepherd-muted text-sm border-l border-shepherd-border"
+            className="flex-shrink-0 flex flex-col border-l border-shepherd-border min-h-0"
           >
-            DiffViewer (Task 13)
+            <DiffViewer taskId={task.id} />
           </div>
         </div>
       </div>
