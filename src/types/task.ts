@@ -11,6 +11,7 @@ export interface Task {
   status: TaskStatus;
   created_at: string;
   updated_at: string;
+  gate_results?: { gate: string; passed: boolean }[];
 }
 
 export interface CreateTask {

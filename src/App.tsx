@@ -1,5 +1,6 @@
 import React, { useCallback } from "react";
 import { Layout } from "./features/shared/Layout";
+import { KanbanBoard } from "./features/kanban/KanbanBoard";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useStore } from "./store";
@@ -46,9 +47,7 @@ const App: React.FC = () => {
   return (
     <Layout>
       {viewMode === "overview" ? (
-        <div className="flex items-center justify-center h-full text-shepherd-muted">
-          <p className="text-sm">Kanban board will render here (Task 8)</p>
-        </div>
+        <KanbanBoard />
       ) : (
         <div className="flex items-center justify-center h-full text-shepherd-muted">
           <p className="text-sm">Focus panel will render here (Task 11)</p>
