@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { useStore } from "../../store";
 import { KanbanColumn } from "./KanbanColumn";
 import { TaskCard } from "./TaskCard";
@@ -61,7 +61,35 @@ export const KanbanBoard: React.FC = () => {
   const pendingPermissions = useStore((s) => s.pendingPermissions);
   const enterFocus = useStore((s) => s.enterFocus);
 
-  const grouped = useMemo(() => groupAndSortTasks(tasks), [tasks]);
+  const [queuedOrder, setQueuedOrder] = useState<number[] | null>(null);
+
+  const grouped = useMemo(() => {
+    const result = groupAndSortTasks(tasks);
+
+    // Apply custom queued order if set
+    if (queuedOrder) {
+      const queuedById = new Map(result.queued.map((t) => [t.id, t]));
+      const ordered: Task[] = [];
+      for (const id of queuedOrder) {
+        const task = queuedById.get(id);
+        if (task) {
+          ordered.push(task);
+          queuedById.delete(id);
+        }
+      }
+      // Append any new tasks not in the custom order
+      for (const task of queuedById.values()) {
+        ordered.push(task);
+      }
+      result.queued = ordered;
+    }
+
+    return result;
+  }, [tasks, queuedOrder]);
+
+  const handleQueuedReorder = useCallback((newOrder: number[]) => {
+    setQueuedOrder(newOrder);
+  }, []);
 
   return (
     <div className="flex h-full gap-3 overflow-x-auto p-4">
@@ -75,6 +103,7 @@ export const KanbanBoard: React.FC = () => {
             tasks={columnTasks}
             accentColor={col.accentColor}
             isDraggable={col.status === "queued"}
+            onReorder={col.status === "queued" ? handleQueuedReorder : undefined}
             renderCard={(task) => {
               const taskPerms = pendingPermissions.filter(
                 (p) => p.task_id === task.id,

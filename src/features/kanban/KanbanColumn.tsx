@@ -1,5 +1,6 @@
 import React from "react";
 import type { Task, TaskStatus } from "../../types/task";
+import { useDragAndDrop } from "./useDragAndDrop";
 
 export interface KanbanColumnProps {
   status: TaskStatus;
@@ -7,6 +8,7 @@ export interface KanbanColumnProps {
   tasks: Task[];
   renderCard: (task: Task) => React.ReactNode;
   isDraggable?: boolean;
+  onReorder?: (newOrder: number[]) => void;
   accentColor: string;
 }
 
@@ -24,8 +26,16 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
   label,
   tasks,
   renderCard,
+  isDraggable,
+  onReorder,
   accentColor,
 }) => {
+  const taskIds = tasks.map((t) => t.id);
+  const { dragState, handleDragStart, handleDragOver, handleDragEnd, handleDrop } =
+    useDragAndDrop(taskIds, onReorder ?? (() => {}));
+
+  const canDrag = isDraggable && !!onReorder;
+
   return (
     <div className={`flex min-w-[260px] max-w-[320px] flex-1 flex-col rounded-lg bg-shepherd-surface/50 border ${COLUMN_BG[status]}`}>
       {/* Header */}
@@ -47,7 +57,29 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
             No tasks
           </div>
         ) : (
-          tasks.map((task) => renderCard(task))
+          tasks.map((task, index) =>
+            canDrag ? (
+              <div
+                key={task.id}
+                draggable
+                onDragStart={handleDragStart(task.id)}
+                onDragOver={handleDragOver(index)}
+                onDragEnd={handleDragEnd}
+                onDrop={handleDrop(index)}
+                className={`cursor-grab active:cursor-grabbing ${
+                  dragState.draggedId === task.id ? "opacity-40" : ""
+                } ${
+                  dragState.overIndex === index && dragState.draggedId !== task.id
+                    ? "border-t-2 border-shepherd-accent"
+                    : ""
+                }`}
+              >
+                {renderCard(task)}
+              </div>
+            ) : (
+              renderCard(task)
+            ),
+          )
         )}
       </div>
     </div>
