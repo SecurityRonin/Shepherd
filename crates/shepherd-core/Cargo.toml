@@ -20,5 +20,9 @@ async-trait = "0.1"
 base64 = "0.22"
 image = "0.25"
 
+[[test]]
+name = "lifecycle_test"
+path = "../../tests/integration/lifecycle_test.rs"
+
 [dev-dependencies]
 tempfile = "3"
