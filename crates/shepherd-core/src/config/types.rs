@@ -14,6 +14,8 @@ pub struct ShepherdConfig {
     pub default_agent: String,
     #[serde(default)]
     pub sound_enabled: bool,
+    #[serde(default)]
+    pub sandbox: SandboxConfig,
 }
 
 fn default_port() -> u16 { 7532 }
@@ -31,6 +33,29 @@ impl Default for ShepherdConfig {
             default_isolation: default_isolation(),
             default_agent: default_agent(),
             sound_enabled: false,
+            sandbox: SandboxConfig::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SandboxConfig {
+    #[serde(default = "default_sandbox_enabled")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub extra_blocked_paths: Vec<String>,
+    #[serde(default)]
+    pub block_network: bool,
+}
+
+fn default_sandbox_enabled() -> bool { true }
+
+impl Default for SandboxConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_sandbox_enabled(),
+            extra_blocked_paths: vec![],
+            block_network: false,
         }
     }
 }

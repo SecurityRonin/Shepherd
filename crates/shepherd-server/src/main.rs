@@ -1,4 +1,4 @@
-use shepherd_core::{adapters::AdapterRegistry, config, db, pty::PtyManager, yolo::YoloEngine};
+use shepherd_core::{adapters::AdapterRegistry, config, db, pty::{PtyManager, sandbox::SandboxProfile}, yolo::YoloEngine};
 use shepherd_server::state::AppState;
 use std::sync::Arc;
 use tokio::sync::{broadcast, Mutex};
@@ -37,7 +37,14 @@ async fn main() -> anyhow::Result<()> {
 
     let yolo = YoloEngine::load(&config::shepherd_dir().join("rules.yaml"))?;
 
-    let pty = PtyManager::new(max_agents);
+    let sandbox = {
+        let mut profile = SandboxProfile::default();
+        profile.enabled = cfg.sandbox.enabled;
+        profile.block_network = cfg.sandbox.block_network;
+        profile.blocked_paths.extend(cfg.sandbox.extra_blocked_paths.iter().cloned());
+        profile
+    };
+    let pty = PtyManager::new(max_agents, sandbox);
 
     let (event_tx, _) = broadcast::channel(256);
 

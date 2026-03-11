@@ -17,7 +17,7 @@ async fn start_test_server() -> (String, tokio::task::JoinHandle<()>) {
         let yolo = shepherd_core::yolo::YoloEngine::new(
             shepherd_core::yolo::rules::RuleSet { deny: vec![], allow: vec![] },
         );
-        let pty = shepherd_core::pty::PtyManager::new(cfg.max_agents);
+        let pty = shepherd_core::pty::PtyManager::new(cfg.max_agents, shepherd_core::pty::sandbox::SandboxProfile::disabled());
         let (event_tx, _) = tokio::sync::broadcast::channel(256);
 
         let state = std::sync::Arc::new(shepherd_server::state::AppState {

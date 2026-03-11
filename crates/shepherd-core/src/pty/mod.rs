@@ -1,7 +1,9 @@
+pub mod sandbox;
 pub mod status;
 
 use anyhow::{Context, Result};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+use sandbox::SandboxProfile;
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::Arc;
@@ -26,15 +28,23 @@ pub struct PtyManager {
     handles: Arc<Mutex<HashMap<i64, PtyHandle>>>,
     output_tx: broadcast::Sender<PtyOutput>,
     max_agents: usize,
+    sandbox: SandboxProfile,
 }
 
 impl PtyManager {
-    pub fn new(max_agents: usize) -> Self {
+    pub fn new(max_agents: usize, sandbox: SandboxProfile) -> Self {
+        let sandbox = if sandbox.enabled && !SandboxProfile::is_available() {
+            tracing::warn!("nono.sh not found — sandbox disabled. Install from https://nono.sh");
+            SandboxProfile::disabled()
+        } else {
+            sandbox
+        };
         let (output_tx, _) = broadcast::channel(1024);
         Self {
             handles: Arc::new(Mutex::new(HashMap::new())),
             output_tx,
             max_agents,
+            sandbox,
         }
     }
 
@@ -66,8 +76,9 @@ impl PtyManager {
             pixel_height: 0,
         })?;
 
-        let mut cmd = CommandBuilder::new(command);
-        cmd.args(args);
+        let (actual_cmd, actual_args) = self.sandbox.wrap_command(command, args);
+        let mut cmd = CommandBuilder::new(&actual_cmd);
+        cmd.args(&actual_args);
         cmd.cwd(cwd);
 
         let child = pair
