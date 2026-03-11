@@ -6,6 +6,7 @@ import { CommandPalette } from "./features/palette/CommandPalette";
 import { NewTaskDialog } from "./features/tasks/NewTaskDialog";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
+import { useNotifications } from "./hooks/useNotifications";
 import { useStore } from "./store";
 import type { ServerEvent } from "./types";
 import type { ConnectionStatus } from "./lib/ws";
@@ -50,6 +51,7 @@ const App: React.FC = () => {
 
   const wsRef = useWebSocket(handleServerEvent, handleStatusChange);
   useKeyboardShortcuts(wsRef);
+  useNotifications();
 
   return (
     <Layout>
