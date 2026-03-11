@@ -6996,9 +6996,211 @@ git commit -m "feat: add context-mode auto-detection targeting agent's own MCP c
 
 ---
 
+### Task 20: New Project Wizard — Guided Full-Stack SDD Journey
+
+**Goal:** Chain name gen → logo gen → North Star → Superpowers setup into an optional guided wizard for new projects. Each tool stays independently accessible (via Cmd+K, sidebar, triggers). The wizard just provides a "starting from zero" guided flow. Users can skip any step, jump to any step, or dismiss the wizard entirely. Always available from the sidebar and Cmd+K.
+
+**Journey order (strategic → tactical → identity):**
+1. **North Star PMF** — define what you're building, who it's for, success metrics, brand guidelines
+2. **Obra Superpowers** — brainstorm → spec → plan (informed by North Star strategy)
+3. **Brand Name Gen** — name the product (informed by brand guidelines + target audience from North Star)
+4. **Logo Gen** — visual identity (informed by name + brand personality from North Star)
+
+**Design principles:**
+- **Optional, never forced** — wizard is offered on first project creation, always accessible from sidebar + Cmd+K, but never blocks workflow
+- **Skip/jump anywhere** — stepper shows all 4 phases, user can click any phase directly
+- **Each step independent** — completing North Star doesn't require Superpowers; skipping name gen doesn't break logo gen
+- **Progress persisted** — wizard state saved per-project in SQLite so user can return later
+- **Results flow forward** — North Star brand guidelines pre-fill name gen prompts, chosen name pre-fills logo gen, etc.
+
+**Files:**
+- Create: `crates/shepherd-core/src/wizard/mod.rs`
+- Create: `crates/shepherd-core/src/wizard/state.rs`
+- Create: `src/features/wizard/ProjectWizard.tsx`
+- Create: `src/features/wizard/WizardStepper.tsx`
+- Modify: `crates/shepherd-core/src/db/mod.rs` (add wizard_state table)
+- Modify: `crates/shepherd-core/src/lib.rs` (add module)
+- Test: inline tests in `state.rs`
+
+- [ ] **Step 1: Write failing test for wizard state machine**
+
+```rust
+// crates/shepherd-core/src/wizard/state.rs
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_wizard_starts_at_north_star() {
+        let state = WizardState::new("my-project");
+        assert_eq!(state.current_phase, WizardPhase::NorthStar);
+        assert!(!state.is_complete());
+    }
+
+    #[test]
+    fn test_skip_advances_phase() {
+        let mut state = WizardState::new("my-project");
+        state.skip_current();
+        assert_eq!(state.current_phase, WizardPhase::SuperpowersSetup);
+        assert_eq!(state.phases[0].status, PhaseStatus::Skipped);
+    }
+
+    #[test]
+    fn test_complete_advances_phase() {
+        let mut state = WizardState::new("my-project");
+        state.complete_current("north-star-done".into());
+        assert_eq!(state.current_phase, WizardPhase::SuperpowersSetup);
+        assert_eq!(state.phases[0].status, PhaseStatus::Completed);
+        assert_eq!(state.phases[0].result.as_deref(), Some("north-star-done"));
+    }
+
+    #[test]
+    fn test_jump_to_phase() {
+        let mut state = WizardState::new("my-project");
+        state.jump_to(WizardPhase::NorthStar);
+        assert_eq!(state.current_phase, WizardPhase::NorthStar);
+    }
+
+    #[test]
+    fn test_all_complete_or_skipped_marks_done() {
+        let mut state = WizardState::new("my-project");
+        state.complete_current("north-star-done".into()); // north star
+        state.skip_current(); // superpowers
+        state.complete_current("acme-tools".into()); // name gen
+        state.skip_current(); // logo
+        assert!(state.is_complete());
+    }
+
+    #[test]
+    fn test_results_flow_forward() {
+        let mut state = WizardState::new("my-project");
+        state.complete_current("pmf-analysis".into());
+        // Superpowers setup should have access to North Star results
+        assert_eq!(state.get_result(WizardPhase::NorthStar).as_deref(), Some("pmf-analysis"));
+    }
+}
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `cargo test -p shepherd-core wizard`
+Expected: FAIL — module not found.
+
+- [ ] **Step 3: Implement wizard state machine**
+
+```rust
+// crates/shepherd-core/src/wizard/state.rs
+
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum WizardPhase {
+    NameGen,
+    LogoGen,
+    NorthStar,
+    SuperpowersSetup,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum PhaseStatus {
+    Pending,
+    InProgress,
+    Completed,
+    Skipped,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PhaseState {
+    pub phase: WizardPhase,
+    pub status: PhaseStatus,
+    pub result: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WizardState {
+    pub project_id: String,
+    pub current_phase: WizardPhase,
+    pub phases: Vec<PhaseState>,
+}
+
+impl WizardState {
+    pub fn new(project_id: &str) -> Self {
+        Self {
+            project_id: project_id.to_string(),
+            current_phase: WizardPhase::NorthStar,
+            phases: vec![
+                PhaseState { phase: WizardPhase::NorthStar, status: PhaseStatus::Pending, result: None },
+                PhaseState { phase: WizardPhase::SuperpowersSetup, status: PhaseStatus::Pending, result: None },
+                PhaseState { phase: WizardPhase::NameGen, status: PhaseStatus::Pending, result: None },
+                PhaseState { phase: WizardPhase::LogoGen, status: PhaseStatus::Pending, result: None },
+            ],
+        }
+    }
+
+    pub fn skip_current(&mut self) {
+        if let Some(phase) = self.phases.iter_mut().find(|p| p.phase == self.current_phase) {
+            phase.status = PhaseStatus::Skipped;
+        }
+        self.advance();
+    }
+
+    pub fn complete_current(&mut self, result: String) {
+        if let Some(phase) = self.phases.iter_mut().find(|p| p.phase == self.current_phase) {
+            phase.status = PhaseStatus::Completed;
+            phase.result = Some(result);
+        }
+        self.advance();
+    }
+
+    pub fn jump_to(&mut self, target: WizardPhase) {
+        self.current_phase = target;
+    }
+
+    pub fn is_complete(&self) -> bool {
+        self.phases.iter().all(|p| matches!(p.status, PhaseStatus::Completed | PhaseStatus::Skipped))
+    }
+
+    pub fn get_result(&self, phase: WizardPhase) -> Option<String> {
+        self.phases.iter().find(|p| p.phase == phase).and_then(|p| p.result.clone())
+    }
+
+    fn advance(&mut self) {
+        let order = [WizardPhase::NorthStar, WizardPhase::SuperpowersSetup, WizardPhase::NameGen, WizardPhase::LogoGen];
+        let current_idx = order.iter().position(|p| *p == self.current_phase).unwrap_or(0);
+        if current_idx + 1 < order.len() {
+            self.current_phase = order[current_idx + 1].clone();
+        }
+    }
+}
+```
+
+- [ ] **Step 4: Add wizard module**
+
+```rust
+// crates/shepherd-core/src/wizard/mod.rs
+pub mod state;
+```
+
+Add `pub mod wizard;` to `lib.rs`.
+
+- [ ] **Step 5: Run tests to verify they pass**
+
+Run: `cargo test -p shepherd-core wizard`
+Expected: PASS (6 tests)
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add crates/shepherd-core/src/wizard/ crates/shepherd-core/src/lib.rs
+git commit -m "feat: add New Project Wizard state machine with skip/jump/flow-forward"
+```
+
+---
+
 ## Summary
 
-This plan adds **19 tasks** across **5 chunks**, implementing all of Shepherd's unique differentiator features:
+This plan adds **20 tasks** across **6 chunks**, implementing all of Shepherd's unique differentiator features:
 
 | Chunk | Tasks | What It Builds |
 |-------|-------|----------------|
@@ -7007,7 +7209,8 @@ This plan adds **19 tasks** across **5 chunks**, implementing all of Shepherd's 
 | 3 | 9–12 | Quality gate runner (auto-detect), plugin gates, PR pipeline, gate/PR frontend |
 | 4 | 13–16 | Trigger engine (3 detectors), toast UI, CLI polish (completions), integration tests |
 | 5 | 17–19 | nono.sh sandbox in PTY, Obra Superpowers auto-install, context-mode auto-install |
+| 6 | 20 | New Project Wizard — guided full-stack SDD journey (name → logo → North Star → Superpowers) |
 
-**Total new files:** ~33 Rust + ~6 TypeScript
-**Total tests:** ~86+ unit tests + 8 integration tests
+**Total new files:** ~36 Rust + ~8 TypeScript
+**Total tests:** ~92+ unit tests + 8 integration tests
 **Key dependencies added:** reqwest, async-trait, image, base64, clap_complete, tempfile, dirs
