@@ -1273,6 +1273,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "portpicker"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "be97d76faf1bfab666e1375477b23fde79eccf0276e9b63b92a39d676a889ba9"
+dependencies = [
+ "rand",
+]
+
+[[package]]
 name = "potential_utf"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1764,6 +1773,8 @@ dependencies = [
  "anyhow",
  "axum",
  "futures",
+ "portpicker",
+ "reqwest",
  "rusqlite",
  "serde",
  "serde_json",

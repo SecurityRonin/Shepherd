@@ -1,28 +1,8 @@
-pub mod routes;
-pub mod state;
-pub mod ws;
-
-use axum::{
-    routing::{delete, get, post},
-    Router,
-};
 use shepherd_core::{adapters::AdapterRegistry, config, db, pty::PtyManager, yolo::YoloEngine};
-use state::AppState;
+use shepherd_server::state::AppState;
 use std::sync::Arc;
 use tokio::sync::{broadcast, Mutex};
-use tower_http::cors::CorsLayer;
 use tracing_subscriber::EnvFilter;
-
-pub fn build_router(state: Arc<AppState>) -> Router {
-    Router::new()
-        .route("/api/health", get(routes::health::health))
-        .route("/api/tasks", get(routes::tasks::list_tasks))
-        .route("/api/tasks", post(routes::tasks::create_task))
-        .route("/api/tasks/{id}", delete(routes::tasks::delete_task))
-        .route("/ws", get(ws::ws_handler))
-        .layer(CorsLayer::permissive())
-        .with_state(state)
-}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -83,7 +63,7 @@ async fn main() -> anyhow::Result<()> {
         event_tx,
     });
 
-    let app = build_router(state.clone());
+    let app = shepherd_server::build_router(state.clone());
 
     let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{port}")).await?;
     tracing::info!("Shepherd server listening on http://127.0.0.1:{port}");
