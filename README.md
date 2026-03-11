@@ -19,8 +19,9 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/sponsors/h4x0r"><img src="https://img.shields.io/badge/sponsor-♥-ea4aaa" alt="Sponsor" /></a>
   <img src="https://img.shields.io/badge/status-alpha-orange" alt="Status: Alpha" />
-  <img src="https://img.shields.io/badge/license-Apache%202.0-green" alt="License: MIT" />
+  <img src="https://img.shields.io/badge/license-Apache%202.0-green" alt="License: Apache 2.0" />
   <img src="https://img.shields.io/badge/binary-~600KB-blue" alt="Binary: ~600KB" />
   <img src="https://img.shields.io/badge/platform-macOS%20·%20Linux%20·%20Windows-lightgrey" alt="Platforms" />
 </p>
