@@ -1,0 +1,25 @@
+[agent]
+name = "Gemini CLI"
+command = "gemini"
+args = []
+args_interactive = []
+version_check = "gemini --version"
+icon = "gemini"
+
+[status]
+working_patterns = ["Reading ", "Writing ", "Thinking ", "Generating "]
+idle_patterns = ["$ ", "gemini> "]
+input_patterns = ["[y/n", "Allow?", "Confirm"]
+error_patterns = ["Error:", "ERROR:", "failed"]
+
+[permissions]
+approve = "y\n"
+approve_all = "y\n"
+deny = "n\n"
+
+[capabilities]
+supports_hooks = false
+supports_prompt_arg = true
+supports_resume = false
+supports_mcp = false
+supports_worktree = false

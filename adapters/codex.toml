@@ -1,0 +1,25 @@
+[agent]
+name = "Codex CLI"
+command = "codex"
+args = ["--full-auto"]
+args_interactive = []
+version_check = "codex --version"
+icon = "codex"
+
+[status]
+working_patterns = ["Reading ", "Writing ", "Running ", "Searching "]
+idle_patterns = ["$ ", "codex> "]
+input_patterns = ["[y/n", "approve", "Allow?"]
+error_patterns = ["Error:", "error:", "FAILED"]
+
+[permissions]
+approve = "y\n"
+approve_all = "Y\n"
+deny = "n\n"
+
+[capabilities]
+supports_hooks = false
+supports_prompt_arg = true
+supports_resume = false
+supports_mcp = false
+supports_worktree = true
