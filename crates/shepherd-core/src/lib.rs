@@ -9,4 +9,5 @@ pub mod namegen;
 pub mod northstar;
 pub mod pr;
 pub mod pty;
+pub mod triggers;
 pub mod yolo;
