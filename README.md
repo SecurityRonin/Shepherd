@@ -112,6 +112,8 @@ allow:
 
 Every action is logged. Auto-approved or manual. Full audit trail in SQLite.
 
+**Kernel-level guardrails via [nono.sh](https://nono.sh):** Even in YOLO mode, agents run inside a kernel-enforced sandbox. SSH keys, AWS credentials, and shell configs are blocked by default. Child processes inherit all restrictions. No API to escape, not even for nono itself.
+
 ### Quality gates that block bad PRs
 
 When a task enters Review, gates run automatically:
@@ -344,8 +346,9 @@ If you find Shepherd useful, star the repo. It helps others find it.
 
 - [North Star Advisor](https://northstaradvisor.app/) for product-market fit and strategic planning
 - [Obra Superpowers](https://github.com/obra/superpowers) for brainstorming, planning, and agentic development workflows
+- [nono.sh](https://nono.sh) for kernel-level agent sandboxing (Landlock on Linux, Seatbelt on macOS)
 
-Strategy to spec to plan to code. No vibe-and-pray.
+Strategy to spec to plan to code. No vibe-and-pray. No agent escapes the sandbox.
 
 ## License
 
