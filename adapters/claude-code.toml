@@ -1,0 +1,29 @@
+[agent]
+name = "Claude Code"
+command = "claude"
+args = ["--dangerously-skip-permissions"]
+args_interactive = []
+version_check = "claude --version"
+icon = "claude"
+
+[hooks]
+type = "claude-code"
+install = "auto"
+
+[status]
+working_patterns = ["Reading ", "Writing ", "Editing ", "Searching ", "Creating ", "Running ", "Analyzing "]
+idle_patterns = ["╰─", "$ "]
+input_patterns = ["[y/n", "Permission", "? "]
+error_patterns = ["Error:", "FAILED", "panic"]
+
+[permissions]
+approve = "y\n"
+approve_all = "Y\n"
+deny = "n\n"
+
+[capabilities]
+supports_hooks = true
+supports_prompt_arg = true
+supports_resume = true
+supports_mcp = true
+supports_worktree = true

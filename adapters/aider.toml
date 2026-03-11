@@ -1,0 +1,25 @@
+[agent]
+name = "Aider"
+command = "aider"
+args = ["--yes"]
+args_interactive = ["--no-auto-commits"]
+version_check = "aider --version"
+icon = "aider"
+
+[status]
+working_patterns = ["Applying ", "Editing ", "Committing "]
+idle_patterns = ["aider> ", "> "]
+input_patterns = ["[y/n", "Allow?", "Apply?"]
+error_patterns = ["Error:", "error:", "FAILED", "Can't"]
+
+[permissions]
+approve = "y\n"
+approve_all = "y\n"
+deny = "n\n"
+
+[capabilities]
+supports_hooks = false
+supports_prompt_arg = true
+supports_resume = false
+supports_mcp = false
+supports_worktree = true
