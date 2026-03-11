@@ -161,4 +161,27 @@ mod tests {
         assert_eq!(counts.len(), 1);
         assert_eq!(counts[0], ("queued".to_string(), 2));
     }
+
+    #[test]
+    fn test_delete_task() {
+        let conn = open_memory().unwrap();
+        let task = create_task(
+            &conn,
+            &CreateTask {
+                title: "To be deleted".into(),
+                prompt: Some("Delete me".into()),
+                agent_id: "claude-code".into(),
+                repo_path: None,
+                isolation_mode: None,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(list_tasks(&conn).unwrap().len(), 1);
+
+        delete_task(&conn, task.id).unwrap();
+
+        let tasks = list_tasks(&conn).unwrap();
+        assert!(tasks.is_empty());
+    }
 }
