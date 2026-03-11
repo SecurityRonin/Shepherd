@@ -162,12 +162,12 @@ describe("TaskCard", () => {
     const { TaskCard } = await import("../TaskCard");
     const inputTask = makeTask({ status: "input" });
     const { unmount } = render(<TaskCard task={inputTask} />);
-    expect(screen.getByRole("button", { name: /approve/i })).toBeInTheDocument();
+    expect(screen.getByText("Approve", { selector: "button" })).toBeInTheDocument();
     unmount();
 
     const runningTask = makeTask({ status: "running" });
     render(<TaskCard task={runningTask} />);
-    expect(screen.queryByRole("button", { name: /approve/i })).not.toBeInTheDocument();
+    expect(screen.queryByText("Approve", { selector: "button" })).not.toBeInTheDocument();
   });
 
   it("shows permission info for input tasks with pending permissions", async () => {

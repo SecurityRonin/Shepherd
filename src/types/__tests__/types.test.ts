@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { Task, TaskStatus, CreateTask, KanbanColumn, AgentInfo } from '../task';
+import type { Task, TaskStatus, CreateTask, KanbanColumnDef, AgentInfo } from '../task';
 import { AGENT_COLORS } from '../task';
 import type { Session } from '../session';
 import type { Permission, PermissionDecision } from '../permission';
@@ -38,8 +38,8 @@ describe('Task types', () => {
     expect(info.id).toBe('claude-code');
   });
 
-  it('KanbanColumn shape', () => {
-    const col: KanbanColumn = { id: 'queued', label: 'Queued', tasks: [] };
+  it('KanbanColumnDef shape', () => {
+    const col: KanbanColumnDef = { id: 'queued', label: 'Queued', tasks: [] };
     expect(col.id).toBe('queued');
   });
 });

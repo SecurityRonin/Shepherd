@@ -22,7 +22,7 @@ export interface CreateTask {
   isolation_mode?: string;
 }
 
-export interface KanbanColumn {
+export interface KanbanColumnDef {
   id: TaskStatus;
   label: string;
   tasks: Task[];

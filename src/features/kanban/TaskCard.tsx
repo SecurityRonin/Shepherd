@@ -28,8 +28,8 @@ export const TaskCard: React.FC<TaskCardProps> = ({
       try {
         const { approveTask } = await import("../../lib/api");
         await approveTask(task.id);
-      } catch {
-        // Error handling will be added later
+      } catch (err) {
+        console.error("Failed to approve task:", err);
       } finally {
         setApproving(false);
       }
@@ -51,7 +51,14 @@ export const TaskCard: React.FC<TaskCardProps> = ({
             : "border-shepherd-border bg-shepherd-surface"
       }`}
       onClick={onClick}
-      role="article"
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick?.();
+        }
+      }}
+      role="button"
+      tabIndex={0}
     >
       {/* Row 1: Title + staleness dot */}
       <div className="flex items-center gap-2">
