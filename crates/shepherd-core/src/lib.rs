@@ -11,4 +11,5 @@ pub mod northstar;
 pub mod pr;
 pub mod pty;
 pub mod triggers;
+pub mod wizard;
 pub mod yolo;
