@@ -1,0 +1,336 @@
+pub mod auth;
+pub mod credits;
+pub mod generation;
+pub mod sync;
+
+use serde::{Deserialize, Serialize};
+use std::fmt;
+
+/// Base URL for the Shepherd Pro cloud API.
+pub const DEFAULT_API_URL: &str = "https://shepherd-pro.vercel.app";
+
+/// Credit costs for generative features.
+pub const CREDIT_COST_LOGO: u32 = 2;
+pub const CREDIT_COST_NAME: u32 = 1;
+pub const CREDIT_COST_NORTHSTAR: u32 = 15;
+
+/// Number of free trials per generative feature.
+pub const TRIAL_LIMIT: u32 = 2;
+
+/// Monthly credits included with Pro subscription.
+pub const PRO_MONTHLY_CREDITS: u32 = 50;
+
+/// Credits included in a top-up purchase.
+pub const TOPUP_CREDITS: u32 = 30;
+
+/// User's subscription plan.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Plan {
+    Free,
+    Pro,
+}
+
+impl Default for Plan {
+    fn default() -> Self {
+        Self::Free
+    }
+}
+
+impl fmt::Display for Plan {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Plan::Free => write!(f, "free"),
+            Plan::Pro => write!(f, "pro"),
+        }
+    }
+}
+
+/// Trial usage counts per generative feature.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct TrialCounts {
+    #[serde(default)]
+    pub logo: u32,
+    #[serde(default)]
+    pub name: u32,
+    #[serde(default)]
+    pub northstar: u32,
+}
+
+impl TrialCounts {
+    /// Check if a trial is available for a given feature.
+    pub fn has_trial(&self, feature: &str) -> bool {
+        match feature {
+            "logo" => self.logo < TRIAL_LIMIT,
+            "name" => self.name < TRIAL_LIMIT,
+            "northstar" => self.northstar < TRIAL_LIMIT,
+            _ => false,
+        }
+    }
+
+    /// Get remaining trials for a feature.
+    pub fn remaining(&self, feature: &str) -> u32 {
+        match feature {
+            "logo" => TRIAL_LIMIT.saturating_sub(self.logo),
+            "name" => TRIAL_LIMIT.saturating_sub(self.name),
+            "northstar" => TRIAL_LIMIT.saturating_sub(self.northstar),
+            _ => 0,
+        }
+    }
+}
+
+/// Cached user profile stored in ~/.shepherd/auth.toml.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CachedProfile {
+    pub user_id: String,
+    #[serde(default)]
+    pub email: Option<String>,
+    #[serde(default)]
+    pub github_handle: Option<String>,
+    #[serde(default)]
+    pub plan: Plan,
+    #[serde(default)]
+    pub credits_balance: u32,
+    #[serde(default)]
+    pub trial_counts: TrialCounts,
+}
+
+/// API response for the /api/credits/balance endpoint.
+#[derive(Debug, Clone, Deserialize)]
+pub struct BalanceResponse {
+    pub plan: Plan,
+    pub credits_balance: u32,
+    pub trial_logo: u32,
+    pub trial_name: u32,
+    pub trial_northstar: u32,
+    #[serde(default)]
+    pub email: Option<String>,
+    #[serde(default)]
+    pub github_handle: Option<String>,
+}
+
+/// API error response from the cloud backend.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ApiErrorResponse {
+    pub error: String,
+}
+
+/// Cloud-specific error type.
+#[derive(Debug)]
+pub enum CloudError {
+    /// Not authenticated — no JWT available.
+    NotAuthenticated,
+    /// JWT expired or invalid.
+    AuthExpired,
+    /// Insufficient credits for the requested operation.
+    InsufficientCredits { required: u32, available: u32 },
+    /// No trials remaining for this feature.
+    NoTrialsRemaining { feature: String },
+    /// Network error (offline or unreachable).
+    Network(String),
+    /// API returned an error.
+    Api { status: u16, message: String },
+    /// Keychain access error.
+    Keychain(String),
+}
+
+impl fmt::Display for CloudError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CloudError::NotAuthenticated => write!(f, "Not signed in. Sign in to use cloud features."),
+            CloudError::AuthExpired => write!(f, "Session expired. Please sign in again."),
+            CloudError::InsufficientCredits { required, available } => {
+                write!(f, "Insufficient credits: need {required}, have {available}")
+            }
+            CloudError::NoTrialsRemaining { feature } => {
+                write!(f, "No free trials remaining for {feature}. Upgrade to Pro for credits.")
+            }
+            CloudError::Network(msg) => write!(f, "Network error: {msg}"),
+            CloudError::Api { status, message } => write!(f, "API error ({status}): {message}"),
+            CloudError::Keychain(msg) => write!(f, "Keychain error: {msg}"),
+        }
+    }
+}
+
+impl std::error::Error for CloudError {}
+
+/// Configuration for the cloud client.
+#[derive(Debug, Clone)]
+pub struct CloudConfig {
+    /// Base URL for the API (default: DEFAULT_API_URL).
+    pub api_url: String,
+}
+
+impl Default for CloudConfig {
+    fn default() -> Self {
+        Self {
+            api_url: DEFAULT_API_URL.to_string(),
+        }
+    }
+}
+
+/// HTTP client for communicating with the Shepherd Pro cloud backend.
+#[derive(Debug, Clone)]
+pub struct CloudClient {
+    pub(crate) http: reqwest::Client,
+    pub(crate) config: CloudConfig,
+}
+
+impl CloudClient {
+    /// Create a new cloud client with default configuration.
+    pub fn new() -> Self {
+        Self::with_config(CloudConfig::default())
+    }
+
+    /// Create a new cloud client with custom configuration.
+    pub fn with_config(config: CloudConfig) -> Self {
+        let http = reqwest::Client::builder()
+            .user_agent("shepherd-desktop/1.0")
+            .build()
+            .expect("Failed to create HTTP client");
+        Self { http, config }
+    }
+
+    /// Get the base API URL.
+    pub fn api_url(&self) -> &str {
+        &self.config.api_url
+    }
+}
+
+impl Default for CloudClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn plan_default_is_free() {
+        assert_eq!(Plan::default(), Plan::Free);
+    }
+
+    #[test]
+    fn plan_display() {
+        assert_eq!(Plan::Free.to_string(), "free");
+        assert_eq!(Plan::Pro.to_string(), "pro");
+    }
+
+    #[test]
+    fn plan_serde_roundtrip() {
+        let json = serde_json::to_string(&Plan::Pro).unwrap();
+        assert_eq!(json, "\"pro\"");
+        let parsed: Plan = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, Plan::Pro);
+    }
+
+    #[test]
+    fn trial_counts_has_trial() {
+        let counts = TrialCounts { logo: 0, name: 1, northstar: 2 };
+        assert!(counts.has_trial("logo"));
+        assert!(counts.has_trial("name"));
+        assert!(!counts.has_trial("northstar")); // 2 >= TRIAL_LIMIT
+        assert!(!counts.has_trial("unknown"));
+    }
+
+    #[test]
+    fn trial_counts_remaining() {
+        let counts = TrialCounts { logo: 0, name: 1, northstar: 2 };
+        assert_eq!(counts.remaining("logo"), 2);
+        assert_eq!(counts.remaining("name"), 1);
+        assert_eq!(counts.remaining("northstar"), 0);
+        assert_eq!(counts.remaining("unknown"), 0);
+    }
+
+    #[test]
+    fn trial_counts_default() {
+        let counts = TrialCounts::default();
+        assert_eq!(counts.logo, 0);
+        assert_eq!(counts.name, 0);
+        assert_eq!(counts.northstar, 0);
+        assert!(counts.has_trial("logo"));
+        assert!(counts.has_trial("name"));
+        assert!(counts.has_trial("northstar"));
+    }
+
+    #[test]
+    fn credit_costs() {
+        assert_eq!(CREDIT_COST_LOGO, 2);
+        assert_eq!(CREDIT_COST_NAME, 1);
+        assert_eq!(CREDIT_COST_NORTHSTAR, 15);
+        assert_eq!(TRIAL_LIMIT, 2);
+        assert_eq!(PRO_MONTHLY_CREDITS, 50);
+        assert_eq!(TOPUP_CREDITS, 30);
+    }
+
+    #[test]
+    fn cloud_client_default_url() {
+        let client = CloudClient::new();
+        assert_eq!(client.api_url(), DEFAULT_API_URL);
+    }
+
+    #[test]
+    fn cloud_client_custom_url() {
+        let config = CloudConfig {
+            api_url: "http://localhost:3000".to_string(),
+        };
+        let client = CloudClient::with_config(config);
+        assert_eq!(client.api_url(), "http://localhost:3000");
+    }
+
+    #[test]
+    fn cloud_error_display() {
+        let err = CloudError::NotAuthenticated;
+        assert!(err.to_string().contains("Not signed in"));
+
+        let err = CloudError::InsufficientCredits { required: 15, available: 3 };
+        assert!(err.to_string().contains("15"));
+        assert!(err.to_string().contains("3"));
+
+        let err = CloudError::NoTrialsRemaining { feature: "logo".to_string() };
+        assert!(err.to_string().contains("logo"));
+    }
+
+    #[test]
+    fn cached_profile_serde() {
+        let profile = CachedProfile {
+            user_id: "user-123".to_string(),
+            email: Some("test@example.com".to_string()),
+            github_handle: Some("testuser".to_string()),
+            plan: Plan::Pro,
+            credits_balance: 42,
+            trial_counts: TrialCounts { logo: 1, name: 0, northstar: 2 },
+        };
+
+        let toml_str = toml::to_string_pretty(&profile).unwrap();
+        let parsed: CachedProfile = toml::from_str(&toml_str).unwrap();
+
+        assert_eq!(parsed.user_id, "user-123");
+        assert_eq!(parsed.plan, Plan::Pro);
+        assert_eq!(parsed.credits_balance, 42);
+        assert_eq!(parsed.trial_counts.logo, 1);
+    }
+
+    #[test]
+    fn balance_response_deserialize() {
+        let json = r#"{
+            "plan": "pro",
+            "credits_balance": 50,
+            "trial_logo": 0,
+            "trial_name": 1,
+            "trial_northstar": 2,
+            "email": "user@example.com",
+            "github_handle": "gh-user"
+        }"#;
+
+        let resp: BalanceResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.plan, Plan::Pro);
+        assert_eq!(resp.credits_balance, 50);
+        assert_eq!(resp.trial_logo, 0);
+        assert_eq!(resp.trial_name, 1);
+        assert_eq!(resp.trial_northstar, 2);
+        assert_eq!(resp.email, Some("user@example.com".to_string()));
+    }
+}
