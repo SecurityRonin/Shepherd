@@ -5,5 +5,6 @@ pub mod events;
 pub mod llm;
 pub mod logogen;
 pub mod namegen;
+pub mod northstar;
 pub mod pty;
 pub mod yolo;

@@ -19,6 +19,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/api/namegen", post(routes::namegen::generate_names))
         .route("/api/logogen", post(routes::logogen::generate_logo))
         .route("/api/logogen/export", post(routes::logogen::export_icons))
+        .route("/api/northstar/phases", get(routes::northstar::list_phases))
+        .route("/api/northstar/phase", post(routes::northstar::execute_phase))
         .route("/ws", get(ws::ws_handler))
         .layer(CorsLayer::permissive())
         .with_state(state)
