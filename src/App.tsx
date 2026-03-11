@@ -2,6 +2,8 @@ import React, { useCallback } from "react";
 import { Layout } from "./features/shared/Layout";
 import { KanbanBoard } from "./features/kanban/KanbanBoard";
 import { FocusView } from "./features/focus/FocusView";
+import { CommandPalette } from "./features/palette/CommandPalette";
+import { NewTaskDialog } from "./features/tasks/NewTaskDialog";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useStore } from "./store";
@@ -10,6 +12,10 @@ import type { ConnectionStatus } from "./lib/ws";
 
 const App: React.FC = () => {
   const viewMode = useStore((s) => s.viewMode);
+  const isCommandPaletteOpen = useStore((s) => s.isCommandPaletteOpen);
+  const setCommandPaletteOpen = useStore((s) => s.setCommandPaletteOpen);
+  const isNewTaskDialogOpen = useStore((s) => s.isNewTaskDialogOpen);
+  const setNewTaskDialogOpen = useStore((s) => s.setNewTaskDialogOpen);
 
   const handleServerEvent = useCallback((event: ServerEvent) => {
     const store = useStore.getState();
@@ -52,6 +58,14 @@ const App: React.FC = () => {
       ) : (
         <FocusView />
       )}
+      <CommandPalette
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setCommandPaletteOpen(false)}
+      />
+      <NewTaskDialog
+        isOpen={isNewTaskDialogOpen}
+        onClose={() => setNewTaskDialogOpen(false)}
+      />
     </Layout>
   );
 };
