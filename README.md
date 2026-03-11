@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>One screen. Every agent. Full control.</strong><br/>
-  The missing command center for developers running Claude Code, Codex, Gemini CLI, OpenCode, and Aider at the same time.
+  The missing command center for developers running Claude Code, Codex, AdaL, OpenCode, Gemini CLI, and Aider at the same time.
 </p>
 
 <p align="center">
@@ -75,14 +75,15 @@ No single tool combines Kanban + rules engine + quality gates + multi-agent + on
 
 ### Agent-agnostic from day one
 
-Five first-class adapters. Drop a TOML file to add any terminal-based agent.
+Six first-class adapters. Drop a TOML file to add any terminal-based agent.
 
 | Agent | Status | Hook Protocol |
 |-------|--------|---------------|
 | Claude Code | First-class | Native hooks |
 | Codex CLI | First-class | Output parsing |
-| Gemini CLI | First-class | Output parsing |
+| AdaL | First-class | Output parsing |
 | OpenCode | First-class | Output parsing |
+| Gemini CLI | First-class | Output parsing |
 | Aider | First-class | Output parsing |
 | Your agent | [Write a TOML](docs/adapters.md) | Output parsing |
 
@@ -166,17 +167,22 @@ Zero git commands. Zero context switches.
 ### CLI for when you'd rather type
 
 ```bash
-shepherd              # start server + open GUI
-shepherd status       # 3 running · 1 needs input · 2 done
-shepherd new "task"   # create task (--agent, --isolation flags)
-shepherd approve 4    # approve task #4
-shepherd approve --all
-shepherd pr 7         # create PR for task #7
+shepherd                    # start server + open GUI
+shepherd status             # 3 running · 1 needs input · 2 done
+shepherd new "task"         # create task (--agent, --isolation flags)
+shepherd approve 4          # approve task #4
+shepherd approve --all      # approve all pending
+shepherd pr 7               # create PR for task #7
+shepherd pr 7 --base dev    # PR against a different branch
+shepherd gates 7            # run quality gates for task #7
+shepherd namegen "AI tool"  # brainstorm product names from CLI
+shepherd init               # init .shepherd/ in current project
+shepherd stop               # stop server
+shepherd completions bash   # generate shell completions
 
 alias shep=shepherd
 shep s               # status
 shep a               # approve next
-shep aa              # approve all
 ```
 
 GUI and CLI share the same server. Same state. Use both.
@@ -191,11 +197,17 @@ GUI and CLI share the same server. Same state. Use both.
 
 ### Lifecycle tools no other orchestrator has
 
-**Product Name Generator**: describe your product, get 20+ candidates with automatic WHOIS, npm, PyPI, and GitHub conflict checks. All-clear names sorted first.
+**New Project Wizard**: guided journey from zero to shipping — North Star strategy, brand name with domain validation, logo generation, and Superpowers setup. Skip any step, jump anywhere, dismiss entirely. Always optional, never forced.
 
-**Logo Generator**: pick a style (minimal, geometric, mascot, abstract), get 4 variants, auto-export to SVG, PNG (all sizes), favicon, apple-touch-icon, macOS .icns, Windows .ico.
+**Product Name Generator**: describe your product, get 20+ candidates with automatic RDAP domain checks, npm, PyPI, and GitHub conflict validation. All-clear names sorted first. Available from CLI: `shepherd namegen "AI productivity tool" --vibes bold minimal`.
 
-**Full-stack SDD (Spec-Driven Development)**: powered by [North Star Advisor](https://northstaradvisor.app/) + [Obra Superpowers](https://github.com/obra/superpowers). North Star generates strategic foundations (brand guidelines, competitive landscape, user personas, architecture blueprints). Obra Superpowers turns ideas into specs through structured brainstorming, then specs into bite-sized TDD plans. Output feeds into every future agent session as context. Strategy to spec to plan to code.
+**Logo Generator**: pick a style (minimal, geometric, mascot, abstract), get 4 variants, auto-export to PNG (all sizes), favicon.ico, apple-touch-icon, macOS .icns, Windows .ico, and web manifest.
+
+**Full-stack SDD (Spec-Driven Development)**: powered by [North Star Advisor](https://northstaradvisor.app/) + [Obra Superpowers](https://github.com/obra/superpowers). North Star generates strategic foundations (brand guidelines, competitive landscape, user personas, architecture blueprints) across 13 analysis phases. Obra Superpowers turns ideas into specs through structured brainstorming, then specs into bite-sized TDD plans. Output feeds into every future agent session as context. Strategy to spec to plan to code.
+
+**Contextual Triggers**: Shepherd detects when your project is missing a name, logo, or strategy docs and suggests the right tool via non-intrusive toast notifications. Dismiss once and it won't come back.
+
+**Ecosystem Auto-Install**: auto-detects and offers to install [Obra Superpowers](https://github.com/obra/superpowers) and [context-mode](https://github.com/mksglu/context-mode) into each agent's own config directory (`~/.claude/`, `~/.codex/`, `~/.opencode/`). Shepherd manages the meta-layer, agents stay native.
 
 ## Architecture
 
@@ -208,18 +220,22 @@ FRONTEND (Tauri 2.0 · ~600KB binary)
     │ WebSocket (real-time) + REST (commands)
     ▼
 BACKEND (Rust · localhost)
-├── PTY Manager      — spawn/kill agents, stream output
-├── Agent Adapters   — TOML-defined, 5 first-class + community
+├── PTY Manager      — spawn/kill agents, stream output, nono.sh sandbox
+├── Agent Adapters   — TOML-defined, 6 first-class + community
 ├── YOLO Engine      — YAML rules, deny/allow, audit log
-├── Quality Gates    — lint/format/type/test + plugins
-├── State (SQLite)   — tasks, sessions, permissions, diffs
-└── Lifecycle Tools  — name gen, logo gen, North Star PMF
+├── Quality Gates    — lint/format/type/test + plugin gates
+├── LLM Client       — OpenAI, Anthropic, Ollama (provider-agnostic)
+├── Lifecycle Tools  — name gen, logo gen, North Star PMF, wizard
+├── Ecosystem        — Superpowers + context-mode auto-install
+├── Triggers         — contextual suggestions (name, logo, strategy)
+├── PR Pipeline      — stage, commit, rebase, gates, push, gh pr create
+└── State (SQLite)   — tasks, sessions, permissions, diffs, gate results
     │
     ▼
 AGENTS (your existing tools, unchanged)
-├── Claude Code    ├── Codex CLI
-├── Gemini CLI     ├── OpenCode
-├── Aider          └── community adapters
+├── Claude Code    ├── Codex CLI    ├── AdaL
+├── OpenCode       ├── Gemini CLI   ├── Aider
+└── community adapters
 ```
 
 **Why Tauri over Electron**: ~600KB vs ~150MB. Native performance. Rust backend. No bundled Chromium.
@@ -241,8 +257,8 @@ curl -fsSL https://shepherd.codes/install.sh | sh
 winget install shepherd-codes.shepherd
 
 # From source
-git clone https://github.com/shepherd-codes/shepherd
-cd shepherd && cargo build --release
+git clone https://github.com/SecurityRonin/Shepherd.git
+cd Shepherd && cargo build --release
 ```
 
 ## Quick start
@@ -308,21 +324,25 @@ Restart Shepherd. Your agent shows up in the New Task dropdown.
 
 | | Shepherd | Vibe Kanban | Clorch | Claude Squad | Emdash | JetBrains Air |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|
-| Multi-agent (5+ providers) | ✓ | ✓ | Claude only | 5 agents | 20+ agents | 4 agents |
+| Multi-agent (6+ providers) | ✓ | ✓ | Claude only | 5 agents | 20+ agents | 4 agents |
 | Kanban board | ✓ | ✓ | ✗ | ✗ | ✓ | ✗ |
 | YOLO rules engine | ✓ | YOLO only | ✓ | ✗ | ✗ | 4-level |
 | Quality gates | ✓ | Plugin | ✗ | ✗ | ✗ | ✗ |
 | One-click PR | ✓ | ✓ | ✗ | ✗ | ✓ | ✗ |
 | CLI + GUI | ✓ | ✗ | CLI only | CLI only | ✗ | ✗ |
+| Shell completions | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| Kernel sandbox (nono.sh) | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | Diff review + comments | ✓ | ✓ | ✗ | ✗ | ✓ | ✓ |
 | Cross-platform | ✓ | ✓ | macOS | ✓ | ✓ | macOS |
 | Binary size | ~600KB | ~150MB | pip | Go binary | ~150MB | ~500MB |
-| Name/logo/[North Star](https://northstaradvisor.app/) PMF | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| Name gen + logo gen + [North Star](https://northstaradvisor.app/) PMF | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| New project wizard | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| Ecosystem auto-install | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | Open source | Apache 2.0 | Apache 2.0 | MIT | MIT | MIT | ✗ |
 
 ## Roadmap
 
-**v1.0** (current): Core engine, Kanban board, 5 adapters, YOLO engine, quality gates, PR pipeline, CLI.
+**v1.0** (current): Core engine, Kanban board, 6 adapters, YOLO engine, quality gates, PR pipeline, CLI with shell completions, LLM client (OpenAI/Anthropic/Ollama), name generator, logo generator, North Star PMF wizard, contextual triggers, nono.sh sandbox, ecosystem auto-install, new project wizard. 280 tests.
 
 **v1.1**: Best-of-N (run same task on multiple agents, compare outputs). Issue tracker integration (Linear, GitHub Issues, Jira). Event-driven automations.
 
@@ -333,10 +353,10 @@ Restart Shepherd. Your agent shows up in the New Task dropdown.
 Shepherd is Apache 2.0 licensed and built in the open.
 
 ```bash
-git clone https://github.com/shepherd-codes/shepherd
-cd shepherd
+git clone https://github.com/SecurityRonin/Shepherd.git
+cd Shepherd
 cargo build
-cd frontend && npm install && npm run dev
+npm install && npm run dev
 ```
 
 PRs welcome. Check [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
