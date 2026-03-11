@@ -1,6 +1,7 @@
 pub mod adapters;
 pub mod config;
 pub mod db;
+pub mod ecosystem;
 pub mod events;
 pub mod gates;
 pub mod llm;

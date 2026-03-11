@@ -16,6 +16,8 @@ pub struct ShepherdConfig {
     pub sound_enabled: bool,
     #[serde(default)]
     pub sandbox: SandboxConfig,
+    #[serde(default)]
+    pub ecosystem: EcosystemConfig,
 }
 
 fn default_port() -> u16 { 7532 }
@@ -34,6 +36,7 @@ impl Default for ShepherdConfig {
             default_agent: default_agent(),
             sound_enabled: false,
             sandbox: SandboxConfig::default(),
+            ecosystem: EcosystemConfig::default(),
         }
     }
 }
@@ -56,6 +59,28 @@ impl Default for SandboxConfig {
             enabled: default_sandbox_enabled(),
             extra_blocked_paths: vec![],
             block_network: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EcosystemConfig {
+    #[serde(default = "default_true")]
+    pub auto_detect_superpowers: bool,
+    #[serde(default = "default_true")]
+    pub auto_detect_context_mode: bool,
+    #[serde(default = "default_true")]
+    pub offer_install_on_new_task: bool,
+}
+
+fn default_true() -> bool { true }
+
+impl Default for EcosystemConfig {
+    fn default() -> Self {
+        Self {
+            auto_detect_superpowers: true,
+            auto_detect_context_mode: true,
+            offer_install_on_new_task: true,
         }
     }
 }
