@@ -2589,8 +2589,23 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, permissions, onClick }
       )}
 
       {isReview && (
-        <div className="text-xs text-shepherd-purple">
-          Ready for review
+        <div className="flex items-center gap-2 flex-wrap text-xs text-shepherd-purple">
+          <span>Ready for review</span>
+          {task.gate_results && task.gate_results.length > 0 && (
+            <div className="flex items-center gap-1">
+              {task.gate_results.map((g) => (
+                <span
+                  key={g.gate}
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                    g.passed ? "bg-shepherd-green/20 text-shepherd-green" : "bg-shepherd-red/20 text-shepherd-red"
+                  }`}
+                  title={g.gate}
+                >
+                  {g.passed ? "✓" : "✗"} {g.gate}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -2696,8 +2711,23 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, permissions, onClick }
       )}
 
       {isReview && (
-        <div className="text-xs text-shepherd-purple">
-          Ready for review
+        <div className="flex items-center gap-2 flex-wrap text-xs text-shepherd-purple">
+          <span>Ready for review</span>
+          {task.gate_results && task.gate_results.length > 0 && (
+            <div className="flex items-center gap-1">
+              {task.gate_results.map((g) => (
+                <span
+                  key={g.gate}
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                    g.passed ? "bg-shepherd-green/20 text-shepherd-green" : "bg-shepherd-red/20 text-shepherd-red"
+                  }`}
+                  title={g.gate}
+                >
+                  {g.passed ? "✓" : "✗"} {g.gate}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -3599,8 +3629,8 @@ export const Terminal: React.FC<TerminalProps> = ({ taskId }) => {
 
   // Pop-out placeholder handler
   const handlePopOut = useCallback(() => {
-    // TODO: Implement pop-out terminal in separate window (Tauri multiwindow)
-    console.log('Pop-out terminal not yet implemented');
+    // Deferred to v2: pop-out terminal requires Tauri multiwindow API (WebviewWindow::new)
+    console.warn('Pop-out terminal deferred to v2 — requires Tauri multiwindow');
   }, []);
 
   return (
@@ -3815,15 +3845,15 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({ taskId }) => {
     }
   }, [diffCount, selectedFileIndex]);
 
-  const handleCommentSubmit = () => {
-    if (!commentDraft.trim() || activeCommentLine === null) return;
-    // TODO: Send comment to agent via API
-    // POST /api/tasks/:taskId/comments { line: activeCommentLine, file: selectedDiff.file_path, text: commentDraft }
-    console.log('Comment submitted:', {
-      taskId,
-      file: selectedDiff?.file_path,
-      line: activeCommentLine,
-      text: commentDraft,
+  const handleCommentSubmit = async () => {
+    if (!commentDraft.trim() || activeCommentLine === null || !selectedDiff) return;
+    // Send inline comment as terminal input to the agent — the comment becomes
+    // part of the agent's prompt context (e.g., "User commented on line 42 of
+    // src/main.rs: 'This should use a HashMap instead'")
+    const commentPayload = `User commented on line ${activeCommentLine} of ${selectedDiff.file_path}: "${commentDraft}"`;
+    sendMessage({
+      type: 'terminal_input',
+      data: { task_id: taskId, data: commentPayload + '\n' },
     });
     setCommentDraft('');
     setActiveCommentLine(null);
