@@ -5,15 +5,14 @@ use protocol::AdapterConfig;
 use std::collections::HashMap;
 use std::path::Path;
 
+#[derive(Default)]
 pub struct AdapterRegistry {
     adapters: HashMap<String, AdapterConfig>,
 }
 
 impl AdapterRegistry {
     pub fn new() -> Self {
-        Self {
-            adapters: HashMap::new(),
-        }
+        Self::default()
     }
 
     pub fn load_dir(&mut self, dir: &Path) -> Result<()> {
@@ -23,7 +22,7 @@ impl AdapterRegistry {
         for entry in std::fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
-            if path.extension().map_or(false, |e| e == "toml") {
+            if path.extension().is_some_and(|e| e == "toml") {
                 let content = std::fs::read_to_string(&path)
                     .with_context(|| format!("reading adapter {}", path.display()))?;
                 let config: AdapterConfig = toml::from_str(&content)
@@ -46,6 +45,10 @@ impl AdapterRegistry {
 
     pub fn len(&self) -> usize {
         self.adapters.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.adapters.is_empty()
     }
 }
 

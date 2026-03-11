@@ -23,7 +23,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
     let send_task = tokio::spawn(async move {
         while let Ok(event) = rx.recv().await {
             if let Ok(json) = serde_json::to_string(&event) {
-                if sender.send(Message::Text(json.into())).await.is_err() {
+                if sender.send(Message::Text(json)).await.is_err() {
                     break;
                 }
             }

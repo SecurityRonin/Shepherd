@@ -31,7 +31,7 @@ pub fn get_task(conn: &Connection, id: i64) -> Result<Task> {
                 repo_path: row.get(4)?,
                 branch: row.get(5)?,
                 isolation_mode: row.get(6)?,
-                status: TaskStatus::from_str(&row.get::<_, String>(7)?).unwrap_or(TaskStatus::Queued),
+                status: TaskStatus::parse_status(&row.get::<_, String>(7)?).unwrap_or(TaskStatus::Queued),
                 created_at: row.get(8)?,
                 updated_at: row.get(9)?,
             })
@@ -53,7 +53,7 @@ pub fn list_tasks(conn: &Connection) -> Result<Vec<Task>> {
             repo_path: row.get(4)?,
             branch: row.get(5)?,
             isolation_mode: row.get(6)?,
-            status: TaskStatus::from_str(&row.get::<_, String>(7)?).unwrap_or(TaskStatus::Queued),
+            status: TaskStatus::parse_status(&row.get::<_, String>(7)?).unwrap_or(TaskStatus::Queued),
             created_at: row.get(8)?,
             updated_at: row.get(9)?,
         })
