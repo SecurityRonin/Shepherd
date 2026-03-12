@@ -1,6 +1,7 @@
 use super::{
     auth, CloudClient, CloudError,
     CREDIT_COST_LOGO, CREDIT_COST_NAME, CREDIT_COST_NORTHSTAR,
+    CREDIT_COST_SCRAPE, CREDIT_COST_CRAWL, CREDIT_COST_VISION,
 };
 
 /// Feature identifier for credit/trial operations.
@@ -9,6 +10,9 @@ pub enum Feature {
     Logo,
     Name,
     NorthStar,
+    Scrape,
+    Crawl,
+    Vision,
 }
 
 impl Feature {
@@ -18,6 +22,9 @@ impl Feature {
             Feature::Logo => CREDIT_COST_LOGO,
             Feature::Name => CREDIT_COST_NAME,
             Feature::NorthStar => CREDIT_COST_NORTHSTAR,
+            Feature::Scrape => CREDIT_COST_SCRAPE,
+            Feature::Crawl => CREDIT_COST_CRAWL,
+            Feature::Vision => CREDIT_COST_VISION,
         }
     }
 
@@ -27,6 +34,9 @@ impl Feature {
             Feature::Logo => "logo",
             Feature::Name => "name",
             Feature::NorthStar => "northstar",
+            Feature::Scrape => "scrape",
+            Feature::Crawl => "crawl",
+            Feature::Vision => "vision",
         }
     }
 }
@@ -111,6 +121,9 @@ mod tests {
         assert_eq!(Feature::Logo.cost(), 2);
         assert_eq!(Feature::Name.cost(), 1);
         assert_eq!(Feature::NorthStar.cost(), 15);
+        assert_eq!(Feature::Scrape.cost(), 1);
+        assert_eq!(Feature::Crawl.cost(), 5);
+        assert_eq!(Feature::Vision.cost(), 2);
     }
 
     #[test]
@@ -118,6 +131,9 @@ mod tests {
         assert_eq!(Feature::Logo.key(), "logo");
         assert_eq!(Feature::Name.key(), "name");
         assert_eq!(Feature::NorthStar.key(), "northstar");
+        assert_eq!(Feature::Scrape.key(), "scrape");
+        assert_eq!(Feature::Crawl.key(), "crawl");
+        assert_eq!(Feature::Vision.key(), "vision");
     }
 
     #[test]
@@ -125,6 +141,9 @@ mod tests {
         assert_eq!(Feature::Logo.to_string(), "logo");
         assert_eq!(Feature::Name.to_string(), "name");
         assert_eq!(Feature::NorthStar.to_string(), "northstar");
+        assert_eq!(Feature::Scrape.to_string(), "scrape");
+        assert_eq!(Feature::Crawl.to_string(), "crawl");
+        assert_eq!(Feature::Vision.to_string(), "vision");
     }
 
     #[test]

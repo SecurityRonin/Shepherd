@@ -13,6 +13,9 @@ pub const DEFAULT_API_URL: &str = "https://shepherd-pro.vercel.app";
 pub const CREDIT_COST_LOGO: u32 = 2;
 pub const CREDIT_COST_NAME: u32 = 1;
 pub const CREDIT_COST_NORTHSTAR: u32 = 15;
+pub const CREDIT_COST_SCRAPE: u32 = 1;
+pub const CREDIT_COST_CRAWL: u32 = 5;
+pub const CREDIT_COST_VISION: u32 = 2;
 
 /// Number of free trials per generative feature.
 pub const TRIAL_LIMIT: u32 = 2;
@@ -55,6 +58,12 @@ pub struct TrialCounts {
     pub name: u32,
     #[serde(default)]
     pub northstar: u32,
+    #[serde(default)]
+    pub scrape: u32,
+    #[serde(default)]
+    pub crawl: u32,
+    #[serde(default)]
+    pub vision: u32,
 }
 
 impl TrialCounts {
@@ -64,6 +73,9 @@ impl TrialCounts {
             "logo" => self.logo < TRIAL_LIMIT,
             "name" => self.name < TRIAL_LIMIT,
             "northstar" => self.northstar < TRIAL_LIMIT,
+            "scrape" => self.scrape < TRIAL_LIMIT,
+            "crawl" => self.crawl < TRIAL_LIMIT,
+            "vision" => self.vision < TRIAL_LIMIT,
             _ => false,
         }
     }
@@ -74,6 +86,9 @@ impl TrialCounts {
             "logo" => TRIAL_LIMIT.saturating_sub(self.logo),
             "name" => TRIAL_LIMIT.saturating_sub(self.name),
             "northstar" => TRIAL_LIMIT.saturating_sub(self.northstar),
+            "scrape" => TRIAL_LIMIT.saturating_sub(self.scrape),
+            "crawl" => TRIAL_LIMIT.saturating_sub(self.crawl),
+            "vision" => TRIAL_LIMIT.saturating_sub(self.vision),
             _ => 0,
         }
     }
@@ -103,6 +118,12 @@ pub struct BalanceResponse {
     pub trial_logo: u32,
     pub trial_name: u32,
     pub trial_northstar: u32,
+    #[serde(default)]
+    pub trial_scrape: u32,
+    #[serde(default)]
+    pub trial_crawl: u32,
+    #[serde(default)]
+    pub trial_vision: u32,
     #[serde(default)]
     pub email: Option<String>,
     #[serde(default)]
@@ -228,19 +249,31 @@ mod tests {
 
     #[test]
     fn trial_counts_has_trial() {
-        let counts = TrialCounts { logo: 0, name: 1, northstar: 2 };
+        let counts = TrialCounts {
+            logo: 0, name: 1, northstar: 2,
+            scrape: 0, crawl: 1, vision: 2,
+        };
         assert!(counts.has_trial("logo"));
         assert!(counts.has_trial("name"));
         assert!(!counts.has_trial("northstar")); // 2 >= TRIAL_LIMIT
+        assert!(counts.has_trial("scrape"));
+        assert!(counts.has_trial("crawl"));
+        assert!(!counts.has_trial("vision")); // 2 >= TRIAL_LIMIT
         assert!(!counts.has_trial("unknown"));
     }
 
     #[test]
     fn trial_counts_remaining() {
-        let counts = TrialCounts { logo: 0, name: 1, northstar: 2 };
+        let counts = TrialCounts {
+            logo: 0, name: 1, northstar: 2,
+            scrape: 0, crawl: 1, vision: 2,
+        };
         assert_eq!(counts.remaining("logo"), 2);
         assert_eq!(counts.remaining("name"), 1);
         assert_eq!(counts.remaining("northstar"), 0);
+        assert_eq!(counts.remaining("scrape"), 2);
+        assert_eq!(counts.remaining("crawl"), 1);
+        assert_eq!(counts.remaining("vision"), 0);
         assert_eq!(counts.remaining("unknown"), 0);
     }
 
@@ -250,9 +283,15 @@ mod tests {
         assert_eq!(counts.logo, 0);
         assert_eq!(counts.name, 0);
         assert_eq!(counts.northstar, 0);
+        assert_eq!(counts.scrape, 0);
+        assert_eq!(counts.crawl, 0);
+        assert_eq!(counts.vision, 0);
         assert!(counts.has_trial("logo"));
         assert!(counts.has_trial("name"));
         assert!(counts.has_trial("northstar"));
+        assert!(counts.has_trial("scrape"));
+        assert!(counts.has_trial("crawl"));
+        assert!(counts.has_trial("vision"));
     }
 
     #[test]
@@ -260,6 +299,9 @@ mod tests {
         assert_eq!(CREDIT_COST_LOGO, 2);
         assert_eq!(CREDIT_COST_NAME, 1);
         assert_eq!(CREDIT_COST_NORTHSTAR, 15);
+        assert_eq!(CREDIT_COST_SCRAPE, 1);
+        assert_eq!(CREDIT_COST_CRAWL, 5);
+        assert_eq!(CREDIT_COST_VISION, 2);
         assert_eq!(TRIAL_LIMIT, 2);
         assert_eq!(PRO_MONTHLY_CREDITS, 50);
         assert_eq!(TOPUP_CREDITS, 30);
@@ -301,7 +343,10 @@ mod tests {
             github_handle: Some("testuser".to_string()),
             plan: Plan::Pro,
             credits_balance: 42,
-            trial_counts: TrialCounts { logo: 1, name: 0, northstar: 2 },
+            trial_counts: TrialCounts {
+                logo: 1, name: 0, northstar: 2,
+                scrape: 1, crawl: 0, vision: 2,
+            },
         };
 
         let toml_str = toml::to_string_pretty(&profile).unwrap();
@@ -311,6 +356,9 @@ mod tests {
         assert_eq!(parsed.plan, Plan::Pro);
         assert_eq!(parsed.credits_balance, 42);
         assert_eq!(parsed.trial_counts.logo, 1);
+        assert_eq!(parsed.trial_counts.scrape, 1);
+        assert_eq!(parsed.trial_counts.crawl, 0);
+        assert_eq!(parsed.trial_counts.vision, 2);
     }
 
     #[test]
@@ -321,6 +369,9 @@ mod tests {
             "trial_logo": 0,
             "trial_name": 1,
             "trial_northstar": 2,
+            "trial_scrape": 1,
+            "trial_crawl": 0,
+            "trial_vision": 2,
             "email": "user@example.com",
             "github_handle": "gh-user"
         }"#;
@@ -331,6 +382,26 @@ mod tests {
         assert_eq!(resp.trial_logo, 0);
         assert_eq!(resp.trial_name, 1);
         assert_eq!(resp.trial_northstar, 2);
+        assert_eq!(resp.trial_scrape, 1);
+        assert_eq!(resp.trial_crawl, 0);
+        assert_eq!(resp.trial_vision, 2);
         assert_eq!(resp.email, Some("user@example.com".to_string()));
+    }
+
+    #[test]
+    fn balance_response_deserialize_without_new_fields() {
+        // Ensure backward compatibility: old responses without scrape/crawl/vision
+        let json = r#"{
+            "plan": "free",
+            "credits_balance": 0,
+            "trial_logo": 0,
+            "trial_name": 0,
+            "trial_northstar": 0
+        }"#;
+
+        let resp: BalanceResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.trial_scrape, 0);
+        assert_eq!(resp.trial_crawl, 0);
+        assert_eq!(resp.trial_vision, 0);
     }
 }

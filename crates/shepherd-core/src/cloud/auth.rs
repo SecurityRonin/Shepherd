@@ -95,6 +95,9 @@ impl CloudClient {
                 logo: balance.trial_logo,
                 name: balance.trial_name,
                 northstar: balance.trial_northstar,
+                scrape: balance.trial_scrape,
+                crawl: balance.trial_crawl,
+                vision: balance.trial_vision,
             },
         })
     }
