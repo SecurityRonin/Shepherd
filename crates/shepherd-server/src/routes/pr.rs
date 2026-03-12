@@ -48,6 +48,7 @@ fn step_status_to_string(status: &StepStatus) -> String {
     }
 }
 
+#[tracing::instrument(skip(state, input))]
 pub async fn create_pr(
     State(state): State<Arc<AppState>>,
     Path(task_id): Path<i64>,

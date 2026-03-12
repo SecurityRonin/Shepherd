@@ -54,6 +54,7 @@ impl CloudClient {
     }
 
     /// Fetch the current user's profile from the cloud API.
+    #[tracing::instrument(skip(self, jwt))]
     pub async fn fetch_profile(&self, jwt: &str) -> Result<CachedProfile, CloudError> {
         let url = format!("{}/api/credits/balance", self.api_url());
 

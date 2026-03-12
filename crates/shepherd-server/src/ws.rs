@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use crate::state::AppState;
 
+#[tracing::instrument(skip(ws, state))]
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
     State(state): State<Arc<AppState>>,

@@ -26,6 +26,7 @@ fn gate_type_to_string(gt: &GateType) -> String {
     }
 }
 
+#[tracing::instrument(skip(state))]
 pub async fn run_task_gates(
     State(state): State<Arc<AppState>>,
     Path(task_id): Path<i64>,

@@ -1,11 +1,50 @@
 use std::path::{Path, PathBuf};
 use super::superpowers::InstallScope;
+use super::{EcosystemPlugin, PluginDetectionResult};
+
+/// Return the shared plugin definition for context-mode.
+pub fn plugin() -> EcosystemPlugin {
+    EcosystemPlugin {
+        name: "context-mode",
+        description: "Context-mode MCP server for intelligent context management",
+        compatible_agents: &["claude-code"],
+        feature_key: "context-mode",
+        plugin_cache_dirs: &[],
+        user_settings_paths: &[("claude-code", ".claude/settings.json")],
+        project_settings_paths: &[("claude-code", ".claude/settings.json")],
+        install_targets: &[
+            ("claude-code", true, "~/.claude/settings.json"),
+            ("claude-code", false, ".claude/settings.json"),
+        ],
+        config_content: CONTEXT_MODE_MCP_JSON,
+    }
+}
+
+const CONTEXT_MODE_MCP_ENTRY: &str = r#""context-mode": {
+      "command": "npx",
+      "args": ["-y", "context-mode"],
+      "env": {}
+    }"#;
+
+const CONTEXT_MODE_MCP_JSON: &str = "{\n  \"mcpServers\": {\n    \"context-mode\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"context-mode\"],\n      \"env\": {}\n    }\n  }\n}";
+
+// ── Backward-compatible API ──────────────────────────────────────────
 
 #[derive(Debug, Clone)]
 pub struct DetectionResult {
     pub installed: bool,
     pub scope: InstallScope,
     pub path: Option<PathBuf>,
+}
+
+impl From<PluginDetectionResult> for DetectionResult {
+    fn from(r: PluginDetectionResult) -> Self {
+        Self {
+            installed: r.installed,
+            scope: r.scope,
+            path: r.path,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -16,67 +55,21 @@ pub struct InstallConfig {
     pub mcp_server_json: String,
 }
 
-const CONTEXT_MODE_MCP_ENTRY: &str = r#""context-mode": {
-      "command": "npx",
-      "args": ["-y", "context-mode"],
-      "env": {}
-    }"#;
-
 pub fn detect_for_agent(agent: &str, home: &Path, project_root: Option<&Path>) -> DetectionResult {
-    if let Some(project) = project_root {
-        if let Some(result) = detect_project_scope(agent, project) {
-            return result;
-        }
-    }
-    detect_user_scope(agent, home)
-}
-
-fn detect_user_scope(agent: &str, home: &Path) -> DetectionResult {
-    let settings_path = match agent {
-        "claude-code" => home.join(".claude/settings.json"),
-        _ => return DetectionResult { installed: false, scope: InstallScope::User, path: None },
-    };
-    check_settings_file(&settings_path, InstallScope::User)
-}
-
-fn detect_project_scope(agent: &str, project: &Path) -> Option<DetectionResult> {
-    let settings_path = match agent {
-        "claude-code" => project.join(".claude/settings.json"),
-        _ => return None,
-    };
-    let result = check_settings_file(&settings_path, InstallScope::Project);
-    if result.installed { Some(result) } else { None }
-}
-
-fn check_settings_file(path: &Path, scope: InstallScope) -> DetectionResult {
-    if path.exists() {
-        let content = std::fs::read_to_string(path).unwrap_or_default();
-        if content.contains("context-mode") {
-            return DetectionResult {
-                installed: true,
-                scope,
-                path: Some(path.to_path_buf()),
-            };
-        }
-    }
-    DetectionResult { installed: false, scope, path: None }
+    plugin().detect(agent, home, project_root).into()
 }
 
 pub fn is_context_mode_compatible(agent: &str) -> bool {
-    matches!(agent, "claude-code")
+    plugin().is_compatible(agent)
 }
 
 impl InstallConfig {
     pub fn for_agent(agent: &str, scope: InstallScope) -> Option<Self> {
-        let target_path = match (agent, &scope) {
-            ("claude-code", InstallScope::User) => PathBuf::from("~/.claude/settings.json"),
-            ("claude-code", InstallScope::Project) => PathBuf::from(".claude/settings.json"),
-            _ => return None,
-        };
+        let cfg = plugin().install_config(agent, scope)?;
         Some(Self {
-            agent: agent.to_string(),
-            scope,
-            target_path,
+            agent: cfg.agent,
+            scope: cfg.scope,
+            target_path: cfg.target_path,
             mcp_server_json: format!("{{\n  \"mcpServers\": {{\n    {CONTEXT_MODE_MCP_ENTRY}\n  }}\n}}"),
         })
     }

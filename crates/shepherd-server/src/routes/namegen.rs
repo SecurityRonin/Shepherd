@@ -97,6 +97,7 @@ impl From<DomainCheck> for DomainResponse {
 }
 
 /// POST /api/namegen — generate name candidates.
+#[tracing::instrument(skip(state, req))]
 pub async fn generate_names(
     State(state): State<Arc<AppState>>,
     Json(req): Json<NameGenRequest>,

@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use crate::state::AppState;
 
+#[tracing::instrument(skip(state))]
 pub async fn list_tasks(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
@@ -19,6 +20,7 @@ pub async fn list_tasks(
     Ok(Json(serde_json::to_value(tasks).unwrap()))
 }
 
+#[tracing::instrument(skip(state, input))]
 pub async fn create_task(
     State(state): State<Arc<AppState>>,
     Json(input): Json<CreateTask>,
@@ -44,6 +46,7 @@ pub async fn create_task(
     ))
 }
 
+#[tracing::instrument(skip(state))]
 pub async fn delete_task(
     State(state): State<Arc<AppState>>,
     Path(id): Path<i64>,

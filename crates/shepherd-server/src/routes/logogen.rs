@@ -84,6 +84,7 @@ fn parse_style(s: &str) -> LogoStyle {
 // ── Handlers ─────────────────────────────────────────────────────────
 
 /// POST /api/logogen — generate logo variants.
+#[tracing::instrument(skip(state, req))]
 pub async fn generate_logo(
     State(state): State<Arc<AppState>>,
     Json(req): Json<LogoGenRequest>,
@@ -130,6 +131,7 @@ pub async fn generate_logo(
 }
 
 /// POST /api/logogen/export — export icons from a selected variant.
+#[tracing::instrument(skip(req))]
 pub async fn export_icons(
     Json(req): Json<ExportRequest>,
 ) -> Result<Json<ExportResponse>, (StatusCode, Json<serde_json::Value>)> {

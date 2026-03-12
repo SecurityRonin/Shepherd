@@ -52,6 +52,7 @@ impl PtyManager {
         self.output_tx.subscribe()
     }
 
+    #[tracing::instrument(skip(self, args))]
     pub async fn spawn(
         &self,
         task_id: i64,
@@ -131,6 +132,7 @@ impl PtyManager {
         Ok(())
     }
 
+    #[tracing::instrument(skip(self, data))]
     pub async fn write_to(&self, task_id: i64, data: &str) -> Result<()> {
         let mut handles = self.handles.lock().await;
         if let Some(handle) = handles.get_mut(&task_id) {
@@ -139,6 +141,7 @@ impl PtyManager {
         Ok(())
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn kill(&self, task_id: i64) -> Result<()> {
         let mut handles = self.handles.lock().await;
         if let Some(mut handle) = handles.remove(&task_id) {
@@ -148,6 +151,7 @@ impl PtyManager {
         Ok(())
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn resize(&self, task_id: i64, cols: u16, rows: u16) -> Result<()> {
         let handles = self.handles.lock().await;
         if let Some(handle) = handles.get(&task_id) {
@@ -161,6 +165,7 @@ impl PtyManager {
         Ok(())
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn is_alive(&self, task_id: i64) -> bool {
         let mut handles = self.handles.lock().await;
         if let Some(handle) = handles.get_mut(&task_id) {
@@ -191,6 +196,7 @@ impl PtyManager {
         self.handles.lock().await.len()
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn shutdown_all(&self, grace_period: std::time::Duration) {
         let task_ids: Vec<i64> = {
             let handles = self.handles.lock().await;

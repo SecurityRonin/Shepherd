@@ -1,11 +1,44 @@
 use std::path::{Path, PathBuf};
 use super::superpowers::InstallScope;
+use super::{EcosystemPlugin, PluginDetectionResult};
+
+/// Return the shared plugin definition for ralph-loop.
+pub fn plugin() -> EcosystemPlugin {
+    EcosystemPlugin {
+        name: "ralph-loop",
+        description: "Ralph Loop — autonomous TDD workflow plugin",
+        compatible_agents: &["claude-code"],
+        feature_key: "ralph-loop",
+        plugin_cache_dirs: &[
+            ("claude-code", ".claude/plugins/cache/ralph-loop-setup/ralph-loop"),
+        ],
+        user_settings_paths: &[("claude-code", ".claude/settings.json")],
+        project_settings_paths: &[("claude-code", ".claude/settings.json")],
+        install_targets: &[
+            ("claude-code", true, "~/.claude/settings.json"),
+            ("claude-code", false, ".claude/settings.json"),
+        ],
+        config_content: "# Ralph Loop — autonomous TDD workflow plugin\n# Installed by Shepherd. See https://github.com/MarioGiancini/ralph-loop-setup\n",
+    }
+}
+
+// ── Backward-compatible API ──────────────────────────────────────────
 
 #[derive(Debug, Clone)]
 pub struct DetectionResult {
     pub installed: bool,
     pub scope: InstallScope,
     pub path: Option<PathBuf>,
+}
+
+impl From<PluginDetectionResult> for DetectionResult {
+    fn from(r: PluginDetectionResult) -> Self {
+        Self {
+            installed: r.installed,
+            scope: r.scope,
+            path: r.path,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -17,76 +50,21 @@ pub struct InstallConfig {
 }
 
 pub fn detect_for_agent(agent: &str, home: &Path, project_root: Option<&Path>) -> DetectionResult {
-    if let Some(project) = project_root {
-        if let Some(result) = detect_project_scope(agent, project) {
-            return result;
-        }
-    }
-    detect_user_scope(agent, home)
-}
-
-fn detect_user_scope(agent: &str, home: &Path) -> DetectionResult {
-    match agent {
-        "claude-code" => {
-            // Check plugin cache directory
-            let plugin_dir = home.join(".claude/plugins/cache/ralph-loop-setup/ralph-loop");
-            if plugin_dir.exists() {
-                return DetectionResult { installed: true, scope: InstallScope::User, path: Some(plugin_dir) };
-            }
-            // Also check settings.json for plugin reference
-            let settings = home.join(".claude/settings.json");
-            if settings.exists() {
-                let content = std::fs::read_to_string(&settings).unwrap_or_default();
-                if content.contains("ralph-loop") {
-                    return DetectionResult { installed: true, scope: InstallScope::User, path: Some(settings) };
-                }
-            }
-            DetectionResult { installed: false, scope: InstallScope::User, path: None }
-        }
-        _ => DetectionResult { installed: false, scope: InstallScope::User, path: None },
-    }
-}
-
-fn detect_project_scope(agent: &str, project: &Path) -> Option<DetectionResult> {
-    let config_path = match agent {
-        "claude-code" => project.join(".claude/settings.json"),
-        _ => return None,
-    };
-    if config_path.exists() {
-        let content = std::fs::read_to_string(&config_path).unwrap_or_default();
-        if content.contains("ralph-loop") {
-            return Some(DetectionResult {
-                installed: true,
-                scope: InstallScope::Project,
-                path: Some(config_path),
-            });
-        }
-    }
-    None
+    plugin().detect(agent, home, project_root).into()
 }
 
 pub fn is_ralph_loop_compatible(agent: &str) -> bool {
-    matches!(agent, "claude-code")
+    plugin().is_compatible(agent)
 }
 
 impl InstallConfig {
     pub fn for_agent(agent: &str, scope: InstallScope) -> Option<Self> {
-        let (target_path, config_content) = match (agent, &scope) {
-            ("claude-code", InstallScope::User) => (
-                PathBuf::from("~/.claude/settings.json"),
-                "# Ralph Loop — autonomous TDD workflow plugin\n# Installed by Shepherd. See https://github.com/MarioGiancini/ralph-loop-setup\n".to_string(),
-            ),
-            ("claude-code", InstallScope::Project) => (
-                PathBuf::from(".claude/settings.json"),
-                "# Ralph Loop — autonomous TDD workflow plugin\n# Installed by Shepherd. See https://github.com/MarioGiancini/ralph-loop-setup\n".to_string(),
-            ),
-            _ => return None,
-        };
+        let cfg = plugin().install_config(agent, scope)?;
         Some(Self {
-            agent: agent.to_string(),
-            scope,
-            target_path,
-            config_content,
+            agent: cfg.agent,
+            scope: cfg.scope,
+            target_path: cfg.target_path,
+            config_content: cfg.config_content,
         })
     }
 }

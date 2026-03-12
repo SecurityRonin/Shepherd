@@ -1,11 +1,44 @@
 use std::path::{Path, PathBuf};
 use super::superpowers::InstallScope;
+use super::{EcosystemPlugin, PluginDetectionResult};
+
+/// Return the shared plugin definition for frontend-design.
+pub fn plugin() -> EcosystemPlugin {
+    EcosystemPlugin {
+        name: "frontend-design",
+        description: "Anthropic's anti-AI-slop UI generation skill",
+        compatible_agents: &["claude-code"],
+        feature_key: "frontend-design",
+        plugin_cache_dirs: &[
+            ("claude-code", ".claude/plugins/cache/anthropics/claude-code/frontend-design"),
+        ],
+        user_settings_paths: &[("claude-code", ".claude/settings.json")],
+        project_settings_paths: &[("claude-code", ".claude/settings.json")],
+        install_targets: &[
+            ("claude-code", true, "~/.claude/settings.json"),
+            ("claude-code", false, ".claude/settings.json"),
+        ],
+        config_content: "# frontend-design — Anthropic's anti-AI-slop UI generation skill\n# Installed by Shepherd. See https://github.com/anthropics/claude-code/tree/main/plugins/frontend-design\n",
+    }
+}
+
+// ── Backward-compatible API ──────────────────────────────────────────
 
 #[derive(Debug, Clone)]
 pub struct DetectionResult {
     pub installed: bool,
     pub scope: InstallScope,
     pub path: Option<PathBuf>,
+}
+
+impl From<PluginDetectionResult> for DetectionResult {
+    fn from(r: PluginDetectionResult) -> Self {
+        Self {
+            installed: r.installed,
+            scope: r.scope,
+            path: r.path,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -17,76 +50,21 @@ pub struct InstallConfig {
 }
 
 pub fn detect_for_agent(agent: &str, home: &Path, project_root: Option<&Path>) -> DetectionResult {
-    if let Some(project) = project_root {
-        if let Some(result) = detect_project_scope(agent, project) {
-            return result;
-        }
-    }
-    detect_user_scope(agent, home)
-}
-
-fn detect_user_scope(agent: &str, home: &Path) -> DetectionResult {
-    match agent {
-        "claude-code" => {
-            // Check plugin cache directory
-            let plugin_dir = home.join(".claude/plugins/cache/anthropics/claude-code/frontend-design");
-            if plugin_dir.exists() {
-                return DetectionResult { installed: true, scope: InstallScope::User, path: Some(plugin_dir) };
-            }
-            // Also check settings.json for plugin reference
-            let settings = home.join(".claude/settings.json");
-            if settings.exists() {
-                let content = std::fs::read_to_string(&settings).unwrap_or_default();
-                if content.contains("frontend-design") {
-                    return DetectionResult { installed: true, scope: InstallScope::User, path: Some(settings) };
-                }
-            }
-            DetectionResult { installed: false, scope: InstallScope::User, path: None }
-        }
-        _ => DetectionResult { installed: false, scope: InstallScope::User, path: None },
-    }
-}
-
-fn detect_project_scope(agent: &str, project: &Path) -> Option<DetectionResult> {
-    let config_path = match agent {
-        "claude-code" => project.join(".claude/settings.json"),
-        _ => return None,
-    };
-    if config_path.exists() {
-        let content = std::fs::read_to_string(&config_path).unwrap_or_default();
-        if content.contains("frontend-design") {
-            return Some(DetectionResult {
-                installed: true,
-                scope: InstallScope::Project,
-                path: Some(config_path),
-            });
-        }
-    }
-    None
+    plugin().detect(agent, home, project_root).into()
 }
 
 pub fn is_frontend_design_compatible(agent: &str) -> bool {
-    matches!(agent, "claude-code")
+    plugin().is_compatible(agent)
 }
 
 impl InstallConfig {
     pub fn for_agent(agent: &str, scope: InstallScope) -> Option<Self> {
-        let (target_path, config_content) = match (agent, &scope) {
-            ("claude-code", InstallScope::User) => (
-                PathBuf::from("~/.claude/settings.json"),
-                "# frontend-design — Anthropic's anti-AI-slop UI generation skill\n# Installed by Shepherd. See https://github.com/anthropics/claude-code/tree/main/plugins/frontend-design\n".to_string(),
-            ),
-            ("claude-code", InstallScope::Project) => (
-                PathBuf::from(".claude/settings.json"),
-                "# frontend-design — Anthropic's anti-AI-slop UI generation skill\n# Installed by Shepherd. See https://github.com/anthropics/claude-code/tree/main/plugins/frontend-design\n".to_string(),
-            ),
-            _ => return None,
-        };
+        let cfg = plugin().install_config(agent, scope)?;
         Some(Self {
-            agent: agent.to_string(),
-            scope,
-            target_path,
-            config_content,
+            agent: cfg.agent,
+            scope: cfg.scope,
+            target_path: cfg.target_path,
+            config_content: cfg.config_content,
         })
     }
 }

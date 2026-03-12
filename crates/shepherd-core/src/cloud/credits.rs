@@ -90,6 +90,7 @@ impl CloudClient {
     }
 
     /// Refresh the cached credit balance from the server.
+    #[tracing::instrument(skip(self))]
     pub async fn refresh_balance(&self) -> Result<u32, CloudError> {
         let jwt = auth::load_jwt().ok_or(CloudError::NotAuthenticated)?;
         let profile = self.fetch_profile(&jwt).await?;

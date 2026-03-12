@@ -16,6 +16,7 @@ pub const MIN_SYNC_INTERVAL: Duration = Duration::from_secs(30);
 /// The sync only runs when:
 /// - A JWT is stored (user is authenticated)
 /// - The interval has elapsed since last sync
+#[tracing::instrument(skip(client))]
 pub async fn background_sync(client: CloudClient, interval: Duration) {
     let interval = if interval < MIN_SYNC_INTERVAL {
         MIN_SYNC_INTERVAL
@@ -43,6 +44,7 @@ pub async fn background_sync(client: CloudClient, interval: Duration) {
 }
 
 /// Perform a one-time sync (useful on app startup or after mutations).
+#[tracing::instrument(skip(client))]
 pub async fn sync_now(client: &CloudClient) -> Result<(), super::CloudError> {
     if !auth::is_authenticated() {
         return Err(super::CloudError::NotAuthenticated);

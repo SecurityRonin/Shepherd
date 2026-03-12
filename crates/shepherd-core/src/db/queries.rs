@@ -1,7 +1,27 @@
 use anyhow::Result;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, Row};
 
 use super::models::{CreateTask, Task, TaskStatus};
+
+/// Map a database row to a `Task` struct.
+///
+/// Expects columns in order: id, title, prompt, agent_id, repo_path,
+/// branch, isolation_mode, status, created_at, updated_at.
+fn row_to_task(row: &Row) -> rusqlite::Result<Task> {
+    Ok(Task {
+        id: row.get(0)?,
+        title: row.get(1)?,
+        prompt: row.get(2)?,
+        agent_id: row.get(3)?,
+        repo_path: row.get(4)?,
+        branch: row.get(5)?,
+        isolation_mode: row.get(6)?,
+        status: TaskStatus::parse_status(&row.get::<_, String>(7)?)
+            .unwrap_or(TaskStatus::Queued),
+        created_at: row.get(8)?,
+        updated_at: row.get(9)?,
+    })
+}
 
 pub fn create_task(conn: &Connection, input: &CreateTask) -> Result<Task> {
     conn.execute(
@@ -22,20 +42,7 @@ pub fn get_task(conn: &Connection, id: i64) -> Result<Task> {
     let task = conn.query_row(
         "SELECT id, title, prompt, agent_id, repo_path, branch, isolation_mode, status, created_at, updated_at FROM tasks WHERE id = ?1",
         params![id],
-        |row| {
-            Ok(Task {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                prompt: row.get(2)?,
-                agent_id: row.get(3)?,
-                repo_path: row.get(4)?,
-                branch: row.get(5)?,
-                isolation_mode: row.get(6)?,
-                status: TaskStatus::parse_status(&row.get::<_, String>(7)?).unwrap_or(TaskStatus::Queued),
-                created_at: row.get(8)?,
-                updated_at: row.get(9)?,
-            })
-        },
+        row_to_task,
     )?;
     Ok(task)
 }
@@ -44,21 +51,8 @@ pub fn list_tasks(conn: &Connection) -> Result<Vec<Task>> {
     let mut stmt = conn.prepare(
         "SELECT id, title, prompt, agent_id, repo_path, branch, isolation_mode, status, created_at, updated_at FROM tasks ORDER BY id"
     )?;
-    let tasks = stmt.query_map([], |row| {
-        Ok(Task {
-            id: row.get(0)?,
-            title: row.get(1)?,
-            prompt: row.get(2)?,
-            agent_id: row.get(3)?,
-            repo_path: row.get(4)?,
-            branch: row.get(5)?,
-            isolation_mode: row.get(6)?,
-            status: TaskStatus::parse_status(&row.get::<_, String>(7)?).unwrap_or(TaskStatus::Queued),
-            created_at: row.get(8)?,
-            updated_at: row.get(9)?,
-        })
-    })?
-    .collect::<Result<Vec<_>, _>>()?;
+    let tasks = stmt.query_map([], row_to_task)?
+        .collect::<Result<Vec<_>, _>>()?;
     Ok(tasks)
 }
 

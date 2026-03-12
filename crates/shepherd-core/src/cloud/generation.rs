@@ -90,6 +90,7 @@ pub struct CloudNorthStarResponse {
 
 impl CloudClient {
     /// Generate logos via the cloud API.
+    #[tracing::instrument(skip(self, input))]
     pub async fn generate_logo(
         &self,
         input: &LogoGenInput,
@@ -132,6 +133,7 @@ impl CloudClient {
     }
 
     /// Generate names via the cloud API.
+    #[tracing::instrument(skip(self))]
     pub async fn generate_name(
         &self,
         description: &str,
@@ -179,6 +181,7 @@ impl CloudClient {
     }
 
     /// Execute a North Star phase via the cloud API.
+    #[tracing::instrument(skip(self, context))]
     pub async fn generate_northstar(
         &self,
         phase: &str,

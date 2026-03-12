@@ -54,6 +54,7 @@ pub struct DocumentResponse {
 // ── Handlers ─────────────────────────────────────────────────────────
 
 /// GET /api/northstar/phases — list all analysis phases.
+#[tracing::instrument]
 pub async fn list_phases() -> Json<ListPhasesResponse> {
     let phases: Vec<PhaseInfo> = PHASES
         .iter()
@@ -71,6 +72,7 @@ pub async fn list_phases() -> Json<ListPhasesResponse> {
 }
 
 /// POST /api/northstar/phase — execute a single analysis phase.
+#[tracing::instrument(skip(state, req))]
 pub async fn execute_phase(
     State(state): State<Arc<AppState>>,
     Json(req): Json<ExecutePhaseRequest>,

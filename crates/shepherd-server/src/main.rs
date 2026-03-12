@@ -38,9 +38,11 @@ async fn main() -> anyhow::Result<()> {
     let yolo = YoloEngine::load(&config::shepherd_dir().join("rules.yaml"))?;
 
     let sandbox = {
-        let mut profile = SandboxProfile::default();
-        profile.enabled = cfg.sandbox.enabled;
-        profile.block_network = cfg.sandbox.block_network;
+        let mut profile = SandboxProfile {
+            enabled: cfg.sandbox.enabled,
+            block_network: cfg.sandbox.block_network,
+            ..Default::default()
+        };
         profile.blocked_paths.extend(cfg.sandbox.extra_blocked_paths.iter().cloned());
         profile
     };
