@@ -82,6 +82,17 @@ fn migrate(conn: &Connection) -> Result<()> {
         INSERT OR IGNORE INTO profiles (name, is_default) VALUES ('default', 1);
         ",
     )?;
+
+    // Context orchestrator tables
+    crate::context::feedback::migrate(conn)?;
+    crate::context::index::migrate(conn)?;
+
+    // Observability tables
+    crate::observability::store::migrate(conn)?;
+
+    // Session replay tables
+    crate::replay::migrate(conn)?;
+
     Ok(())
 }
 
@@ -94,12 +105,12 @@ mod tests {
         let conn = open_memory().unwrap();
         let count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('tasks', 'sessions', 'permissions', 'diffs', 'profiles', 'gate_results')",
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('tasks', 'sessions', 'permissions', 'diffs', 'profiles', 'gate_results', 'context_packages', 'context_feedback', 'task_metrics', 'file_index', 'session_events')",
                 [],
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(count, 6);
+        assert_eq!(count, 11);
     }
 
     #[test]

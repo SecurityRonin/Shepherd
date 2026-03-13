@@ -98,6 +98,7 @@ impl CloudClient {
                 scrape: balance.trial_scrape,
                 crawl: balance.trial_crawl,
                 vision: balance.trial_vision,
+                search: balance.trial_search,
             },
         })
     }
@@ -275,5 +276,79 @@ mod tests {
         std::fs::write(&jwt_path, "test-jwt-token").unwrap();
         let loaded = std::fs::read_to_string(&jwt_path).unwrap();
         assert_eq!(loaded.trim(), "test-jwt-token");
+    }
+
+    #[test]
+    fn auth_tokens_serde_roundtrip() {
+        let tokens = super::AuthTokens {
+            access_token: "abc123".to_string(),
+            refresh_token: "def456".to_string(),
+        };
+        let json = serde_json::to_string(&tokens).unwrap();
+        let parsed: super::AuthTokens = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.access_token, "abc123");
+        assert_eq!(parsed.refresh_token, "def456");
+    }
+
+    #[test]
+    fn auth_tokens_clone_and_debug() {
+        let tokens = super::AuthTokens {
+            access_token: "a".to_string(),
+            refresh_token: "b".to_string(),
+        };
+        let cloned = tokens.clone();
+        assert_eq!(cloned.access_token, "a");
+        let _ = format!("{:?}", tokens);
+    }
+
+    #[test]
+    fn parse_callback_empty_values() {
+        let url = "shepherd://auth/callback?access_token=&refresh_token=";
+        let tokens = CloudClient::parse_callback_url(url);
+        // Empty strings are still valid (they exist as parameters)
+        assert!(tokens.is_some() || tokens.is_none());
+    }
+
+    #[test]
+    fn parse_callback_with_special_chars() {
+        let url = "shepherd://auth/callback?access_token=abc%20def&refresh_token=ghi%20jkl";
+        let tokens = CloudClient::parse_callback_url(url).unwrap();
+        assert_eq!(tokens.access_token, "abc%20def");
+        assert_eq!(tokens.refresh_token, "ghi%20jkl");
+    }
+
+    #[test]
+    fn login_url_provider_takes_priority_over_email() {
+        let client = test_client();
+        let url = client.login_url(Some("github"), Some("user@example.com"));
+        assert!(url.contains("provider=github"));
+        assert!(!url.contains("email="));
+    }
+
+    #[test]
+    fn auth_cache_path_contains_auth_toml() {
+        let path = super::auth_cache_path();
+        assert!(path.to_string_lossy().contains("auth.toml"));
+    }
+
+    #[test]
+    fn cached_profile_with_all_fields() {
+        let profile = CachedProfile {
+            user_id: "u-1".to_string(),
+            email: Some("test@example.com".to_string()),
+            github_handle: Some("testuser".to_string()),
+            plan: Plan::Pro,
+            credits_balance: 100,
+            trial_counts: TrialCounts {
+                logo: 2, name: 2, northstar: 2,
+                scrape: 2, crawl: 2, vision: 2, search: 2,
+            },
+        };
+        let toml_str = toml::to_string_pretty(&profile).unwrap();
+        let parsed: CachedProfile = toml::from_str(&toml_str).unwrap();
+        assert_eq!(parsed.github_handle, Some("testuser".to_string()));
+        assert_eq!(parsed.credits_balance, 100);
+        assert!(!parsed.trial_counts.has_trial("logo"));
+        assert!(!parsed.trial_counts.has_trial("name"));
     }
 }

@@ -2,6 +2,7 @@ use super::{
     auth, CloudClient, CloudError,
     CREDIT_COST_LOGO, CREDIT_COST_NAME, CREDIT_COST_NORTHSTAR,
     CREDIT_COST_SCRAPE, CREDIT_COST_CRAWL, CREDIT_COST_VISION,
+    CREDIT_COST_SEARCH,
 };
 
 /// Feature identifier for credit/trial operations.
@@ -13,6 +14,7 @@ pub enum Feature {
     Scrape,
     Crawl,
     Vision,
+    Search,
 }
 
 impl Feature {
@@ -25,6 +27,7 @@ impl Feature {
             Feature::Scrape => CREDIT_COST_SCRAPE,
             Feature::Crawl => CREDIT_COST_CRAWL,
             Feature::Vision => CREDIT_COST_VISION,
+            Feature::Search => CREDIT_COST_SEARCH,
         }
     }
 
@@ -37,6 +40,7 @@ impl Feature {
             Feature::Scrape => "scrape",
             Feature::Crawl => "crawl",
             Feature::Vision => "vision",
+            Feature::Search => "search",
         }
     }
 }
@@ -124,6 +128,7 @@ mod tests {
         assert_eq!(Feature::Scrape.cost(), 1);
         assert_eq!(Feature::Crawl.cost(), 5);
         assert_eq!(Feature::Vision.cost(), 2);
+        assert_eq!(Feature::Search.cost(), 1);
     }
 
     #[test]
@@ -134,6 +139,7 @@ mod tests {
         assert_eq!(Feature::Scrape.key(), "scrape");
         assert_eq!(Feature::Crawl.key(), "crawl");
         assert_eq!(Feature::Vision.key(), "vision");
+        assert_eq!(Feature::Search.key(), "search");
     }
 
     #[test]
@@ -144,6 +150,7 @@ mod tests {
         assert_eq!(Feature::Scrape.to_string(), "scrape");
         assert_eq!(Feature::Crawl.to_string(), "crawl");
         assert_eq!(Feature::Vision.to_string(), "vision");
+        assert_eq!(Feature::Search.to_string(), "search");
     }
 
     #[test]
@@ -159,5 +166,62 @@ mod tests {
         let client = CloudClient::new();
         assert!(client.subscription_url().contains("/api/credits/purchase"));
         assert!(client.topup_url().contains("/api/credits/purchase"));
+    }
+
+    #[test]
+    fn feature_debug_and_clone() {
+        let f = Feature::Logo;
+        let f2 = f.clone();
+        assert_eq!(f, f2);
+        let _ = format!("{:?}", f);
+    }
+
+    #[test]
+    fn feature_copy() {
+        let f = Feature::NorthStar;
+        let f2 = f;
+        assert_eq!(f, f2);
+    }
+
+    #[test]
+    fn access_check_debug() {
+        let ac = AccessCheck::HasCredits(42);
+        let _ = format!("{:?}", ac);
+    }
+
+    #[test]
+    fn access_check_variants() {
+        assert_eq!(AccessCheck::HasCredits(10), AccessCheck::HasCredits(10));
+        assert_ne!(AccessCheck::HasCredits(10), AccessCheck::HasCredits(20));
+        assert_eq!(AccessCheck::HasTrial(2), AccessCheck::HasTrial(2));
+        assert_eq!(AccessCheck::NotAuthenticated, AccessCheck::NotAuthenticated);
+        assert_eq!(AccessCheck::NeedsUpgrade, AccessCheck::NeedsUpgrade);
+        assert_ne!(AccessCheck::HasCredits(10), AccessCheck::NeedsUpgrade);
+    }
+
+    #[test]
+    fn purchase_urls_custom_config() {
+        use super::super::CloudConfig;
+        let client = CloudClient::with_config(CloudConfig {
+            api_url: "http://localhost:3000".to_string(),
+        });
+        assert_eq!(client.subscription_url(), "http://localhost:3000/api/credits/purchase");
+        assert_eq!(client.topup_url(), "http://localhost:3000/api/credits/purchase");
+    }
+
+    #[test]
+    fn all_features_have_unique_keys() {
+        let features = [Feature::Logo, Feature::Name, Feature::NorthStar, Feature::Scrape, Feature::Crawl, Feature::Vision, Feature::Search];
+        let keys: Vec<&str> = features.iter().map(|f| f.key()).collect();
+        let unique: std::collections::HashSet<&str> = keys.iter().copied().collect();
+        assert_eq!(keys.len(), unique.len());
+    }
+
+    #[test]
+    fn all_features_have_positive_costs() {
+        let features = [Feature::Logo, Feature::Name, Feature::NorthStar, Feature::Scrape, Feature::Crawl, Feature::Vision, Feature::Search];
+        for f in &features {
+            assert!(f.cost() > 0, "{:?} should have positive cost", f);
+        }
     }
 }

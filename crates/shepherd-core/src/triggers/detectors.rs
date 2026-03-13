@@ -212,4 +212,162 @@ mod tests {
         let result = detector.detect(tmp.path()).unwrap();
         assert!(result.is_none());
     }
+
+    // ── Cargo.toml-based name detection ─────────────────────────
+
+    #[test]
+    fn test_namegen_detector_untitled_cargo_toml() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("Cargo.toml"),
+            "[package]\nname = \"my-app\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+
+        let detector = NameGenDetector;
+        let result = detector.detect(tmp.path()).unwrap();
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().tool, "name_generator");
+    }
+
+    #[test]
+    fn test_namegen_detector_proper_cargo_toml() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("Cargo.toml"),
+            "[package]\nname = \"shepherd-core\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+
+        let detector = NameGenDetector;
+        let result = detector.detect(tmp.path()).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_namegen_detector_cargo_toml_project_variant() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("Cargo.toml"),
+            "[package]\nname = \"project\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+
+        let detector = NameGenDetector;
+        let result = detector.detect(tmp.path()).unwrap();
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_namegen_detector_no_manifest() {
+        let tmp = tempfile::tempdir().unwrap();
+
+        let detector = NameGenDetector;
+        let result = detector.detect(tmp.path()).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_namegen_detector_package_json_my_project() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("package.json"),
+            r#"{"name": "My-Project"}"#,
+        )
+        .unwrap();
+
+        let detector = NameGenDetector;
+        let result = detector.detect(tmp.path()).unwrap();
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_namegen_detector_package_json_app() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("package.json"),
+            r#"{"name": "app"}"#,
+        )
+        .unwrap();
+
+        let detector = NameGenDetector;
+        let result = detector.detect(tmp.path()).unwrap();
+        assert!(result.is_some());
+    }
+
+    // ── LogoGen edge cases ──────────────────────────────────────
+
+    #[test]
+    fn test_logogen_detector_non_web_project() {
+        let tmp = tempfile::tempdir().unwrap();
+        // No package.json, no public/, no index.html — not a web project
+        std::fs::write(tmp.path().join("Cargo.toml"), "[package]\nname = \"cli\"\n").unwrap();
+
+        let detector = LogoGenDetector;
+        let result = detector.detect(tmp.path()).unwrap();
+        assert!(result.is_none(), "Non-web project should not trigger logo suggestion");
+    }
+
+    #[test]
+    fn test_logogen_detector_has_static_favicon() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join("static")).unwrap();
+        std::fs::write(tmp.path().join("static/favicon.ico"), "icon").unwrap();
+        std::fs::write(tmp.path().join("package.json"), "{}").unwrap();
+
+        let detector = LogoGenDetector;
+        let result = detector.detect(tmp.path()).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_logogen_detector_has_tauri_icon() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join("src-tauri/icons")).unwrap();
+        std::fs::write(tmp.path().join("src-tauri/icons/icon.png"), "icon").unwrap();
+        std::fs::write(tmp.path().join("package.json"), "{}").unwrap();
+
+        let detector = LogoGenDetector;
+        let result = detector.detect(tmp.path()).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_logogen_detector_index_html_project() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("index.html"), "<html>").unwrap();
+
+        let detector = LogoGenDetector;
+        let result = detector.detect(tmp.path()).unwrap();
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().tool, "logo_generator");
+    }
+
+    // ── Detector IDs ────────────────────────────────────────────
+
+    #[test]
+    fn test_detector_ids() {
+        assert_eq!(NameGenDetector.id(), "namegen_untitled");
+        assert_eq!(LogoGenDetector.id(), "logogen_no_icon");
+        assert_eq!(NorthStarDetector.id(), "northstar_no_docs");
+    }
+
+    #[test]
+    fn test_trigger_suggestion_fields() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("package.json"),
+            r#"{"name": "untitled"}"#,
+        )
+        .unwrap();
+
+        let detector = NameGenDetector;
+        let suggestion = detector.detect(tmp.path()).unwrap().unwrap();
+        assert_eq!(suggestion.id, "namegen_untitled");
+        assert_eq!(suggestion.tool, "name_generator");
+        assert!(!suggestion.message.is_empty());
+        assert!(!suggestion.action_label.is_empty());
+        assert!(suggestion.action_route.starts_with('/'));
+        assert_eq!(suggestion.priority, TriggerPriority::Medium);
+    }
 }

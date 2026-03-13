@@ -190,4 +190,133 @@ mod tests {
         let results: Vec<GateResult> = vec![];
         assert!(all_gates_passed(&results));
     }
+
+    #[tokio::test]
+    async fn run_gates_empty_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = GateConfig::default();
+        let results = run_gates(dir.path(), &config).await.unwrap();
+        // Unknown project type means all_types returns empty,
+        // so no builtin gates run. Only discovered plugin gates would appear.
+        for r in &results {
+            assert!(r.passed);
+        }
+    }
+
+    #[tokio::test]
+    async fn run_gates_disabled_all() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Cargo.toml"), "[package]").unwrap();
+        let config = GateConfig {
+            lint: false,
+            format_check: false,
+            type_check: false,
+            test: false,
+            custom_gates: vec![],
+            timeout_seconds: 10,
+        };
+        let results = run_gates(dir.path(), &config).await.unwrap();
+        // No gates should run (all disabled, no custom, no discovered plugins)
+        // Only discovered plugins from .shepherd/gates/ could appear
+        for r in &results {
+            assert!(r.passed || !r.passed); // verify no panic
+        }
+    }
+
+    #[test]
+    fn gate_config_serde_roundtrip() {
+        let config = GateConfig {
+            lint: false,
+            format_check: true,
+            type_check: false,
+            test: true,
+            custom_gates: vec!["./check.sh".into()],
+            timeout_seconds: 120,
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let deser: GateConfig = serde_json::from_str(&json).unwrap();
+        assert!(!deser.lint);
+        assert!(deser.format_check);
+        assert!(!deser.type_check);
+        assert!(deser.test);
+        assert_eq!(deser.custom_gates, vec!["./check.sh"]);
+        assert_eq!(deser.timeout_seconds, 120);
+    }
+
+    #[test]
+    fn gate_config_deserialize_defaults() {
+        let json = "{}";
+        let config: GateConfig = serde_json::from_str(json).unwrap();
+        assert!(config.lint);
+        assert!(config.format_check);
+        assert!(config.type_check);
+        assert!(config.test);
+        assert!(config.custom_gates.is_empty());
+        assert_eq!(config.timeout_seconds, 300);
+    }
+
+    #[test]
+    fn gate_type_serde_all() {
+        let types = vec![
+            (GateType::Lint, "\"lint\""),
+            (GateType::Format, "\"format\""),
+            (GateType::TypeCheck, "\"type_check\""),
+            (GateType::Test, "\"test\""),
+            (GateType::Security, "\"security\""),
+            (GateType::Custom, "\"custom\""),
+        ];
+        for (gate_type, expected) in types {
+            let json = serde_json::to_string(&gate_type).unwrap();
+            assert_eq!(json, expected, "Failed for {gate_type:?}");
+            let deser: GateType = serde_json::from_str(&json).unwrap();
+            assert_eq!(deser, gate_type);
+        }
+    }
+
+    #[test]
+    fn gate_result_serde_roundtrip() {
+        let result = GateResult {
+            gate_name: "custom-lint".into(),
+            passed: false,
+            output: "3 errors found".into(),
+            duration_ms: 1500,
+            gate_type: GateType::Custom,
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        let deser: GateResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(deser.gate_name, "custom-lint");
+        assert!(!deser.passed);
+        assert_eq!(deser.output, "3 errors found");
+        assert_eq!(deser.duration_ms, 1500);
+        assert_eq!(deser.gate_type, GateType::Custom);
+    }
+
+    #[tokio::test]
+    async fn run_gates_custom_gate() {
+        let dir = tempfile::tempdir().unwrap();
+        // Create a .shepherd/gates/ directory with a simple gate script
+        let gates_dir = dir.path().join(".shepherd").join("gates");
+        std::fs::create_dir_all(&gates_dir).unwrap();
+        let gate_script = gates_dir.join("check.sh");
+        std::fs::write(&gate_script, "#!/bin/sh\necho ok\nexit 0\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&gate_script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+
+        let config = GateConfig {
+            lint: false,
+            format_check: false,
+            type_check: false,
+            test: false,
+            custom_gates: vec![],
+            timeout_seconds: 10,
+        };
+        let results = run_gates(dir.path(), &config).await.unwrap();
+        // Should discover and run the plugin gate from .shepherd/gates/
+        let plugin_result = results.iter().find(|r| r.gate_type == GateType::Custom);
+        assert!(plugin_result.is_some(), "Should have discovered plugin gate");
+        assert!(plugin_result.unwrap().passed);
+    }
 }

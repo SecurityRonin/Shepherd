@@ -172,4 +172,45 @@ mod tests {
         assert!(result.available.is_none());
         assert!(result.error.is_some());
     }
+
+    #[test]
+    fn domain_result_all_fields() {
+        let r = DomainResult {
+            domain: "example.com".into(),
+            available: Some(false),
+            error: None,
+        };
+        assert_eq!(r.domain, "example.com");
+        assert_eq!(r.available, Some(false));
+        assert!(r.error.is_none());
+
+        let r2 = DomainResult {
+            domain: "fail.com".into(),
+            available: None,
+            error: Some("timeout".into()),
+        };
+        assert!(r2.available.is_none());
+        assert_eq!(r2.error.as_deref(), Some("timeout"));
+    }
+
+    #[test]
+    fn rdap_bootstrap_deserialize() {
+        let json = r#"{"version":"1.0","services":[[["com"],["https://rdap.verisign.com/com/v1/"]],[["dev"],["https://rdap.nic.google/"]]]}"#;
+        let bootstrap: RdapBootstrap = serde_json::from_str(json).unwrap();
+        assert_eq!(bootstrap.services.len(), 2);
+    }
+
+    #[test]
+    fn default_tlds_all_lowercase() {
+        for tld in DEFAULT_TLDS {
+            assert_eq!(*tld, tld.to_lowercase(), "TLD should be lowercase: {tld}");
+        }
+    }
+
+    #[test]
+    fn default_tlds_no_dots() {
+        for tld in DEFAULT_TLDS {
+            assert!(!tld.contains('.'), "TLD should not contain dots: {tld}");
+        }
+    }
 }

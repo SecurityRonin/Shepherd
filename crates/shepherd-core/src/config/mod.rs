@@ -61,4 +61,63 @@ mod tests {
         assert_eq!(parsed.port, config.port);
         assert_eq!(parsed.max_agents, config.max_agents);
     }
+
+    #[test]
+    fn test_load_config_with_project_overrides() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project_dir = tmp.path().join("project");
+        let shepherd_dir = project_dir.join(".shepherd");
+        std::fs::create_dir_all(&shepherd_dir).unwrap();
+        std::fs::write(
+            shepherd_dir.join("config.toml"),
+            r#"
+default_agent = "codex"
+default_isolation = "container"
+default_permission_mode = "auto"
+"#,
+        ).unwrap();
+        let config = load_config(Some(&project_dir)).unwrap();
+        // Project overrides should take effect
+        assert_eq!(config.default_agent, "codex");
+        assert_eq!(config.default_isolation, "container");
+        assert_eq!(config.default_permission_mode, "auto");
+        // Non-overridden defaults should remain
+        assert_eq!(config.port, 7532);
+        assert_eq!(config.max_agents, 10);
+    }
+
+    #[test]
+    fn test_load_config_project_dir_without_config() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Project dir exists but has no .shepherd/config.toml
+        let config = load_config(Some(tmp.path())).unwrap();
+        // Should just return defaults
+        assert_eq!(config.default_agent, "claude-code");
+        assert_eq!(config.default_isolation, "worktree");
+        assert_eq!(config.default_permission_mode, "ask");
+    }
+
+    #[test]
+    fn test_shepherd_dir_returns_path() {
+        let dir = shepherd_dir();
+        assert!(dir.to_string_lossy().contains(".shepherd"));
+    }
+
+    #[test]
+    fn test_load_config_partial_project_override() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project_dir = tmp.path().join("project");
+        let shepherd_dir = project_dir.join(".shepherd");
+        std::fs::create_dir_all(&shepherd_dir).unwrap();
+        // Only override one field
+        std::fs::write(
+            shepherd_dir.join("config.toml"),
+            r#"default_agent = "opencode""#,
+        ).unwrap();
+        let config = load_config(Some(&project_dir)).unwrap();
+        assert_eq!(config.default_agent, "opencode");
+        // Other fields get project defaults (which are the same as global defaults)
+        assert_eq!(config.default_isolation, "worktree");
+        assert_eq!(config.default_permission_mode, "ask");
+    }
 }

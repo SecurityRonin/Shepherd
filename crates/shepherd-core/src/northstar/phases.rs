@@ -309,4 +309,306 @@ mod tests {
         assert!(!result.contains("{product_name}"));
         assert!(!result.contains("{product_description}"));
     }
+
+    #[tokio::test]
+    async fn execute_phase_basic() {
+        use crate::llm::{LlmResponse, TokenUsage};
+
+        struct MockProvider;
+
+        #[async_trait::async_trait]
+        impl LlmProvider for MockProvider {
+            async fn chat(&self, request: &LlmRequest) -> anyhow::Result<LlmResponse> {
+                // Verify prompt has product name substituted
+                let user_msg = request.messages.last().unwrap();
+                assert!(user_msg.content.contains("TestApp"));
+                assert!(user_msg.content.contains("A test app"));
+                assert!(!user_msg.content.contains("{product_name}"));
+                // Verify request parameters
+                assert_eq!(request.max_tokens, 8192);
+                assert!((request.temperature - 0.5).abs() < 0.01);
+                Ok(LlmResponse {
+                    content: "# Product Vision\nA great product.".to_string(),
+                    model: "test".to_string(),
+                    usage: TokenUsage {
+                        prompt_tokens: 100,
+                        completion_tokens: 50,
+                        total_tokens: 150,
+                    },
+                })
+            }
+            fn name(&self) -> &str {
+                "mock"
+            }
+        }
+
+        let phase = &PHASES[0]; // Product Vision
+        let result =
+            execute_phase(&MockProvider, phase, "TestApp", "A test app", None)
+                .await
+                .unwrap();
+        assert_eq!(result.phase_id, 1);
+        assert_eq!(result.phase_name, "Product Vision");
+        assert_eq!(result.status, PhaseStatus::Completed);
+        assert!(result.output.contains("Product Vision"));
+        assert_eq!(result.documents.len(), 1);
+        assert_eq!(result.documents[0].filename, "product-vision.md");
+        assert_eq!(result.documents[0].title, "Product Vision");
+        assert_eq!(result.documents[0].doc_type, "markdown");
+    }
+
+    #[tokio::test]
+    async fn execute_phase_with_previous_context() {
+        use crate::llm::{LlmResponse, TokenUsage};
+
+        struct ContextCheckProvider;
+
+        #[async_trait::async_trait]
+        impl LlmProvider for ContextCheckProvider {
+            async fn chat(&self, request: &LlmRequest) -> anyhow::Result<LlmResponse> {
+                // Should have 3 messages: system, context user msg, prompt user msg
+                assert_eq!(request.messages.len(), 3, "Expected 3 messages with context");
+                assert!(request.messages[1].content.contains("previous analysis"));
+                Ok(LlmResponse {
+                    content: "Phase output".to_string(),
+                    model: "test".to_string(),
+                    usage: TokenUsage {
+                        prompt_tokens: 0,
+                        completion_tokens: 0,
+                        total_tokens: 0,
+                    },
+                })
+            }
+            fn name(&self) -> &str {
+                "mock"
+            }
+        }
+
+        let phase = &PHASES[1]; // Target Audience
+        let result = execute_phase(
+            &ContextCheckProvider,
+            phase,
+            "App",
+            "desc",
+            Some("previous analysis data"),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.phase_id, 2);
+        assert_eq!(result.documents.len(), 2); // target-audience.md + personas.md
+        assert_eq!(result.documents[0].title, "Target Audience");
+        assert_eq!(result.documents[1].title, "Personas");
+    }
+
+    #[tokio::test]
+    async fn execute_phase_no_context_has_two_messages() {
+        use crate::llm::{LlmResponse, TokenUsage};
+
+        struct MsgCountProvider;
+
+        #[async_trait::async_trait]
+        impl LlmProvider for MsgCountProvider {
+            async fn chat(&self, request: &LlmRequest) -> anyhow::Result<LlmResponse> {
+                assert_eq!(
+                    request.messages.len(),
+                    2,
+                    "Expected 2 messages without context"
+                );
+                Ok(LlmResponse {
+                    content: "output".to_string(),
+                    model: "test".to_string(),
+                    usage: TokenUsage {
+                        prompt_tokens: 0,
+                        completion_tokens: 0,
+                        total_tokens: 0,
+                    },
+                })
+            }
+            fn name(&self) -> &str {
+                "mock"
+            }
+        }
+
+        let result = execute_phase(&MsgCountProvider, &PHASES[0], "X", "Y", None)
+            .await
+            .unwrap();
+        assert_eq!(result.status, PhaseStatus::Completed);
+    }
+
+    #[tokio::test]
+    async fn execute_phase_multi_document() {
+        use crate::llm::{LlmResponse, TokenUsage};
+
+        struct SimpleProvider;
+
+        #[async_trait::async_trait]
+        impl LlmProvider for SimpleProvider {
+            async fn chat(&self, _request: &LlmRequest) -> anyhow::Result<LlmResponse> {
+                Ok(LlmResponse {
+                    content: "multi doc output".to_string(),
+                    model: "test".to_string(),
+                    usage: TokenUsage {
+                        prompt_tokens: 0,
+                        completion_tokens: 0,
+                        total_tokens: 0,
+                    },
+                })
+            }
+            fn name(&self) -> &str {
+                "mock"
+            }
+        }
+
+        // Phase 10 (Technical Architecture) has 2 documents
+        let phase = &PHASES[9];
+        let result = execute_phase(&SimpleProvider, phase, "P", "D", None)
+            .await
+            .unwrap();
+        assert_eq!(result.documents.len(), 2);
+        assert_eq!(result.documents[0].filename, "technical-architecture.md");
+        assert_eq!(result.documents[0].title, "Technical Architecture");
+        assert_eq!(result.documents[1].filename, "api-design.md");
+        assert_eq!(result.documents[1].title, "Api Design");
+        // All documents share the same content
+        assert_eq!(result.documents[0].content, result.documents[1].content);
+    }
+
+    #[tokio::test]
+    async fn execute_phase_llm_error() {
+        use crate::llm::LlmResponse;
+
+        struct FailProvider;
+
+        #[async_trait::async_trait]
+        impl LlmProvider for FailProvider {
+            async fn chat(&self, _request: &LlmRequest) -> anyhow::Result<LlmResponse> {
+                anyhow::bail!("LLM unavailable")
+            }
+            fn name(&self) -> &str {
+                "fail"
+            }
+        }
+
+        let result = execute_phase(&FailProvider, &PHASES[0], "X", "Y", None).await;
+        assert!(result.is_err());
+        assert!(result.err().unwrap().to_string().contains("unavailable"));
+    }
+
+    #[tokio::test]
+    async fn execute_all_phases_success() {
+        use crate::llm::{LlmResponse, TokenUsage};
+        use std::sync::atomic::{AtomicU32, Ordering};
+
+        static CALL_COUNT: AtomicU32 = AtomicU32::new(0);
+
+        struct CountingProvider;
+
+        #[async_trait::async_trait]
+        impl LlmProvider for CountingProvider {
+            async fn chat(&self, _request: &LlmRequest) -> anyhow::Result<LlmResponse> {
+                let n = CALL_COUNT.fetch_add(1, Ordering::SeqCst);
+                Ok(LlmResponse {
+                    content: format!("Phase {} output content here", n + 1),
+                    model: "test".to_string(),
+                    usage: TokenUsage {
+                        prompt_tokens: 0,
+                        completion_tokens: 0,
+                        total_tokens: 0,
+                    },
+                })
+            }
+            fn name(&self) -> &str {
+                "mock"
+            }
+        }
+
+        CALL_COUNT.store(0, Ordering::SeqCst);
+        let results = execute_all_phases(&CountingProvider, "TestApp", "A test")
+            .await
+            .unwrap();
+        assert_eq!(results.len(), 13);
+        // All should be Completed
+        for result in &results {
+            assert_eq!(result.status, PhaseStatus::Completed);
+        }
+        // Verify sequential IDs
+        for (i, result) in results.iter().enumerate() {
+            assert_eq!(result.phase_id, (i + 1) as u8);
+        }
+    }
+
+    #[tokio::test]
+    async fn execute_all_phases_with_failure() {
+        use crate::llm::{LlmResponse, TokenUsage};
+        use std::sync::atomic::{AtomicU32, Ordering};
+
+        static FAIL_CALL: AtomicU32 = AtomicU32::new(0);
+
+        struct FailOnThirdProvider;
+
+        #[async_trait::async_trait]
+        impl LlmProvider for FailOnThirdProvider {
+            async fn chat(&self, _request: &LlmRequest) -> anyhow::Result<LlmResponse> {
+                let n = FAIL_CALL.fetch_add(1, Ordering::SeqCst);
+                if n == 2 {
+                    anyhow::bail!("Phase 3 error")
+                }
+                Ok(LlmResponse {
+                    content: "ok".to_string(),
+                    model: "test".to_string(),
+                    usage: TokenUsage {
+                        prompt_tokens: 0,
+                        completion_tokens: 0,
+                        total_tokens: 0,
+                    },
+                })
+            }
+            fn name(&self) -> &str {
+                "mock"
+            }
+        }
+
+        FAIL_CALL.store(0, Ordering::SeqCst);
+        let results = execute_all_phases(&FailOnThirdProvider, "App", "Desc")
+            .await
+            .unwrap();
+        assert_eq!(results.len(), 13);
+        // Phase 3 should be Failed
+        assert_eq!(results[2].status, PhaseStatus::Failed);
+        assert!(results[2].output.contains("Phase failed"));
+        assert!(results[2].documents.is_empty());
+        // Other phases should be Completed
+        assert_eq!(results[0].status, PhaseStatus::Completed);
+        assert_eq!(results[1].status, PhaseStatus::Completed);
+        assert_eq!(results[3].status, PhaseStatus::Completed);
+    }
+
+    #[test]
+    fn document_title_generation() {
+        // Test the title generation logic inline
+        let test_cases = vec![
+            ("product-vision.md", "Product Vision"),
+            ("api-design.md", "Api Design"),
+            ("target-audience.md", "Target Audience"),
+            ("personas.md", "Personas"),
+            ("north-star-metric.md", "North Star Metric"),
+            ("kill-list.md", "Kill List"),
+        ];
+        for (filename, expected_title) in test_cases {
+            let title = filename
+                .trim_end_matches(".md")
+                .replace('-', " ")
+                .split_whitespace()
+                .map(|w| {
+                    let mut chars = w.chars();
+                    match chars.next() {
+                        None => String::new(),
+                        Some(c) => c.to_uppercase().to_string() + chars.as_str(),
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(" ");
+            assert_eq!(title, expected_title, "Failed for filename: {filename}");
+        }
+    }
 }

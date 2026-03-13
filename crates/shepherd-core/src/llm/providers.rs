@@ -466,4 +466,231 @@ mod tests {
         assert_eq!(provider.base_url, "http://localhost:11434");
         assert_eq!(provider.default_model, "llama3");
     }
+
+    #[test]
+    fn test_role_to_string() {
+        assert_eq!(role_to_string(&Role::System), "system");
+        assert_eq!(role_to_string(&Role::User), "user");
+        assert_eq!(role_to_string(&Role::Assistant), "assistant");
+    }
+
+    #[test]
+    fn test_chat_messages_to_openai() {
+        let messages = vec![
+            ChatMessage::system("You are helpful"),
+            ChatMessage::user("Hello"),
+            ChatMessage::assistant("Hi there"),
+        ];
+        let openai_msgs = chat_messages_to_openai(&messages);
+        assert_eq!(openai_msgs.len(), 3);
+        assert_eq!(openai_msgs[0].role, "system");
+        assert_eq!(openai_msgs[0].content, "You are helpful");
+        assert_eq!(openai_msgs[1].role, "user");
+        assert_eq!(openai_msgs[1].content, "Hello");
+        assert_eq!(openai_msgs[2].role, "assistant");
+        assert_eq!(openai_msgs[2].content, "Hi there");
+    }
+
+    #[test]
+    fn test_chat_messages_to_openai_empty() {
+        let messages: Vec<ChatMessage> = vec![];
+        let openai_msgs = chat_messages_to_openai(&messages);
+        assert!(openai_msgs.is_empty());
+    }
+
+    #[test]
+    fn test_openai_provider_custom_config() {
+        let provider = OpenAiProvider::new(
+            "sk-custom".to_string(),
+            "https://custom.api.com/v1".to_string(),
+            "gpt-4o-mini".to_string(),
+        );
+        assert_eq!(provider.name(), "openai");
+        assert_eq!(provider.api_key, "sk-custom");
+        assert_eq!(provider.base_url, "https://custom.api.com/v1");
+        assert_eq!(provider.default_model, "gpt-4o-mini");
+    }
+
+    #[test]
+    fn test_anthropic_provider_custom_config() {
+        let provider = AnthropicProvider::new(
+            "sk-ant-custom".to_string(),
+            "https://custom.anthropic.com".to_string(),
+            "claude-opus-4".to_string(),
+        );
+        assert_eq!(provider.name(), "anthropic");
+        assert_eq!(provider.api_key, "sk-ant-custom");
+        assert_eq!(provider.base_url, "https://custom.anthropic.com");
+        assert_eq!(provider.default_model, "claude-opus-4");
+    }
+
+    #[test]
+    fn test_openai_message_serde() {
+        let msg = OpenAiMessage {
+            role: "user".to_string(),
+            content: "Hello".to_string(),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: OpenAiMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.role, "user");
+        assert_eq!(parsed.content, "Hello");
+    }
+
+    #[test]
+    fn test_openai_chat_request_serializes() {
+        let req = OpenAiChatRequest {
+            model: "gpt-4o".to_string(),
+            messages: vec![OpenAiMessage {
+                role: "user".to_string(),
+                content: "Hello".to_string(),
+            }],
+            max_tokens: 1024,
+            temperature: 0.7,
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(json.contains("gpt-4o"));
+        assert!(json.contains("Hello"));
+    }
+
+    #[test]
+    fn test_openai_chat_response_deserializes() {
+        let json = r#"{
+            "choices": [{"message": {"role": "assistant", "content": "Hi there"}}],
+            "model": "gpt-4o",
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
+        }"#;
+        let resp: OpenAiChatResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.model, "gpt-4o");
+        assert_eq!(resp.choices.len(), 1);
+        assert_eq!(resp.choices[0].message.content, "Hi there");
+        assert_eq!(resp.usage.total_tokens, 15);
+    }
+
+    #[test]
+    fn test_openai_image_response_deserializes() {
+        let json = r#"{
+            "data": [
+                {"url": "https://example.com/img.png", "b64_json": null},
+                {"url": null, "b64_json": "iVBOR..."},
+                {"url": null, "b64_json": null}
+            ]
+        }"#;
+        let resp: OpenAiImageResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.data.len(), 3);
+        assert_eq!(resp.data[0].url.as_deref(), Some("https://example.com/img.png"));
+        assert!(resp.data[0].b64_json.is_none());
+        assert!(resp.data[1].url.is_none());
+        assert_eq!(resp.data[1].b64_json.as_deref(), Some("iVBOR..."));
+    }
+
+    #[test]
+    fn test_anthropic_message_serde() {
+        let msg = AnthropicMessage {
+            role: "user".to_string(),
+            content: "Hello".to_string(),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: AnthropicMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.role, "user");
+        assert_eq!(parsed.content, "Hello");
+    }
+
+    #[test]
+    fn test_anthropic_chat_response_deserializes() {
+        let json = r#"{
+            "content": [{"text": "Hello "}, {"text": "world"}],
+            "model": "claude-sonnet-4-20250514",
+            "usage": {"input_tokens": 20, "output_tokens": 10}
+        }"#;
+        let resp: AnthropicChatResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.model, "claude-sonnet-4-20250514");
+        assert_eq!(resp.content.len(), 2);
+        assert_eq!(resp.content[0].text, "Hello ");
+        assert_eq!(resp.content[1].text, "world");
+        assert_eq!(resp.usage.input_tokens, 20);
+        assert_eq!(resp.usage.output_tokens, 10);
+    }
+
+    #[test]
+    fn test_ollama_chat_response_deserializes() {
+        let json = r#"{
+            "message": {"role": "assistant", "content": "Hi"},
+            "model": "llama3",
+            "prompt_eval_count": 50,
+            "eval_count": 25
+        }"#;
+        let resp: OllamaChatResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.model, "llama3");
+        assert_eq!(resp.message.content, "Hi");
+        assert_eq!(resp.prompt_eval_count, Some(50));
+        assert_eq!(resp.eval_count, Some(25));
+    }
+
+    #[test]
+    fn test_ollama_chat_response_missing_counts() {
+        let json = r#"{
+            "message": {"role": "assistant", "content": "Hi"},
+            "model": "llama3"
+        }"#;
+        let resp: OllamaChatResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.prompt_eval_count, None);
+        assert_eq!(resp.eval_count, None);
+    }
+
+    #[test]
+    fn test_openai_image_request_serializes() {
+        let req = OpenAiImageRequest {
+            model: "dall-e-3".to_string(),
+            prompt: "A blue cat".to_string(),
+            size: "1024x1024".to_string(),
+            n: 2,
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(json.contains("dall-e-3"));
+        assert!(json.contains("A blue cat"));
+        assert!(json.contains("1024x1024"));
+    }
+
+    #[test]
+    fn test_anthropic_chat_request_serializes_with_system() {
+        let req = AnthropicChatRequest {
+            model: "claude-sonnet-4-20250514".to_string(),
+            max_tokens: 4096,
+            system: Some("You are helpful".to_string()),
+            messages: vec![AnthropicMessage {
+                role: "user".to_string(),
+                content: "Hello".to_string(),
+            }],
+            temperature: Some(0.7),
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(json.contains("system"));
+        assert!(json.contains("You are helpful"));
+    }
+
+    #[test]
+    fn test_anthropic_chat_request_serializes_without_system() {
+        let req = AnthropicChatRequest {
+            model: "claude-sonnet-4-20250514".to_string(),
+            max_tokens: 4096,
+            system: None,
+            messages: vec![],
+            temperature: None,
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        // system and temperature should be skipped when None
+        assert!(!json.contains("\"system\""));
+        assert!(!json.contains("\"temperature\""));
+    }
+
+    #[test]
+    fn test_ollama_options_serializes() {
+        let opts = OllamaOptions {
+            temperature: 0.5,
+            num_predict: 2048,
+        };
+        let json = serde_json::to_string(&opts).unwrap();
+        assert!(json.contains("0.5"));
+        assert!(json.contains("2048"));
+    }
 }

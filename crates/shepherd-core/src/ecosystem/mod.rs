@@ -3,6 +3,13 @@ pub mod context_mode;
 pub mod context7;
 pub mod ralph_loop;
 pub mod frontend_design;
+pub mod docling;
+pub mod whisper;
+pub mod ffmpeg;
+pub mod playwright;
+pub mod exa;
+pub mod serena;
+pub mod sourcegraph;
 
 use std::path::{Path, PathBuf};
 use superpowers::InstallScope;

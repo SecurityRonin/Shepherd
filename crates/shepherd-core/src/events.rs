@@ -14,6 +14,14 @@ pub enum ServerEvent {
     GateResult { task_id: i64, gate: String, passed: bool },
     Notification { kind: String, title: String, body: String },
     StatusSnapshot(StatusSnapshot),
+    /// Live metrics update for a running task.
+    MetricsUpdate(MetricsEvent),
+    /// Budget threshold alert (warning or exceeded).
+    BudgetAlert(BudgetAlertEvent),
+    /// Context package assembled for a task.
+    ContextReady(ContextReadyEvent),
+    /// Session replay event recorded.
+    SessionEvent(SessionLogEvent),
 }
 
 /// Events sent from client to server
@@ -59,6 +67,51 @@ pub struct PermissionEvent {
 pub struct StatusSnapshot {
     pub tasks: Vec<TaskEvent>,
     pub pending_permissions: Vec<PermissionEvent>,
+}
+
+/// Live metrics for a running task.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MetricsEvent {
+    pub task_id: i64,
+    pub agent_id: String,
+    pub model_id: String,
+    pub total_input_tokens: u64,
+    pub total_output_tokens: u64,
+    pub total_tokens: u64,
+    pub total_cost_usd: f64,
+    pub llm_calls: u32,
+    pub duration_secs: Option<f64>,
+}
+
+/// Budget threshold alert event.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BudgetAlertEvent {
+    pub scope: String,
+    pub scope_id: String,
+    pub status: String,
+    pub current_cost: f64,
+    pub limit: f64,
+    pub percentage: f64,
+    pub message: String,
+}
+
+/// Context package ready for injection.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextReadyEvent {
+    pub task_id: Option<i64>,
+    pub package_id: String,
+    pub file_count: usize,
+    pub mcp_query_count: usize,
+    pub summary: String,
+}
+
+/// Structured session log entry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionLogEvent {
+    pub task_id: i64,
+    pub event_type: String,
+    pub content: String,
+    pub timestamp: String,
 }
 
 #[cfg(test)]
@@ -267,6 +320,101 @@ mod tests {
         assert_eq!(parsed.task_id, 5);
         assert_eq!(parsed.tool_name, "file_write");
         assert_eq!(parsed.decision, "denied");
+    }
+
+    #[test]
+    fn test_metrics_update_serialization() {
+        let event = ServerEvent::MetricsUpdate(MetricsEvent {
+            task_id: 1,
+            agent_id: "claude-code".into(),
+            model_id: "claude-sonnet-4".into(),
+            total_input_tokens: 50_000,
+            total_output_tokens: 10_000,
+            total_tokens: 60_000,
+            total_cost_usd: 0.30,
+            llm_calls: 5,
+            duration_secs: Some(45.2),
+        });
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains("metrics_update"));
+        let parsed: ServerEvent = serde_json::from_str(&json).unwrap();
+        match parsed {
+            ServerEvent::MetricsUpdate(m) => {
+                assert_eq!(m.task_id, 1);
+                assert_eq!(m.agent_id, "claude-code");
+                assert_eq!(m.total_tokens, 60_000);
+                assert!((m.total_cost_usd - 0.30).abs() < f64::EPSILON);
+                assert_eq!(m.llm_calls, 5);
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn test_budget_alert_serialization() {
+        let event = ServerEvent::BudgetAlert(BudgetAlertEvent {
+            scope: "task".into(),
+            scope_id: "42".into(),
+            status: "exceeded".into(),
+            current_cost: 5.50,
+            limit: 5.00,
+            percentage: 1.10,
+            message: "Budget exceeded: $5.50 / $5.00 (110%)".into(),
+        });
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains("budget_alert"));
+        let parsed: ServerEvent = serde_json::from_str(&json).unwrap();
+        match parsed {
+            ServerEvent::BudgetAlert(a) => {
+                assert_eq!(a.scope, "task");
+                assert_eq!(a.status, "exceeded");
+                assert!(a.current_cost > a.limit);
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn test_context_ready_serialization() {
+        let event = ServerEvent::ContextReady(ContextReadyEvent {
+            task_id: Some(7),
+            package_id: "ctx-20260313".into(),
+            file_count: 5,
+            mcp_query_count: 3,
+            summary: "Found 5 relevant files".into(),
+        });
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains("context_ready"));
+        let parsed: ServerEvent = serde_json::from_str(&json).unwrap();
+        match parsed {
+            ServerEvent::ContextReady(c) => {
+                assert_eq!(c.task_id, Some(7));
+                assert_eq!(c.file_count, 5);
+                assert_eq!(c.mcp_query_count, 3);
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn test_session_event_serialization() {
+        let event = ServerEvent::SessionEvent(SessionLogEvent {
+            task_id: 3,
+            event_type: "command".into(),
+            content: "cargo test".into(),
+            timestamp: "2026-03-13T10:00:00Z".into(),
+        });
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains("session_event"));
+        let parsed: ServerEvent = serde_json::from_str(&json).unwrap();
+        match parsed {
+            ServerEvent::SessionEvent(s) => {
+                assert_eq!(s.task_id, 3);
+                assert_eq!(s.event_type, "command");
+                assert_eq!(s.content, "cargo test");
+            }
+            _ => panic!("wrong variant"),
+        }
     }
 
     #[test]

@@ -270,4 +270,183 @@ mod tests {
         let provider = create_provider(config).unwrap();
         assert_eq!(provider.name(), "ollama");
     }
+
+    #[test]
+    fn test_create_provider_anthropic_missing_key() {
+        let config = ProviderConfig {
+            provider: "anthropic".to_string(),
+            api_key: None,
+            base_url: None,
+            default_model: None,
+        };
+        let result = create_provider(config);
+        assert!(result.is_err());
+        assert!(result.err().unwrap().to_string().contains("API key"));
+    }
+
+    #[test]
+    fn test_create_provider_anthropic_ok() {
+        let config = ProviderConfig {
+            provider: "anthropic".to_string(),
+            api_key: Some("sk-ant-test".to_string()),
+            base_url: None,
+            default_model: None,
+        };
+        let provider = create_provider(config).unwrap();
+        assert_eq!(provider.name(), "anthropic");
+    }
+
+    #[test]
+    fn test_create_provider_openai_compatible() {
+        let config = ProviderConfig {
+            provider: "openai-compatible".to_string(),
+            api_key: Some("sk-test".to_string()),
+            base_url: Some("https://custom.api.com/v1".to_string()),
+            default_model: Some("custom-model".to_string()),
+        };
+        let provider = create_provider(config).unwrap();
+        assert_eq!(provider.name(), "openai");
+    }
+
+    #[test]
+    fn test_create_provider_openai_with_defaults() {
+        let config = ProviderConfig {
+            provider: "openai".to_string(),
+            api_key: Some("sk-test".to_string()),
+            base_url: None,
+            default_model: None,
+        };
+        let provider = create_provider(config).unwrap();
+        assert_eq!(provider.name(), "openai");
+    }
+
+    #[test]
+    fn test_create_provider_ollama_with_custom_url() {
+        let config = ProviderConfig {
+            provider: "ollama".to_string(),
+            api_key: None,
+            base_url: Some("http://remote:11434".to_string()),
+            default_model: Some("mistral".to_string()),
+        };
+        let provider = create_provider(config).unwrap();
+        assert_eq!(provider.name(), "ollama");
+    }
+
+    #[test]
+    fn test_image_gen_request_defaults() {
+        let req = ImageGenRequest::new("A cute cat");
+        assert_eq!(req.prompt, "A cute cat");
+        assert_eq!(req.size, "1024x1024");
+        assert_eq!(req.n, 4);
+        assert!(req.model.is_none());
+    }
+
+    #[test]
+    fn test_role_serde() {
+        let json = serde_json::to_string(&Role::System).unwrap();
+        assert_eq!(json, "\"system\"");
+        let json = serde_json::to_string(&Role::User).unwrap();
+        assert_eq!(json, "\"user\"");
+        let json = serde_json::to_string(&Role::Assistant).unwrap();
+        assert_eq!(json, "\"assistant\"");
+
+        let parsed: Role = serde_json::from_str("\"system\"").unwrap();
+        assert_eq!(parsed, Role::System);
+    }
+
+    #[test]
+    fn test_chat_message_serde_roundtrip() {
+        let msg = ChatMessage::user("Hello world");
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: ChatMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.role, Role::User);
+        assert_eq!(parsed.content, "Hello world");
+    }
+
+    #[test]
+    fn test_token_usage_serde() {
+        let usage = TokenUsage {
+            prompt_tokens: 100,
+            completion_tokens: 50,
+            total_tokens: 150,
+        };
+        let json = serde_json::to_string(&usage).unwrap();
+        let parsed: TokenUsage = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.prompt_tokens, 100);
+        assert_eq!(parsed.completion_tokens, 50);
+        assert_eq!(parsed.total_tokens, 150);
+    }
+
+    #[test]
+    fn test_provider_config_serde() {
+        let config = ProviderConfig {
+            provider: "openai".to_string(),
+            api_key: Some("key".to_string()),
+            base_url: None,
+            default_model: None,
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let parsed: ProviderConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.provider, "openai");
+        assert_eq!(parsed.api_key, Some("key".to_string()));
+        assert!(parsed.base_url.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_default_generate_image_returns_error() {
+        struct ChatOnlyProvider;
+
+        #[async_trait::async_trait]
+        impl LlmProvider for ChatOnlyProvider {
+            async fn chat(&self, _request: &LlmRequest) -> Result<LlmResponse> {
+                Ok(LlmResponse {
+                    content: "hi".to_string(),
+                    model: "test".to_string(),
+                    usage: TokenUsage {
+                        prompt_tokens: 0,
+                        completion_tokens: 0,
+                        total_tokens: 0,
+                    },
+                })
+            }
+            fn name(&self) -> &str {
+                "chat-only"
+            }
+        }
+
+        let provider = ChatOnlyProvider;
+        let req = ImageGenRequest::new("test");
+        let result = provider.generate_image(&req).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not supported"));
+    }
+
+    #[test]
+    fn test_generated_image_fields() {
+        let img_url = GeneratedImage {
+            data: "https://example.com/img.png".to_string(),
+            is_url: true,
+        };
+        assert!(img_url.is_url);
+
+        let img_b64 = GeneratedImage {
+            data: "iVBOR...".to_string(),
+            is_url: false,
+        };
+        assert!(!img_b64.is_url);
+    }
+
+    #[test]
+    fn test_llm_request_custom_fields() {
+        let mut req = LlmRequest::new(vec![
+            ChatMessage::system("sys"),
+            ChatMessage::user("usr"),
+        ]);
+        req.max_tokens = 8192;
+        req.temperature = 0.5;
+        req.model = Some("gpt-4o-mini".to_string());
+        assert_eq!(req.max_tokens, 8192);
+        assert_eq!(req.messages.len(), 2);
+        assert_eq!(req.model.as_deref(), Some("gpt-4o-mini"));
+    }
 }

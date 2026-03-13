@@ -103,4 +103,81 @@ mod tests {
         let has_northstar = suggestions.iter().any(|s| s.tool == "north_star");
         assert!(has_northstar);
     }
+
+    #[test]
+    fn test_check_triggers_all_dismissed() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("package.json"),
+            r#"{"name": "untitled"}"#,
+        )
+        .unwrap();
+
+        let dismissed = vec![
+            "namegen_untitled".to_string(),
+            "logogen_no_icon".to_string(),
+            "northstar_no_docs".to_string(),
+        ];
+        let suggestions = check_triggers(tmp.path(), &dismissed);
+        assert!(suggestions.is_empty());
+    }
+
+    #[test]
+    fn test_check_triggers_sorted_by_priority() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Create a project that triggers both namegen (Medium) and northstar (Low)
+        std::fs::write(
+            tmp.path().join("package.json"),
+            r#"{"name": "untitled"}"#,
+        )
+        .unwrap();
+
+        let suggestions = check_triggers(tmp.path(), &[]);
+        if suggestions.len() >= 2 {
+            // Higher priority should come first
+            assert!(suggestions[0].priority >= suggestions[1].priority);
+        }
+    }
+
+    #[test]
+    fn test_trigger_priority_serde() {
+        let json = serde_json::to_string(&TriggerPriority::High).unwrap();
+        assert_eq!(json, "\"high\"");
+        let json = serde_json::to_string(&TriggerPriority::Medium).unwrap();
+        assert_eq!(json, "\"medium\"");
+        let json = serde_json::to_string(&TriggerPriority::Low).unwrap();
+        assert_eq!(json, "\"low\"");
+
+        let parsed: TriggerPriority = serde_json::from_str("\"high\"").unwrap();
+        assert_eq!(parsed, TriggerPriority::High);
+    }
+
+    #[test]
+    fn test_dismissed_trigger_serde() {
+        let dismissed = DismissedTrigger {
+            trigger_id: "namegen_untitled".to_string(),
+            project_path: "/tmp/project".to_string(),
+            dismissed_at: "2026-03-13T00:00:00Z".to_string(),
+        };
+        let json = serde_json::to_string(&dismissed).unwrap();
+        let parsed: DismissedTrigger = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.trigger_id, "namegen_untitled");
+        assert_eq!(parsed.project_path, "/tmp/project");
+    }
+
+    #[test]
+    fn test_trigger_suggestion_serde() {
+        let suggestion = TriggerSuggestion {
+            id: "test".into(),
+            tool: "test_tool".into(),
+            message: "Test message".into(),
+            action_label: "Test".into(),
+            action_route: "/test".into(),
+            priority: TriggerPriority::High,
+        };
+        let json = serde_json::to_string(&suggestion).unwrap();
+        let parsed: TriggerSuggestion = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.id, "test");
+        assert_eq!(parsed.priority, TriggerPriority::High);
+    }
 }

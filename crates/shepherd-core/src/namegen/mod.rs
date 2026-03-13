@@ -307,4 +307,183 @@ mod tests {
         let validation = NameValidation::default();
         assert_eq!(calculate_status(&validation), ValidationStatus::Pending);
     }
+
+    #[test]
+    fn calculate_status_all_registries_unavailable() {
+        let validation = NameValidation {
+            domains: vec![DomainCheck {
+                domain: "test.com".to_string(),
+                available: Some(false),
+                error: None,
+            }],
+            npm_available: Some(false),
+            pypi_available: Some(false),
+            github_available: Some(false),
+            negative_associations: Vec::new(),
+            overall_status: ValidationStatus::Pending,
+        };
+        assert_eq!(calculate_status(&validation), ValidationStatus::Partial);
+    }
+
+    #[test]
+    fn calculate_status_mixed_domains() {
+        let validation = NameValidation {
+            domains: vec![
+                DomainCheck { domain: "a.com".into(), available: Some(true), error: None },
+                DomainCheck { domain: "a.io".into(), available: Some(false), error: None },
+            ],
+            npm_available: Some(true),
+            pypi_available: None,
+            github_available: None,
+            negative_associations: Vec::new(),
+            overall_status: ValidationStatus::Pending,
+        };
+        assert_eq!(calculate_status(&validation), ValidationStatus::Partial);
+    }
+
+    #[test]
+    fn calculate_status_only_domains_available() {
+        let validation = NameValidation {
+            domains: vec![DomainCheck {
+                domain: "test.dev".into(),
+                available: Some(true),
+                error: None,
+            }],
+            npm_available: None,
+            pypi_available: None,
+            github_available: None,
+            negative_associations: Vec::new(),
+            overall_status: ValidationStatus::Pending,
+        };
+        assert_eq!(calculate_status(&validation), ValidationStatus::AllClear);
+    }
+
+    #[test]
+    fn calculate_status_domain_no_availability_info() {
+        let validation = NameValidation {
+            domains: vec![DomainCheck {
+                domain: "test.com".into(),
+                available: None,
+                error: Some("timeout".into()),
+            }],
+            npm_available: None,
+            pypi_available: None,
+            github_available: None,
+            negative_associations: Vec::new(),
+            overall_status: ValidationStatus::Pending,
+        };
+        assert_eq!(calculate_status(&validation), ValidationStatus::Pending);
+    }
+
+    #[test]
+    fn validation_status_default_is_pending() {
+        assert_eq!(ValidationStatus::default(), ValidationStatus::Pending);
+    }
+
+    #[test]
+    fn name_validation_default_fields() {
+        let v = NameValidation::default();
+        assert!(v.domains.is_empty());
+        assert!(v.npm_available.is_none());
+        assert!(v.pypi_available.is_none());
+        assert!(v.github_available.is_none());
+        assert!(v.negative_associations.is_empty());
+        assert_eq!(v.overall_status, ValidationStatus::Pending);
+    }
+
+    #[test]
+    fn name_gen_input_custom() {
+        let input = NameGenInput {
+            description: "A widget maker".into(),
+            vibes: vec!["fast".into(), "modern".into()],
+            count: 10,
+        };
+        assert_eq!(input.description, "A widget maker");
+        assert_eq!(input.vibes.len(), 2);
+        assert_eq!(input.count, 10);
+    }
+
+    #[test]
+    fn name_gen_input_default_fields() {
+        let input = NameGenInput::default();
+        assert!(input.description.is_empty());
+        assert!(input.vibes.is_empty());
+        assert_eq!(input.count, 20);
+    }
+
+    #[test]
+    fn name_candidate_serde_roundtrip() {
+        let candidate = NameCandidate {
+            name: "acme".to_string(),
+            tagline: Some("Build anything".to_string()),
+            reasoning: "Classic".to_string(),
+            validation: NameValidation {
+                domains: vec![DomainCheck {
+                    domain: "acme.com".to_string(),
+                    available: Some(false),
+                    error: None,
+                }],
+                npm_available: Some(true),
+                pypi_available: None,
+                github_available: Some(false),
+                negative_associations: vec!["sounds aggressive".into()],
+                overall_status: ValidationStatus::Conflicted,
+            },
+        };
+        let json = serde_json::to_string(&candidate).unwrap();
+        let deser: NameCandidate = serde_json::from_str(&json).unwrap();
+        assert_eq!(deser.name, "acme");
+        assert_eq!(deser.tagline.as_deref(), Some("Build anything"));
+        assert_eq!(deser.validation.domains.len(), 1);
+        assert_eq!(deser.validation.npm_available, Some(true));
+        assert_eq!(deser.validation.negative_associations.len(), 1);
+        assert_eq!(deser.validation.overall_status, ValidationStatus::Conflicted);
+    }
+
+    #[test]
+    fn domain_check_serde() {
+        let check = DomainCheck {
+            domain: "test.io".into(),
+            available: Some(true),
+            error: None,
+        };
+        let json = serde_json::to_string(&check).unwrap();
+        let deser: DomainCheck = serde_json::from_str(&json).unwrap();
+        assert_eq!(deser.domain, "test.io");
+        assert_eq!(deser.available, Some(true));
+        assert!(deser.error.is_none());
+    }
+
+    #[test]
+    fn validation_status_sort_priority_order() {
+        assert!(ValidationStatus::AllClear.sort_priority() < ValidationStatus::Partial.sort_priority());
+        assert!(ValidationStatus::Partial.sort_priority() < ValidationStatus::Pending.sort_priority());
+        assert!(ValidationStatus::Pending.sort_priority() < ValidationStatus::Conflicted.sort_priority());
+    }
+
+    #[test]
+    fn name_gen_result_sorted_stable() {
+        let make = |name: &str, status: ValidationStatus| NameCandidate {
+            name: name.into(),
+            tagline: None,
+            reasoning: String::new(),
+            validation: NameValidation {
+                overall_status: status,
+                ..Default::default()
+            },
+        };
+
+        let result = NameGenResult {
+            candidates: vec![
+                make("a", ValidationStatus::AllClear),
+                make("b", ValidationStatus::AllClear),
+                make("c", ValidationStatus::Partial),
+            ],
+        };
+        let sorted = result.sorted();
+        // AllClear should come first, then Partial
+        assert_eq!(sorted.candidates[0].validation.overall_status, ValidationStatus::AllClear);
+        assert_eq!(sorted.candidates[1].validation.overall_status, ValidationStatus::AllClear);
+        assert_eq!(sorted.candidates[2].validation.overall_status, ValidationStatus::Partial);
+    }
 }

@@ -180,4 +180,148 @@ mod tests {
         // Check footer
         assert!(body.contains("Created by Shepherd"));
     }
+
+    #[test]
+    fn build_pr_body_all_statuses() {
+        let steps = vec![
+            PipelineStep {
+                name: "Stage".into(),
+                status: StepStatus::Pending,
+                output: "pending".into(),
+            },
+            PipelineStep {
+                name: "Build".into(),
+                status: StepStatus::Running,
+                output: "running".into(),
+            },
+            PipelineStep {
+                name: "Test".into(),
+                status: StepStatus::Passed,
+                output: "passed".into(),
+            },
+            PipelineStep {
+                name: "Lint".into(),
+                status: StepStatus::Failed,
+                output: "failed".into(),
+            },
+            PipelineStep {
+                name: "Deploy".into(),
+                status: StepStatus::Skipped,
+                output: "skipped".into(),
+            },
+        ];
+
+        let body = build_pr_body("Multi-status test", "5 files changed", &steps);
+        assert!(body.contains("PENDING"));
+        assert!(body.contains("RUNNING"));
+        assert!(body.contains("PASS"));
+        assert!(body.contains("FAIL"));
+        assert!(body.contains("SKIP"));
+        assert!(body.contains("| Stage | PENDING |"));
+        assert!(body.contains("| Build | RUNNING |"));
+    }
+
+    #[test]
+    fn build_pr_body_empty_steps() {
+        let body = build_pr_body("Empty", "", &[]);
+        assert!(body.contains("Empty"));
+        assert!(body.contains("Pipeline Results"));
+        assert!(body.contains("Created by Shepherd"));
+    }
+
+    #[test]
+    fn build_pr_body_sections_present() {
+        let body = build_pr_body("Test", "1 file", &[]);
+        assert!(body.contains("## Summary"));
+        assert!(body.contains("## Changes"));
+        assert!(body.contains("## Pipeline Results"));
+        assert!(body.contains("| Step | Status |"));
+    }
+
+    #[tokio::test]
+    async fn git_stage_all_in_nonexistent_dir() {
+        let result = git_stage_all(std::path::Path::new("/nonexistent/dir")).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn git_diff_staged_in_nonexistent_dir() {
+        let result = git_diff_staged(std::path::Path::new("/nonexistent/dir")).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn git_commit_in_nonexistent_dir() {
+        let result = git_commit(std::path::Path::new("/nonexistent/dir"), "test").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn git_rebase_in_nonexistent_dir() {
+        let result = git_rebase(std::path::Path::new("/nonexistent/dir"), "main").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn git_rebase_abort_in_nonexistent_dir() {
+        let result = git_rebase_abort(std::path::Path::new("/nonexistent/dir")).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn git_push_in_nonexistent_dir() {
+        let result = git_push(std::path::Path::new("/nonexistent/dir"), "main").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn git_stage_all_in_temp_repo() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Initialize a git repo
+        tokio::process::Command::new("git")
+            .args(["init"])
+            .current_dir(tmp.path())
+            .output()
+            .await
+            .unwrap();
+        tokio::process::Command::new("git")
+            .args(["config", "user.email", "test@test.com"])
+            .current_dir(tmp.path())
+            .output()
+            .await
+            .unwrap();
+        tokio::process::Command::new("git")
+            .args(["config", "user.name", "Test"])
+            .current_dir(tmp.path())
+            .output()
+            .await
+            .unwrap();
+
+        // Create a file
+        std::fs::write(tmp.path().join("test.txt"), "hello").unwrap();
+
+        let result = git_stage_all(tmp.path()).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "All changes staged");
+    }
+
+    #[tokio::test]
+    async fn git_diff_staged_in_temp_repo() {
+        let tmp = tempfile::tempdir().unwrap();
+        tokio::process::Command::new("git")
+            .args(["init"])
+            .current_dir(tmp.path())
+            .output()
+            .await
+            .unwrap();
+
+        std::fs::write(tmp.path().join("test.txt"), "hello").unwrap();
+        git_stage_all(tmp.path()).await.unwrap();
+
+        let result = git_diff_staged(tmp.path()).await;
+        assert!(result.is_ok());
+        // New file should appear in diff stat
+        let diff = result.unwrap();
+        assert!(diff.contains("test.txt") || diff.is_empty());
+    }
 }

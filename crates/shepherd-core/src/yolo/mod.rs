@@ -164,4 +164,145 @@ mod tests {
         let engine = YoloEngine::new(RuleSet { deny: vec![], allow: vec![] });
         assert_eq!(engine.evaluate("Read", "anything"), Decision::Ask);
     }
+
+    #[test]
+    fn test_load_nonexistent_returns_empty() {
+        let engine = YoloEngine::load(Path::new("/nonexistent/yolo.yml")).unwrap();
+        assert_eq!(engine.evaluate("Read", "anything"), Decision::Ask);
+    }
+
+    #[test]
+    fn test_load_from_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("yolo.yml");
+        std::fs::write(
+            &path,
+            "deny:\n  - pattern: \"rm -rf\"\nallow:\n  - tool: Read\n",
+        )
+        .unwrap();
+
+        let engine = YoloEngine::load(&path).unwrap();
+        assert!(matches!(
+            engine.evaluate("Bash", "rm -rf /"),
+            Decision::Deny(_)
+        ));
+        assert!(matches!(
+            engine.evaluate("Read", "src/main.rs"),
+            Decision::Allow(_)
+        ));
+    }
+
+    #[test]
+    fn test_load_invalid_yaml() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("bad.yml");
+        std::fs::write(&path, "{{{{not valid yaml").unwrap();
+        let result = YoloEngine::load(&path);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_glob_match_double_star() {
+        assert!(glob_match("src/**", "src/auth/mod.rs"));
+        assert!(glob_match("src/**", "src/main.rs"));
+        assert!(!glob_match("src/**", "tests/main.rs"));
+    }
+
+    #[test]
+    fn test_glob_match_single_star() {
+        assert!(glob_match("src/*.rs", "src/main.rs"));
+        // Note: single * in this implementation also matches across path separators
+        // (starts_with + ends_with), so "src/auth/mod.rs" matches "src/*.rs"
+        assert!(glob_match("src/*.rs", "src/auth/mod.rs"));
+    }
+
+    #[test]
+    fn test_glob_match_no_wildcard() {
+        assert!(glob_match("main.rs", "src/main.rs"));
+        assert!(!glob_match("main.rs", "src/lib.rs"));
+    }
+
+    #[test]
+    fn test_glob_match_multiple_stars() {
+        // Pattern with more than 2 segments from split('*')
+        assert!(glob_match("*.test.*", "foo.test.rs"));
+    }
+
+    #[test]
+    fn test_path_based_rule() {
+        let engine = YoloEngine::new(RuleSet {
+            deny: vec![Rule {
+                tool: None,
+                pattern: None,
+                path: Some("/etc/**".into()),
+            }],
+            allow: vec![],
+        });
+        assert!(matches!(
+            engine.evaluate("Write", "/etc/passwd"),
+            Decision::Deny(_)
+        ));
+        assert_eq!(engine.evaluate("Write", "src/main.rs"), Decision::Ask);
+    }
+
+    #[test]
+    fn test_tool_only_rule() {
+        let engine = YoloEngine::new(RuleSet {
+            deny: vec![],
+            allow: vec![Rule {
+                tool: Some("Glob".into()),
+                pattern: None,
+                path: None,
+            }],
+        });
+        assert!(matches!(
+            engine.evaluate("Glob", "**/*.rs"),
+            Decision::Allow(_)
+        ));
+        assert_eq!(engine.evaluate("Write", "anything"), Decision::Ask);
+    }
+
+    #[test]
+    fn test_tool_case_insensitive() {
+        let engine = YoloEngine::new(RuleSet {
+            deny: vec![],
+            allow: vec![Rule {
+                tool: Some("bash".into()),
+                pattern: None,
+                path: None,
+            }],
+        });
+        assert!(matches!(
+            engine.evaluate("Bash", "echo hi"),
+            Decision::Allow(_)
+        ));
+        assert!(matches!(
+            engine.evaluate("BASH", "echo hi"),
+            Decision::Allow(_)
+        ));
+    }
+
+    #[test]
+    fn test_no_constraints_rule_does_not_match() {
+        // A rule with no tool, pattern, or path matches nothing
+        let engine = YoloEngine::new(RuleSet {
+            deny: vec![],
+            allow: vec![Rule {
+                tool: None,
+                pattern: None,
+                path: None,
+            }],
+        });
+        assert_eq!(engine.evaluate("Read", "anything"), Decision::Ask);
+    }
+
+    #[test]
+    fn test_decision_debug_display() {
+        let d = Decision::Allow("test".into());
+        assert!(format!("{:?}", d).contains("Allow"));
+        let d = Decision::Deny("test".into());
+        assert!(format!("{:?}", d).contains("Deny"));
+        let d = Decision::Ask;
+        assert!(format!("{:?}", d).contains("Ask"));
+    }
 }

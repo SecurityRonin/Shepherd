@@ -285,4 +285,285 @@ mod tests {
         let dir = TempDir::new().unwrap();
         assert_eq!(detect_project_type(dir.path()), ProjectType::Unknown);
     }
+
+    #[test]
+    fn all_types_single() {
+        let types = all_types(&ProjectType::Rust);
+        assert_eq!(types.len(), 1);
+        assert_eq!(*types[0], ProjectType::Rust);
+    }
+
+    #[test]
+    fn all_types_mixed() {
+        let mixed = ProjectType::Mixed(vec![ProjectType::Rust, ProjectType::TypeScript]);
+        let types = all_types(&mixed);
+        assert_eq!(types.len(), 2);
+        assert_eq!(*types[0], ProjectType::Rust);
+        assert_eq!(*types[1], ProjectType::TypeScript);
+    }
+
+    #[test]
+    fn all_types_unknown() {
+        let types = all_types(&ProjectType::Unknown);
+        assert!(types.is_empty());
+    }
+
+    #[test]
+    fn all_types_node() {
+        let types = all_types(&ProjectType::Node);
+        assert_eq!(types.len(), 1);
+        assert_eq!(*types[0], ProjectType::Node);
+    }
+
+    #[test]
+    fn all_types_python() {
+        let types = all_types(&ProjectType::Python);
+        assert_eq!(types.len(), 1);
+        assert_eq!(*types[0], ProjectType::Python);
+    }
+
+    #[test]
+    fn detect_python_setup_py() {
+        let dir = TempDir::new().unwrap();
+        std::fs::write(dir.path().join("setup.py"), "").unwrap();
+        assert_eq!(detect_project_type(dir.path()), ProjectType::Python);
+    }
+
+    #[test]
+    fn detect_mixed_rust_python() {
+        let dir = TempDir::new().unwrap();
+        std::fs::write(dir.path().join("Cargo.toml"), "[package]").unwrap();
+        std::fs::write(dir.path().join("pyproject.toml"), "").unwrap();
+        match detect_project_type(dir.path()) {
+            ProjectType::Mixed(types) => {
+                assert!(types.contains(&ProjectType::Rust));
+                assert!(types.contains(&ProjectType::Python));
+            }
+            other => panic!("Expected Mixed, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn run_command_success() {
+        let dir = TempDir::new().unwrap();
+        let (passed, output) = run_command(dir.path(), "echo", &["hello"], 10).await;
+        assert!(passed);
+        assert!(output.contains("hello"));
+    }
+
+    #[tokio::test]
+    async fn run_command_failure() {
+        let dir = TempDir::new().unwrap();
+        let (passed, _output) = run_command(dir.path(), "false", &[], 10).await;
+        assert!(!passed);
+    }
+
+    #[tokio::test]
+    async fn run_command_nonexistent_program() {
+        let dir = TempDir::new().unwrap();
+        let (passed, output) = run_command(dir.path(), "nonexistent_program_xyz", &[], 10).await;
+        assert!(!passed);
+        assert!(output.contains("Failed to execute"));
+    }
+
+    #[tokio::test]
+    async fn run_command_timeout() {
+        let dir = TempDir::new().unwrap();
+        let (passed, output) = run_command(dir.path(), "sleep", &["30"], 1).await;
+        assert!(!passed);
+        assert!(output.contains("timed out"));
+    }
+
+    #[tokio::test]
+    async fn run_lint_unknown_project() {
+        let dir = TempDir::new().unwrap();
+        let result = run_lint(dir.path(), &ProjectType::Unknown, 10).await;
+        assert!(result.passed);
+        assert!(result.output.contains("No lint tool"));
+        assert_eq!(result.gate_type, GateType::Lint);
+        assert_eq!(result.duration_ms, 0);
+    }
+
+    #[tokio::test]
+    async fn run_lint_mixed_project() {
+        let dir = TempDir::new().unwrap();
+        let mixed = ProjectType::Mixed(vec![ProjectType::Rust]);
+        let result = run_lint(dir.path(), &mixed, 10).await;
+        assert!(result.passed);
+        assert!(result.output.contains("No lint tool"));
+    }
+
+    #[tokio::test]
+    async fn run_format_check_unknown() {
+        let dir = TempDir::new().unwrap();
+        let result = run_format_check(dir.path(), &ProjectType::Unknown, 10).await;
+        assert!(result.passed);
+        assert!(result.output.contains("No format tool"));
+        assert_eq!(result.gate_type, GateType::Format);
+    }
+
+    #[tokio::test]
+    async fn run_type_check_unknown() {
+        let dir = TempDir::new().unwrap();
+        let result = run_type_check(dir.path(), &ProjectType::Unknown, 10).await;
+        assert!(result.passed);
+        assert!(result.output.contains("No type check tool"));
+        assert_eq!(result.gate_type, GateType::TypeCheck);
+    }
+
+    #[tokio::test]
+    async fn run_type_check_node_skipped() {
+        let dir = TempDir::new().unwrap();
+        let result = run_type_check(dir.path(), &ProjectType::Node, 10).await;
+        // Node has no type check (only TypeScript does)
+        assert!(result.passed);
+        assert!(result.output.contains("No type check tool"));
+    }
+
+    #[tokio::test]
+    async fn run_tests_unknown() {
+        let dir = TempDir::new().unwrap();
+        let result = run_tests(dir.path(), &ProjectType::Unknown, 10).await;
+        assert!(result.passed);
+        assert!(result.output.contains("No test tool"));
+        assert_eq!(result.gate_type, GateType::Test);
+    }
+
+    #[tokio::test]
+    async fn run_tests_node_jest() {
+        // Without vitest config, should choose jest
+        let dir = TempDir::new().unwrap();
+        let result = run_tests(dir.path(), &ProjectType::Node, 5).await;
+        // npx jest will fail since no project, but it exercises the jest path
+        assert_eq!(result.gate_name, "js-test");
+        assert_eq!(result.gate_type, GateType::Test);
+    }
+
+    #[tokio::test]
+    async fn run_tests_node_vitest() {
+        let dir = TempDir::new().unwrap();
+        std::fs::write(dir.path().join("vitest.config.ts"), "").unwrap();
+        let result = run_tests(dir.path(), &ProjectType::Node, 5).await;
+        assert_eq!(result.gate_name, "js-test");
+        assert_eq!(result.gate_type, GateType::Test);
+    }
+
+    #[tokio::test]
+    async fn run_tests_vitest_js_config() {
+        let dir = TempDir::new().unwrap();
+        std::fs::write(dir.path().join("vitest.config.js"), "").unwrap();
+        let result = run_tests(dir.path(), &ProjectType::TypeScript, 5).await;
+        assert_eq!(result.gate_name, "js-test");
+    }
+
+    #[tokio::test]
+    async fn run_lint_rust_gate_name() {
+        let dir = TempDir::new().unwrap();
+        let result = run_lint(dir.path(), &ProjectType::Rust, 5).await;
+        assert_eq!(result.gate_name, "rust-lint");
+        assert_eq!(result.gate_type, GateType::Lint);
+    }
+
+    #[tokio::test]
+    async fn run_lint_node_gate_name() {
+        let dir = TempDir::new().unwrap();
+        let result = run_lint(dir.path(), &ProjectType::Node, 5).await;
+        assert_eq!(result.gate_name, "js-lint");
+    }
+
+    #[tokio::test]
+    async fn run_lint_typescript_gate_name() {
+        let dir = TempDir::new().unwrap();
+        let result = run_lint(dir.path(), &ProjectType::TypeScript, 5).await;
+        assert_eq!(result.gate_name, "js-lint");
+    }
+
+    #[tokio::test]
+    async fn run_lint_python_gate_name() {
+        let dir = TempDir::new().unwrap();
+        let result = run_lint(dir.path(), &ProjectType::Python, 5).await;
+        assert_eq!(result.gate_name, "python-lint");
+    }
+
+    #[tokio::test]
+    async fn run_format_check_rust() {
+        let dir = TempDir::new().unwrap();
+        let result = run_format_check(dir.path(), &ProjectType::Rust, 5).await;
+        assert_eq!(result.gate_name, "rust-format");
+        assert_eq!(result.gate_type, GateType::Format);
+    }
+
+    #[tokio::test]
+    async fn run_format_check_node() {
+        let dir = TempDir::new().unwrap();
+        let result = run_format_check(dir.path(), &ProjectType::Node, 5).await;
+        assert_eq!(result.gate_name, "js-format");
+    }
+
+    #[tokio::test]
+    async fn run_format_check_python() {
+        let dir = TempDir::new().unwrap();
+        let result = run_format_check(dir.path(), &ProjectType::Python, 5).await;
+        assert_eq!(result.gate_name, "python-format");
+    }
+
+    #[tokio::test]
+    async fn run_type_check_rust() {
+        let dir = TempDir::new().unwrap();
+        let result = run_type_check(dir.path(), &ProjectType::Rust, 5).await;
+        assert_eq!(result.gate_name, "rust-typecheck");
+        assert_eq!(result.gate_type, GateType::TypeCheck);
+    }
+
+    #[tokio::test]
+    async fn run_type_check_typescript() {
+        let dir = TempDir::new().unwrap();
+        let result = run_type_check(dir.path(), &ProjectType::TypeScript, 5).await;
+        assert_eq!(result.gate_name, "ts-typecheck");
+    }
+
+    #[tokio::test]
+    async fn run_type_check_python() {
+        let dir = TempDir::new().unwrap();
+        let result = run_type_check(dir.path(), &ProjectType::Python, 5).await;
+        assert_eq!(result.gate_name, "python-typecheck");
+    }
+
+    #[tokio::test]
+    async fn run_tests_rust() {
+        let dir = TempDir::new().unwrap();
+        let result = run_tests(dir.path(), &ProjectType::Rust, 5).await;
+        assert_eq!(result.gate_name, "rust-test");
+        assert_eq!(result.gate_type, GateType::Test);
+    }
+
+    #[tokio::test]
+    async fn run_tests_python() {
+        let dir = TempDir::new().unwrap();
+        let result = run_tests(dir.path(), &ProjectType::Python, 5).await;
+        assert_eq!(result.gate_name, "python-test");
+    }
+
+    #[tokio::test]
+    async fn run_command_with_stderr() {
+        let dir = TempDir::new().unwrap();
+        let (passed, output) = run_command(dir.path(), "sh", &["-c", "echo err >&2; exit 1"], 10).await;
+        assert!(!passed);
+        assert!(output.contains("err"));
+    }
+
+    #[test]
+    fn gate_result_fields() {
+        let r = GateResult {
+            gate_name: "test".into(),
+            passed: true,
+            output: "ok".into(),
+            duration_ms: 42,
+            gate_type: GateType::Lint,
+        };
+        assert_eq!(r.gate_name, "test");
+        assert!(r.passed);
+        assert_eq!(r.duration_ms, 42);
+        assert_eq!(r.gate_type, GateType::Lint);
+    }
 }

@@ -160,6 +160,46 @@ pub struct CloudVisionResponse {
     pub credits_remaining: u32,
 }
 
+/// Request payload for the /api/generate/search endpoint.
+#[derive(Debug, Serialize)]
+pub struct CloudSearchRequest {
+    pub query: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub num_results: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include_domains: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exclude_domains: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_published_date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+}
+
+/// A single search result from the Exa API.
+#[derive(Debug, Clone, Deserialize)]
+pub struct CloudSearchResult {
+    pub title: String,
+    pub url: String,
+    #[serde(default)]
+    pub text: Option<String>,
+    pub score: f64,
+    #[serde(default)]
+    pub published_date: Option<String>,
+}
+
+/// Response from the /api/generate/search endpoint.
+#[derive(Debug, Deserialize)]
+pub struct CloudSearchResponse {
+    pub generation_id: String,
+    pub results: Vec<CloudSearchResult>,
+    #[serde(default)]
+    pub autoprompt: Option<String>,
+    pub credits_remaining: u32,
+}
+
 impl CloudClient {
     /// Generate logos via the cloud API.
     #[tracing::instrument(skip(self, input))]
@@ -469,6 +509,56 @@ impl CloudClient {
             .await
             .map_err(|e| CloudError::Network(e.to_string()))
     }
+
+    /// Perform a semantic search via the cloud API.
+    #[tracing::instrument(skip(self, request))]
+    pub async fn search(
+        &self,
+        request: &CloudSearchRequest,
+    ) -> Result<CloudSearchResponse, CloudError> {
+        let jwt = auth::load_jwt().ok_or(CloudError::NotAuthenticated)?;
+        let url = format!("{}/api/generate/search", self.api_url());
+
+        let resp = self
+            .http
+            .post(&url)
+            .header("Authorization", format!("Bearer {jwt}"))
+            .json(request)
+            .send()
+            .await
+            .map_err(|e| CloudError::Network(e.to_string()))?;
+
+        let status = resp.status().as_u16();
+
+        if status == 401 {
+            return Err(CloudError::AuthExpired);
+        }
+
+        if status == 402 {
+            let _body: super::ApiErrorResponse = resp
+                .json()
+                .await
+                .unwrap_or(super::ApiErrorResponse {
+                    error: "Insufficient credits".to_string(),
+                });
+            return Err(CloudError::InsufficientCredits {
+                required: super::CREDIT_COST_SEARCH,
+                available: 0,
+            });
+        }
+
+        if !resp.status().is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(CloudError::Api {
+                status,
+                message: body,
+            });
+        }
+
+        resp.json()
+            .await
+            .map_err(|e| CloudError::Network(e.to_string()))
+    }
 }
 
 #[cfg(test)]
@@ -699,5 +789,180 @@ mod tests {
         assert_eq!(resp.generation_id, "gen-003");
         assert!(resp.analysis.contains("dashboard"));
         assert_eq!(resp.credits_remaining, 48);
+    }
+
+    #[test]
+    fn cloud_search_request_serializes() {
+        let req = CloudSearchRequest {
+            query: "Rust web frameworks".to_string(),
+            search_type: Some("neural".to_string()),
+            num_results: Some(5),
+            include_domains: Some(vec!["github.com".to_string()]),
+            exclude_domains: None,
+            start_published_date: Some("2025-01-01".to_string()),
+            category: Some("github repo".to_string()),
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(json.contains("\"query\":\"Rust web frameworks\""));
+        assert!(json.contains("\"search_type\":\"neural\""));
+        assert!(json.contains("\"num_results\":5"));
+        assert!(json.contains("github.com"));
+        assert!(!json.contains("exclude_domains"));
+    }
+
+    #[test]
+    fn cloud_search_request_minimal() {
+        let req = CloudSearchRequest {
+            query: "test".to_string(),
+            search_type: None,
+            num_results: None,
+            include_domains: None,
+            exclude_domains: None,
+            start_published_date: None,
+            category: None,
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(json.contains("\"query\":\"test\""));
+        assert!(!json.contains("search_type"));
+        assert!(!json.contains("num_results"));
+        assert!(!json.contains("include_domains"));
+        assert!(!json.contains("category"));
+    }
+
+    #[test]
+    fn cloud_search_response_deserializes() {
+        let json = r#"{
+            "generation_id": "gen-004",
+            "results": [
+                {
+                    "title": "Actix Web Framework",
+                    "url": "https://actix.rs",
+                    "text": "A powerful web framework for Rust",
+                    "score": 0.95,
+                    "published_date": "2024-06-15"
+                },
+                {
+                    "title": "Axum Framework",
+                    "url": "https://github.com/tokio-rs/axum",
+                    "score": 0.88
+                }
+            ],
+            "autoprompt": "Rust web frameworks comparison",
+            "credits_remaining": 49
+        }"#;
+
+        let resp: CloudSearchResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.generation_id, "gen-004");
+        assert_eq!(resp.results.len(), 2);
+        assert_eq!(resp.results[0].title, "Actix Web Framework");
+        assert_eq!(resp.results[0].score, 0.95);
+        assert_eq!(resp.results[0].text, Some("A powerful web framework for Rust".to_string()));
+        assert_eq!(resp.results[1].text, None);
+        assert_eq!(resp.autoprompt, Some("Rust web frameworks comparison".to_string()));
+        assert_eq!(resp.credits_remaining, 49);
+    }
+
+    #[test]
+    fn cloud_search_response_without_autoprompt() {
+        let json = r#"{
+            "generation_id": "gen-005",
+            "results": [],
+            "credits_remaining": 49
+        }"#;
+
+        let resp: CloudSearchResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.results.len(), 0);
+        assert_eq!(resp.autoprompt, None);
+    }
+
+    #[test]
+    fn cloud_name_request_with_count() {
+        let req = CloudNameRequest {
+            description: "A CLI tool".to_string(),
+            vibes: vec!["fast".to_string()],
+            count: Some(10),
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(json.contains("\"count\":10"));
+    }
+
+    #[test]
+    fn cloud_scrape_request_without_formats() {
+        let req = CloudScrapeRequest {
+            url: "https://example.com".to_string(),
+            formats: None,
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(!json.contains("formats"));
+    }
+
+    #[test]
+    fn cloud_crawl_request_with_all_options() {
+        let req = CloudCrawlRequest {
+            url: "https://example.com".to_string(),
+            max_depth: Some(5),
+            limit: Some(100),
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(json.contains("\"max_depth\":5"));
+        assert!(json.contains("\"limit\":100"));
+    }
+
+    #[test]
+    fn cloud_search_request_with_exclude_domains() {
+        let req = CloudSearchRequest {
+            query: "test".to_string(),
+            search_type: None,
+            num_results: None,
+            include_domains: None,
+            exclude_domains: Some(vec!["spam.com".to_string()]),
+            start_published_date: None,
+            category: None,
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(json.contains("spam.com"));
+        assert!(json.contains("exclude_domains"));
+    }
+
+    #[test]
+    fn cloud_northstar_response_deserializes() {
+        let json = r#"{
+            "phase": "brand_foundations",
+            "result": {"name": "Acme", "tagline": "Build it"},
+            "credits_remaining": 35
+        }"#;
+        let resp: CloudNorthStarResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.phase, "brand_foundations");
+        assert_eq!(resp.credits_remaining, 35);
+    }
+
+    #[test]
+    fn cloud_search_result_clone() {
+        let result = CloudSearchResult {
+            title: "Test".to_string(),
+            url: "https://test.com".to_string(),
+            text: Some("content".to_string()),
+            score: 0.95,
+            published_date: Some("2025-01-01".to_string()),
+        };
+        let cloned = result.clone();
+        assert_eq!(cloned.title, "Test");
+        assert_eq!(cloned.score, 0.95);
+    }
+
+    #[test]
+    fn cloud_logo_request_with_description() {
+        use crate::logogen::LogoGenInput;
+        let input = LogoGenInput {
+            product_name: "Foo".to_string(),
+            product_description: Some("A foo maker".to_string()),
+            style: LogoStyle::Abstract,
+            colors: vec!["red".to_string(), "blue".to_string()],
+            variants: 2,
+        };
+        let req = CloudLogoRequest::from(&input);
+        assert_eq!(req.product_description, Some("A foo maker".to_string()));
+        assert_eq!(req.colors.len(), 2);
+        assert_eq!(req.variants, 2);
     }
 }

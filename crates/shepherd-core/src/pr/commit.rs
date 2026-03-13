@@ -66,4 +66,84 @@ mod tests {
         };
         assert_eq!(not_truncated.len(), 100);
     }
+
+    #[tokio::test]
+    async fn generate_commit_message_with_mock() {
+        use crate::llm::{LlmResponse, TokenUsage};
+
+        struct MockProvider;
+
+        #[async_trait::async_trait]
+        impl LlmProvider for MockProvider {
+            async fn chat(&self, request: &LlmRequest) -> anyhow::Result<LlmResponse> {
+                // Verify the request structure
+                assert_eq!(request.messages.len(), 2);
+                assert!(request.messages[0].content.contains("commit message"));
+                assert!(request.messages[1].content.contains("Fix auth"));
+                Ok(LlmResponse {
+                    content: "  fix: resolve authentication race condition  ".to_string(),
+                    model: "test".to_string(),
+                    usage: TokenUsage {
+                        prompt_tokens: 100,
+                        completion_tokens: 10,
+                        total_tokens: 110,
+                    },
+                })
+            }
+            fn name(&self) -> &str { "mock" }
+        }
+
+        let provider = MockProvider;
+        let msg = generate_commit_message(&provider, "diff --git a/auth.rs", "Fix auth").await.unwrap();
+        assert_eq!(msg, "fix: resolve authentication race condition");
+    }
+
+    #[tokio::test]
+    async fn generate_commit_message_truncates_long_diff() {
+        use crate::llm::{LlmResponse, TokenUsage};
+
+        struct DiffCheckProvider;
+
+        #[async_trait::async_trait]
+        impl LlmProvider for DiffCheckProvider {
+            async fn chat(&self, request: &LlmRequest) -> anyhow::Result<LlmResponse> {
+                // The user message contains the diff, it should be truncated
+                let user_msg = &request.messages[1].content;
+                assert!(user_msg.len() < 10000, "Diff should be truncated");
+                Ok(LlmResponse {
+                    content: "feat: add feature".to_string(),
+                    model: "test".to_string(),
+                    usage: TokenUsage {
+                        prompt_tokens: 0,
+                        completion_tokens: 0,
+                        total_tokens: 0,
+                    },
+                })
+            }
+            fn name(&self) -> &str { "mock" }
+        }
+
+        let long_diff = "x".repeat(10000);
+        let msg = generate_commit_message(&DiffCheckProvider, &long_diff, "Task").await.unwrap();
+        assert_eq!(msg, "feat: add feature");
+    }
+
+    #[tokio::test]
+    async fn generate_commit_message_llm_error() {
+        use crate::llm::LlmResponse;
+
+        struct FailProvider;
+
+        #[async_trait::async_trait]
+        impl LlmProvider for FailProvider {
+            async fn chat(&self, _request: &LlmRequest) -> anyhow::Result<LlmResponse> {
+                anyhow::bail!("API rate limited")
+            }
+            fn name(&self) -> &str { "fail" }
+        }
+
+        let result = generate_commit_message(&FailProvider, "diff", "Task").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("rate limited"));
+    }
 }

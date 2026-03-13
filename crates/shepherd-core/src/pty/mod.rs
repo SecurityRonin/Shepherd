@@ -210,3 +210,102 @@ impl PtyManager {
         tracing::info!("All PTY processes shut down");
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_pty_manager_creation() {
+        let mgr = PtyManager::new(4, sandbox::SandboxProfile::disabled());
+        assert_eq!(mgr.max_agents, 4);
+        assert_eq!(mgr.count().await, 0);
+    }
+
+    #[tokio::test]
+    async fn test_pty_manager_subscribe() {
+        let mgr = PtyManager::new(2, sandbox::SandboxProfile::disabled());
+        let _rx = mgr.subscribe_output();
+        // Subscribing should not panic
+        assert_eq!(mgr.count().await, 0);
+    }
+
+    #[tokio::test]
+    async fn test_pty_manager_stale_agents_empty() {
+        let mgr = PtyManager::new(4, sandbox::SandboxProfile::disabled());
+        let stale = mgr.stale_agents(std::time::Duration::from_secs(60)).await;
+        assert!(stale.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_pty_manager_kill_nonexistent() {
+        let mgr = PtyManager::new(4, sandbox::SandboxProfile::disabled());
+        // Killing a nonexistent task should not error
+        let result = mgr.kill(999).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_pty_manager_write_to_nonexistent() {
+        let mgr = PtyManager::new(4, sandbox::SandboxProfile::disabled());
+        // Writing to a nonexistent task should not error
+        let result = mgr.write_to(999, "hello").await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_pty_manager_resize_nonexistent() {
+        let mgr = PtyManager::new(4, sandbox::SandboxProfile::disabled());
+        let result = mgr.resize(999, 120, 40).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_pty_manager_is_alive_nonexistent() {
+        let mgr = PtyManager::new(4, sandbox::SandboxProfile::disabled());
+        assert!(!mgr.is_alive(999).await);
+    }
+
+    #[tokio::test]
+    async fn test_pty_manager_shutdown_all_empty() {
+        let mgr = PtyManager::new(4, sandbox::SandboxProfile::disabled());
+        mgr.shutdown_all(std::time::Duration::from_millis(10)).await;
+        assert_eq!(mgr.count().await, 0);
+    }
+
+    #[tokio::test]
+    async fn test_pty_manager_spawn_limit() {
+        let mgr = PtyManager::new(0, sandbox::SandboxProfile::disabled());
+        let result = mgr.spawn(1, "echo", &["hello".into()], "/tmp").await;
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Agent limit reached"));
+    }
+
+    #[test]
+    fn test_pty_output_fields() {
+        let output = PtyOutput {
+            task_id: 42,
+            data: vec![72, 101, 108, 108, 111], // "Hello"
+        };
+        assert_eq!(output.task_id, 42);
+        assert_eq!(output.data, b"Hello");
+    }
+
+    #[tokio::test]
+    async fn test_pty_manager_sandbox_disabled_on_missing_nono() {
+        // When sandbox is enabled but nono.sh not installed,
+        // the manager should warn and disable sandbox
+        let profile = sandbox::SandboxProfile {
+            enabled: true,
+            blocked_paths: vec![],
+            block_network: false,
+            extra_flags: vec![],
+        };
+        let mgr = PtyManager::new(4, profile);
+        // If nono is not available, sandbox should be disabled
+        if !sandbox::SandboxProfile::is_available() {
+            assert!(!mgr.sandbox.enabled);
+        }
+    }
+}

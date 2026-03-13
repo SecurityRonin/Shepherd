@@ -226,4 +226,163 @@ mod tests {
         assert_eq!(result[1].name, "good");
         assert_eq!(result[1].tagline.as_deref(), Some("nice tagline"));
     }
+
+    #[tokio::test]
+    async fn brainstorm_names_with_mock() {
+        use crate::llm::{LlmRequest, LlmResponse, TokenUsage};
+
+        struct MockProvider;
+
+        #[async_trait::async_trait]
+        impl crate::llm::LlmProvider for MockProvider {
+            async fn chat(&self, request: &LlmRequest) -> anyhow::Result<LlmResponse> {
+                assert!(request.messages[1].content.contains("3 unique"));
+                assert!((request.temperature - 0.9).abs() < 0.01);
+                Ok(LlmResponse {
+                    content: r#"[{"name":"alpha","tagline":"Go fast","reasoning":"Speed"},{"name":"beta","tagline":null,"reasoning":"Testing"}]"#.to_string(),
+                    model: "test".to_string(),
+                    usage: TokenUsage { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+                })
+            }
+            fn name(&self) -> &str { "mock" }
+        }
+
+        let input = NameGenInput {
+            description: "A widget".into(),
+            vibes: vec![],
+            count: 3,
+        };
+        let result = brainstorm_names(&MockProvider, &input).await.unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].name, "alpha");
+        assert_eq!(result[0].tagline.as_deref(), Some("Go fast"));
+        assert_eq!(result[1].name, "beta");
+        assert!(result[1].tagline.is_none()); // null tagline
+    }
+
+    #[tokio::test]
+    async fn brainstorm_names_with_vibes() {
+        use crate::llm::{LlmRequest, LlmResponse, TokenUsage};
+
+        struct VibeCheckProvider;
+
+        #[async_trait::async_trait]
+        impl crate::llm::LlmProvider for VibeCheckProvider {
+            async fn chat(&self, request: &LlmRequest) -> anyhow::Result<LlmResponse> {
+                let user_msg = &request.messages[1].content;
+                assert!(user_msg.contains("fast, modern"), "Should include vibes: {user_msg}");
+                Ok(LlmResponse {
+                    content: r#"[{"name":"viber","tagline":"Feel it","reasoning":"Vibes"}]"#.to_string(),
+                    model: "test".to_string(),
+                    usage: TokenUsage { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+                })
+            }
+            fn name(&self) -> &str { "mock" }
+        }
+
+        let input = NameGenInput {
+            description: "A tool".into(),
+            vibes: vec!["fast".into(), "modern".into()],
+            count: 5,
+        };
+        let result = brainstorm_names(&VibeCheckProvider, &input).await.unwrap();
+        assert_eq!(result.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn scan_negative_associations_found() {
+        use crate::llm::{LlmRequest, LlmResponse, TokenUsage};
+
+        struct NegProvider;
+
+        #[async_trait::async_trait]
+        impl crate::llm::LlmProvider for NegProvider {
+            async fn chat(&self, request: &LlmRequest) -> anyhow::Result<LlmResponse> {
+                assert!(request.messages[1].content.contains("badname"));
+                Ok(LlmResponse {
+                    content: r#"["Offensive in language X", "Similar to failed product Y"]"#.to_string(),
+                    model: "test".to_string(),
+                    usage: TokenUsage { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+                })
+            }
+            fn name(&self) -> &str { "mock" }
+        }
+
+        let result = scan_negative_associations(&NegProvider, "badname").await.unwrap();
+        assert_eq!(result.len(), 2);
+        assert!(result[0].contains("Offensive"));
+    }
+
+    #[tokio::test]
+    async fn scan_negative_associations_empty() {
+        use crate::llm::{LlmRequest, LlmResponse, TokenUsage};
+
+        struct CleanProvider;
+
+        #[async_trait::async_trait]
+        impl crate::llm::LlmProvider for CleanProvider {
+            async fn chat(&self, _request: &LlmRequest) -> anyhow::Result<LlmResponse> {
+                Ok(LlmResponse {
+                    content: "[]".to_string(),
+                    model: "test".to_string(),
+                    usage: TokenUsage { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+                })
+            }
+            fn name(&self) -> &str { "mock" }
+        }
+
+        let result = scan_negative_associations(&CleanProvider, "goodname").await.unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[tokio::test]
+    async fn scan_negative_associations_code_fences() {
+        use crate::llm::{LlmRequest, LlmResponse, TokenUsage};
+
+        struct FenceProvider;
+
+        #[async_trait::async_trait]
+        impl crate::llm::LlmProvider for FenceProvider {
+            async fn chat(&self, _request: &LlmRequest) -> anyhow::Result<LlmResponse> {
+                Ok(LlmResponse {
+                    content: "```json\n[\"concern1\"]\n```".to_string(),
+                    model: "test".to_string(),
+                    usage: TokenUsage { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+                })
+            }
+            fn name(&self) -> &str { "mock" }
+        }
+
+        let result = scan_negative_associations(&FenceProvider, "name").await.unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], "concern1");
+    }
+
+    #[test]
+    fn parse_response_opening_fence_only() {
+        let input = "```json\n[{\"name\":\"test\",\"tagline\":null,\"reasoning\":\"r\"}]";
+        let result = parse_brainstorm_response(input).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].name, "test");
+    }
+
+    #[test]
+    fn parse_response_null_tagline() {
+        let input = r#"[{"name":"x","tagline":null,"reasoning":"y"}]"#;
+        let result = parse_brainstorm_response(input).unwrap();
+        assert_eq!(result.len(), 1);
+        assert!(result[0].tagline.is_none());
+    }
+
+    #[test]
+    fn raw_candidate_fields() {
+        let c = RawCandidate {
+            name: "test".into(),
+            tagline: Some("cool".into()),
+            reasoning: "because".into(),
+        };
+        assert_eq!(c.name, "test");
+        assert_eq!(c.tagline.as_deref(), Some("cool"));
+        assert_eq!(c.reasoning, "because");
+    }
 }

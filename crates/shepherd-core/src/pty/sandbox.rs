@@ -123,4 +123,78 @@ mod tests {
         profile.blocked_paths.push("/custom/secret".into());
         assert!(profile.blocked_paths.iter().any(|p| p == "/custom/secret"));
     }
+
+    #[test]
+    fn test_block_network_flag() {
+        let mut profile = SandboxProfile::default();
+        profile.block_network = true;
+        let (cmd, args) = profile.wrap_command("claude", &["--auto".into()]);
+        assert_eq!(cmd, "nono");
+        assert!(args.contains(&"--no-network".to_string()));
+    }
+
+    #[test]
+    fn test_extra_flags_passed_through() {
+        let mut profile = SandboxProfile::default();
+        profile.extra_flags = vec!["--verbose".into(), "--log=/tmp/nono.log".into()];
+        let (cmd, args) = profile.wrap_command("claude", &[]);
+        assert_eq!(cmd, "nono");
+        assert!(args.contains(&"--verbose".to_string()));
+        assert!(args.contains(&"--log=/tmp/nono.log".to_string()));
+    }
+
+    #[test]
+    fn test_disabled_profile_fields() {
+        let profile = SandboxProfile::disabled();
+        assert!(!profile.enabled);
+        assert!(profile.blocked_paths.is_empty());
+        assert!(!profile.block_network);
+        assert!(profile.extra_flags.is_empty());
+    }
+
+    #[test]
+    fn test_default_profile_is_enabled() {
+        let profile = SandboxProfile::default();
+        assert!(profile.enabled);
+        assert!(!profile.blocked_paths.is_empty());
+        assert!(!profile.block_network);
+    }
+
+    #[test]
+    fn test_default_blocks_sensitive_paths() {
+        let profile = SandboxProfile::default();
+        let sensitive = [".ssh", ".aws", ".gnupg", ".kube", ".netrc", ".npmrc"];
+        for path_fragment in &sensitive {
+            assert!(
+                profile.blocked_paths.iter().any(|p| p.contains(path_fragment)),
+                "Should block {path_fragment}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_wrap_command_separator() {
+        let profile = SandboxProfile {
+            enabled: true,
+            blocked_paths: vec![],
+            block_network: false,
+            extra_flags: vec![],
+        };
+        let (cmd, args) = profile.wrap_command("echo", &["hello".into()]);
+        assert_eq!(cmd, "nono");
+        // Should have -- separator before the actual command
+        let separator_pos = args.iter().position(|a| a == "--").unwrap();
+        assert_eq!(args[separator_pos + 1], "echo");
+        assert_eq!(args[separator_pos + 2], "hello");
+    }
+
+    #[test]
+    fn test_wrap_preserves_arg_order() {
+        let profile = SandboxProfile::default();
+        let (_, args) = profile.wrap_command("git", &["push".into(), "origin".into(), "main".into()]);
+        let cmd_pos = args.iter().position(|a| a == "git").unwrap();
+        assert_eq!(args[cmd_pos + 1], "push");
+        assert_eq!(args[cmd_pos + 2], "origin");
+        assert_eq!(args[cmd_pos + 3], "main");
+    }
 }

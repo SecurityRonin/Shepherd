@@ -340,4 +340,192 @@ mod tests {
             "Error should mention base64 decoding: {err}"
         );
     }
+
+    fn test_png_base64() -> String {
+        use base64::Engine;
+        let img = image::RgbaImage::from_fn(64, 64, |x, y| {
+            if (x + y) % 2 == 0 {
+                image::Rgba([255, 0, 0, 255])
+            } else {
+                image::Rgba([0, 0, 255, 255])
+            }
+        });
+        let mut buf = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgba8(img)
+            .write_to(&mut buf, image::ImageFormat::Png)
+            .unwrap();
+        base64::engine::general_purpose::STANDARD.encode(buf.into_inner())
+    }
+
+    #[test]
+    fn export_icons_full() {
+        let tmp = tempfile::tempdir().unwrap();
+        let b64 = test_png_base64();
+        let result = export_icons(&b64, tmp.path(), "TestApp").unwrap();
+
+        // Should have: 4 PNG sizes + apple-touch-icon + favicon.ico + app.ico + app.icns + logo.svg + manifest.json = 10
+        assert_eq!(
+            result.files.len(),
+            10,
+            "Expected 10 files, got {}",
+            result.files.len()
+        );
+
+        // Check PNG files exist
+        for &(size, filename) in PNG_SIZES {
+            let path = tmp.path().join(filename);
+            assert!(path.exists(), "{filename} should exist");
+            let file = result
+                .files
+                .iter()
+                .find(|f| f.path.contains(filename))
+                .unwrap();
+            assert_eq!(file.format, "png");
+            assert_eq!(file.dimensions, Some((size, size)));
+            assert!(file.size_bytes > 0);
+        }
+
+        // Apple touch icon
+        assert!(tmp.path().join("apple-touch-icon.png").exists());
+        let apple = result
+            .files
+            .iter()
+            .find(|f| f.path.contains("apple-touch-icon"))
+            .unwrap();
+        assert_eq!(apple.dimensions, Some((180, 180)));
+
+        // Favicon.ico
+        assert!(tmp.path().join("favicon.ico").exists());
+        let favicon = result
+            .files
+            .iter()
+            .find(|f| f.path.contains("favicon.ico"))
+            .unwrap();
+        assert_eq!(favicon.format, "ico");
+        assert!(favicon.dimensions.is_none());
+
+        // App.ico
+        assert!(tmp.path().join("app.ico").exists());
+
+        // App.icns
+        assert!(tmp.path().join("app.icns").exists());
+        let icns = result
+            .files
+            .iter()
+            .find(|f| f.path.contains("app.icns"))
+            .unwrap();
+        assert_eq!(icns.format, "icns");
+
+        // Logo SVG
+        assert!(tmp.path().join("logo.svg").exists());
+        let svg_content = std::fs::read_to_string(tmp.path().join("logo.svg")).unwrap();
+        assert!(svg_content.contains("TestApp"));
+        assert!(svg_content.contains("svg"));
+
+        // Manifest
+        assert!(tmp.path().join("manifest.json").exists());
+        let manifest_content =
+            std::fs::read_to_string(tmp.path().join("manifest.json")).unwrap();
+        assert!(manifest_content.contains("TestApp"));
+    }
+
+    #[test]
+    fn export_ico_creates_valid_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let img = image::DynamicImage::ImageRgba8(image::RgbaImage::from_fn(64, 64, |_, _| {
+            image::Rgba([0, 0, 0, 255])
+        }));
+        let path = tmp.path().join("test.ico");
+        export_ico(&img, &path, &[16, 32]).unwrap();
+        assert!(path.exists());
+
+        // ICO files start with reserved=0, type=1
+        let bytes = std::fs::read(&path).unwrap();
+        assert!(bytes.len() > 6);
+        assert_eq!(bytes[0], 0); // reserved
+        assert_eq!(bytes[1], 0);
+        assert_eq!(bytes[2], 1); // type = icon
+        assert_eq!(bytes[3], 0);
+        assert_eq!(bytes[4], 2); // count = 2
+        assert_eq!(bytes[5], 0);
+    }
+
+    #[test]
+    fn export_ico_single_size() {
+        let tmp = tempfile::tempdir().unwrap();
+        let img = image::DynamicImage::ImageRgba8(image::RgbaImage::from_fn(32, 32, |_, _| {
+            image::Rgba([255, 255, 255, 255])
+        }));
+        let path = tmp.path().join("single.ico");
+        export_ico(&img, &path, &[32]).unwrap();
+        assert!(path.exists());
+
+        let bytes = std::fs::read(&path).unwrap();
+        assert_eq!(bytes[4], 1); // count = 1
+    }
+
+    #[test]
+    fn export_ico_with_256_size() {
+        let tmp = tempfile::tempdir().unwrap();
+        let img = image::DynamicImage::ImageRgba8(image::RgbaImage::from_fn(
+            256,
+            256,
+            |_, _| image::Rgba([128, 128, 128, 255]),
+        ));
+        let path = tmp.path().join("large.ico");
+        export_ico(&img, &path, &[256]).unwrap();
+        assert!(path.exists());
+
+        let bytes = std::fs::read(&path).unwrap();
+        // For 256px, width byte should be 0
+        assert_eq!(bytes[6], 0, "256px width should be stored as 0 in ICO");
+        assert_eq!(bytes[7], 0, "256px height should be stored as 0 in ICO");
+    }
+
+    #[test]
+    fn export_icns_creates_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let img = image::DynamicImage::ImageRgba8(image::RgbaImage::from_fn(64, 64, |_, _| {
+            image::Rgba([0, 255, 0, 255])
+        }));
+        let path = tmp.path().join("test.icns");
+        export_icns(&img, &path).unwrap();
+        assert!(path.exists());
+
+        let bytes = std::fs::read(&path).unwrap();
+        // Should start with "icns" magic bytes
+        assert!(bytes.len() >= 4);
+        assert_eq!(&bytes[0..4], b"icns");
+    }
+
+    #[test]
+    fn export_icons_invalid_png_bytes() {
+        use base64::Engine;
+        let tmp = tempfile::tempdir().unwrap();
+        // Valid base64, but not valid PNG data
+        let b64 =
+            base64::engine::general_purpose::STANDARD.encode(b"this is not a png image");
+        let result = export_icons(&b64, tmp.path(), "Test");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn generate_manifest_json_fields() {
+        let manifest = generate_manifest_json("MyApp");
+        let parsed: serde_json::Value = serde_json::from_str(&manifest).unwrap();
+        assert_eq!(parsed["name"], "MyApp");
+        assert_eq!(parsed["short_name"], "MyApp");
+        assert_eq!(parsed["display"], "standalone");
+        assert_eq!(parsed["theme_color"], "#ffffff");
+        assert_eq!(parsed["background_color"], "#ffffff");
+        // Check icon src paths
+        let icons = parsed["icons"].as_array().unwrap();
+        let srcs: Vec<&str> = icons
+            .iter()
+            .map(|i| i["src"].as_str().unwrap())
+            .collect();
+        assert!(srcs.contains(&"icon-192.png"));
+        assert!(srcs.contains(&"icon-512.png"));
+        assert!(srcs.contains(&"apple-touch-icon.png"));
+    }
 }
