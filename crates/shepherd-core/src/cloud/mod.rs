@@ -202,6 +202,8 @@ impl Default for CloudConfig {
 pub struct CloudClient {
     pub(crate) http: reqwest::Client,
     pub(crate) config: CloudConfig,
+    #[cfg(test)]
+    pub(crate) test_jwt: Option<String>,
 }
 
 impl CloudClient {
@@ -216,7 +218,20 @@ impl CloudClient {
             .user_agent("shepherd-desktop/1.0")
             .build()
             .expect("Failed to create HTTP client");
-        Self { http, config }
+        Self {
+            http,
+            config,
+            #[cfg(test)]
+            test_jwt: None,
+        }
+    }
+
+    /// Test-only constructor that injects a fake JWT and points at a mock server URL.
+    #[cfg(test)]
+    pub fn with_test_jwt(api_url: &str, jwt: &str) -> Self {
+        let mut client = Self::with_config(CloudConfig { api_url: api_url.to_string() });
+        client.test_jwt = Some(jwt.to_string());
+        client
     }
 
     /// Get the base API URL.

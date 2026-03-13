@@ -351,4 +351,71 @@ mod tests {
         assert!(!parsed.trial_counts.has_trial("logo"));
         assert!(!parsed.trial_counts.has_trial("name"));
     }
+
+    // ── httpmock-based async tests ────────────────────────────────────────
+
+    #[tokio::test]
+    async fn fetch_profile_200_ok() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/api/credits/balance");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "plan": "pro",
+                    "credits_balance": 42,
+                    "trial_logo": 0,
+                    "trial_name": 1,
+                    "trial_northstar": 2,
+                    "trial_scrape": 0,
+                    "trial_crawl": 1,
+                    "trial_vision": 0,
+                    "trial_search": 2,
+                    "email": "user@example.com",
+                    "github_handle": "gh-user"
+                }));
+        });
+
+        let client = CloudClient::with_config(CloudConfig { api_url: server.base_url() });
+        let result = client.fetch_profile("fake-jwt").await;
+        assert!(result.is_ok(), "expected Ok, got {:?}", result);
+        let profile = result.unwrap();
+        assert_eq!(profile.credits_balance, 42);
+        assert_eq!(profile.plan, Plan::Pro);
+        assert_eq!(profile.email, Some("user@example.com".to_string()));
+        assert_eq!(profile.github_handle, Some("gh-user".to_string()));
+        assert_eq!(profile.trial_counts.name, 1);
+    }
+
+    #[tokio::test]
+    async fn fetch_profile_401_auth_expired() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/api/credits/balance");
+            then.status(401).body("Unauthorized");
+        });
+
+        let client = CloudClient::with_config(CloudConfig { api_url: server.base_url() });
+        let result = client.fetch_profile("expired-jwt").await;
+        assert!(matches!(result, Err(super::super::CloudError::AuthExpired)));
+    }
+
+    #[tokio::test]
+    async fn fetch_profile_500_api_error() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/api/credits/balance");
+            then.status(500).body("Internal Server Error");
+        });
+
+        let client = CloudClient::with_config(CloudConfig { api_url: server.base_url() });
+        let result = client.fetch_profile("fake-jwt").await;
+        match result {
+            Err(super::super::CloudError::Api { status, .. }) => assert_eq!(status, 500),
+            other => panic!("expected Api error, got {:?}", other),
+        }
+    }
 }
