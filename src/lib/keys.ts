@@ -22,7 +22,7 @@ export function eventToKeyString(event: KeyboardEvent): string {
 export interface ShortcutManager {
   register(shortcut: Shortcut): void;
   unregister(id: string): void;
-  handleKeyDown(event: KeyboardEvent, currentViewMode: "overview" | "focus"): boolean;
+  handleKeyDown(event: KeyboardEvent, currentViewMode: string): boolean;
   getAll(): Shortcut[];
 }
 
@@ -31,7 +31,7 @@ export function createShortcutManager(): ShortcutManager {
   return {
     register(shortcut) { shortcuts.set(shortcut.id, shortcut); },
     unregister(id) { shortcuts.delete(id); },
-    handleKeyDown(event, currentViewMode) {
+    handleKeyDown(event: KeyboardEvent, currentViewMode: string) {
       const keyString = eventToKeyString(event);
       for (const shortcut of shortcuts.values()) {
         if (shortcut.keys !== keyString) continue;

@@ -1,7 +1,7 @@
 import type { StateCreator } from "zustand";
 import type { ConnectionStatus } from "../lib/ws";
 
-export type ViewMode = "overview" | "focus";
+export type ViewMode = "overview" | "focus" | "observability" | "replay" | "ecosystem" | "cloud";
 
 export interface UiSlice {
   viewMode: ViewMode;
