@@ -367,4 +367,60 @@ mod tests {
         corpus.add_document("a.rs", "hello world");
         assert_eq!(corpus.tf_idf("missing", "a.rs"), 0.0);
     }
+
+    #[test]
+    fn add_document_twice_updates_no_duplicate() {
+        let mut corpus = TfIdfCorpus::new();
+        corpus.add_document("a.rs", "fn main() {}");
+        corpus.add_document("a.rs", "pub fn new() -> Self {}");
+        // Should still be 1 document, not 2
+        assert_eq!(corpus.len(), 1);
+        // The content should reflect the latest add
+        let score = corpus.tf_idf("main", "a.rs");
+        // "main" is not in new content, so score should be 0
+        assert_eq!(score, 0.0);
+    }
+
+    #[test]
+    fn rank_documents_empty_query_returns_empty() {
+        let mut corpus = TfIdfCorpus::new();
+        corpus.add_document("a.rs", "fn main() {}");
+        corpus.add_document("b.rs", "pub struct Foo;");
+        let ranked = corpus.rank_documents(&[]);
+        // Empty query → all scores = 0.0 → filtered out
+        assert!(ranked.is_empty());
+    }
+
+    #[test]
+    fn corpus_default_is_empty() {
+        let corpus = TfIdfCorpus::default();
+        assert!(corpus.is_empty());
+        assert_eq!(corpus.len(), 0);
+    }
+
+    #[test]
+    fn corpus_clone_is_independent() {
+        let mut corpus = TfIdfCorpus::new();
+        corpus.add_document("a.rs", "authenticate login");
+        let mut clone = corpus.clone();
+        clone.add_document("b.rs", "database connect");
+        // Original should not be affected
+        assert_eq!(corpus.len(), 1);
+        assert_eq!(clone.len(), 2);
+    }
+
+    #[test]
+    fn tokenize_empty_string() {
+        let tokens = tokenize("");
+        assert!(tokens.is_empty());
+    }
+
+    #[test]
+    fn tokenize_very_long_content() {
+        let content = "authenticate ".repeat(500);
+        let tokens = tokenize(&content);
+        assert!(tokens.contains(&"authenticate".to_string()));
+        // Should handle long content without issues
+        assert!(!tokens.is_empty());
+    }
 }

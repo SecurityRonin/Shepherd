@@ -307,4 +307,60 @@ mod tests {
         assert_eq!(parsed.max_cost_per_task, Some(5.0));
         assert!((parsed.warning_threshold - 0.75).abs() < f64::EPSILON);
     }
+
+    #[test]
+    fn check_budget_zero_limit_returns_none() {
+        // limit = Some(0.0) → treated as no limit
+        let alert = check_budget(5.0, Some(0.0), 0.8, BudgetScope::Task, "1");
+        assert!(alert.is_none());
+    }
+
+    #[test]
+    fn check_task_budgets_all_unlimited() {
+        // All limits = None → no alerts ever
+        let config = BudgetConfig::default(); // all None
+        let alerts = check_task_budgets(&config, 1000.0, 1000.0, 1000.0, "task-1", "claude-code");
+        assert!(alerts.is_empty());
+    }
+
+    #[test]
+    fn check_task_budgets_only_daily_limit_set() {
+        let config = BudgetConfig {
+            max_cost_per_task: None,
+            max_cost_per_agent_daily: None,
+            max_cost_daily: Some(10.0),
+            warning_threshold: 0.8,
+        };
+        // global cost at 90% → warning
+        let alerts = check_task_budgets(&config, 0.0, 0.0, 9.0, "task-1", "claude-code");
+        assert_eq!(alerts.len(), 1);
+        assert_eq!(alerts[0].scope, BudgetScope::GlobalDaily);
+        assert_eq!(alerts[0].status, BudgetStatus::Warning);
+    }
+
+    #[test]
+    fn budget_config_clone() {
+        let config = BudgetConfig {
+            max_cost_per_task: Some(5.0),
+            max_cost_per_agent_daily: None,
+            max_cost_daily: Some(100.0),
+            warning_threshold: 0.9,
+        };
+        let cloned = config.clone();
+        assert_eq!(cloned.max_cost_per_task, Some(5.0));
+        assert!(cloned.max_cost_per_agent_daily.is_none());
+    }
+
+    #[test]
+    fn check_budget_just_below_threshold_no_alert() {
+        // 79% < 80% threshold → no alert
+        let alert = check_budget(7.9, Some(10.0), 0.8, BudgetScope::AgentDaily, "agent-1");
+        assert!(alert.is_none());
+    }
+
+    #[test]
+    fn budget_alert_contains_scope_id() {
+        let alert = check_budget(9.0, Some(10.0), 0.8, BudgetScope::Task, "task-42").unwrap();
+        assert_eq!(alert.scope_id, "task-42");
+    }
 }

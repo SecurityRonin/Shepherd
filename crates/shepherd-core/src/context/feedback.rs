@@ -442,4 +442,67 @@ mod tests {
         let results = get_effectiveness(&conn, 1).unwrap();
         assert!(results.is_empty());
     }
+
+    #[test]
+    fn save_and_load_package_with_no_task_id() {
+        let conn = setup_db();
+        let pkg = ContextPackage {
+            id: "pkg-no-task".into(),
+            task_id: None,
+            items: vec![],
+            mcp_queries: vec![],
+            summary: "No task".into(),
+            created_at: "2026-03-14T00:00:00Z".into(),
+        };
+        save_package(&conn, &pkg).unwrap();
+        let loaded = load_package(&conn, "pkg-no-task").unwrap().unwrap();
+        assert!(loaded.task_id.is_none());
+        assert_eq!(loaded.summary, "No task");
+    }
+
+    #[test]
+    fn record_feedback_with_empty_items_used() {
+        let conn = setup_db();
+        let pkg = sample_package();
+        save_package(&conn, &pkg).unwrap();
+
+        let feedback = ContextFeedback {
+            package_id: "pkg-test-001".into(),
+            task_id: 1,
+            task_succeeded: false,
+            items_used: vec![], // no items used
+            agent_duration_secs: None,
+            notes: None,
+        };
+        let id = record_feedback(&conn, &feedback).unwrap();
+        assert!(id > 0);
+    }
+
+    #[test]
+    fn file_effectiveness_clone_and_debug() {
+        let eff = FileEffectiveness {
+            file_path: "src/auth.rs".into(),
+            times_suggested: 3,
+            times_used: 2,
+            times_succeeded: 1,
+            usage_rate: 0.667,
+            success_rate: 0.5,
+        };
+        let cloned = eff.clone();
+        assert_eq!(cloned.file_path, "src/auth.rs");
+        // Debug formatting should not panic
+        let _ = format!("{:?}", cloned);
+    }
+
+    #[test]
+    fn load_package_preserves_items_and_queries() {
+        let conn = setup_db();
+        let pkg = sample_package();
+        save_package(&conn, &pkg).unwrap();
+
+        let loaded = load_package(&conn, "pkg-test-001").unwrap().unwrap();
+        assert_eq!(loaded.items.len(), 2);
+        assert_eq!(loaded.mcp_queries.len(), 1);
+        assert_eq!(loaded.mcp_queries[0].server, "serena");
+    }
 }

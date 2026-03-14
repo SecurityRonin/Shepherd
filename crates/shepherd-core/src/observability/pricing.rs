@@ -249,4 +249,53 @@ mod tests {
         assert!(opus.input_cost_per_million > sonnet.input_cost_per_million);
         assert!(opus.output_cost_per_million > sonnet.output_cost_per_million);
     }
+
+    #[test]
+    fn estimate_cost_gpt4o() {
+        // gpt-4o: $2.50/M input, $10/M output
+        // 1M input + 0 output = $2.50
+        let cost = estimate_cost("gpt-4o", 1_000_000, 0);
+        assert!((cost - 2.50).abs() < 1e-10);
+    }
+
+    #[test]
+    fn estimate_cost_zero_tokens_is_zero() {
+        let cost = estimate_cost("claude-opus-4", 0, 0);
+        assert!((cost).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn find_pricing_gemini_fallback() {
+        // "gemini-unknown" → falls back to gemini-2.5-flash
+        let p = find_pricing("gemini-unknown-model").unwrap();
+        assert_eq!(p.model_id, "gemini-2.5-flash");
+    }
+
+    #[test]
+    fn find_pricing_gpt_fallback() {
+        // "gpt-5" → falls back to gpt-4o
+        let p = find_pricing("gpt-5").unwrap();
+        assert_eq!(p.model_id, "gpt-4o");
+    }
+
+    #[test]
+    fn model_pricing_clone() {
+        let p = find_pricing("claude-sonnet-4").unwrap();
+        let cloned = p.clone();
+        assert_eq!(cloned.model_id, "claude-sonnet-4");
+        assert!((cloned.input_cost_per_million - 3.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn calculate_cost_only_output_tokens() {
+        let pricing = ModelPricing {
+            model_id: "test".into(),
+            provider: "test".into(),
+            input_cost_per_million: 3.0,
+            output_cost_per_million: 15.0,
+        };
+        // 0 input, 1M output = $15
+        let cost = pricing.calculate_cost(0, 1_000_000);
+        assert!((cost - 15.0).abs() < f64::EPSILON);
+    }
 }

@@ -235,4 +235,59 @@ mod tests {
         assert!((summary.total_cost_usd).abs() < f64::EPSILON);
         assert_eq!(summary.total_tasks, 0);
     }
+
+    #[test]
+    fn spending_summary_clone() {
+        let mut summary = SpendingSummary::default();
+        summary.total_cost_usd = 3.14;
+        summary.total_tasks = 7;
+        let cloned = summary.clone();
+        assert!((cloned.total_cost_usd - 3.14).abs() < f64::EPSILON);
+        assert_eq!(cloned.total_tasks, 7);
+    }
+
+    #[test]
+    fn spending_summary_serde_roundtrip() {
+        let summary = SpendingSummary {
+            total_cost_usd: 1.23,
+            total_tokens: 50_000,
+            total_tasks: 5,
+            total_llm_calls: 15,
+            by_agent: vec![],
+            by_model: vec![],
+        };
+        let json = serde_json::to_string(&summary).unwrap();
+        let parsed: SpendingSummary = serde_json::from_str(&json).unwrap();
+        assert!((parsed.total_cost_usd - 1.23).abs() < f64::EPSILON);
+        assert_eq!(parsed.total_tasks, 5);
+    }
+
+    #[test]
+    fn accumulator_model_id_set_on_first_record() {
+        let mut acc = MetricsAccumulator::new(1, "agent");
+        assert!(acc.model_id.is_empty());
+        acc.record("gpt-4o", 1000, 500);
+        assert_eq!(acc.model_id, "gpt-4o");
+        // Second record with different model does not change model_id
+        acc.record("claude-sonnet-4", 1000, 500);
+        assert_eq!(acc.model_id, "gpt-4o");
+    }
+
+    #[test]
+    fn accumulator_clone() {
+        let mut acc = MetricsAccumulator::new(5, "codex");
+        acc.record("gpt-4o", 2000, 1000);
+        let cloned = acc.clone();
+        assert_eq!(cloned.task_id, 5);
+        assert_eq!(cloned.llm_calls, 1);
+        assert_eq!(cloned.total_input_tokens, 2000);
+    }
+
+    #[test]
+    fn cost_estimate_total_tokens_is_sum() {
+        let est = CostEstimate::from_usage("claude-sonnet-4", 3000, 7000);
+        assert_eq!(est.total_tokens, 10_000);
+        assert_eq!(est.input_tokens, 3000);
+        assert_eq!(est.output_tokens, 7000);
+    }
 }

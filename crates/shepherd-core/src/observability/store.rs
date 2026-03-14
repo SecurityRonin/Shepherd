@@ -345,4 +345,50 @@ mod tests {
         assert_eq!(loaded.llm_calls, 2);
         assert!(loaded.total_cost_usd > 0.0);
     }
+
+    #[test]
+    fn agent_daily_cost_no_entries_returns_zero() {
+        let conn = setup_db();
+        let cost = get_agent_daily_cost(&conn, "nonexistent-agent").unwrap();
+        assert!((cost).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn global_daily_cost_empty_db_returns_zero() {
+        let conn = setup_db();
+        let cost = get_global_daily_cost(&conn).unwrap();
+        assert!((cost).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn spending_summary_empty_model_id_excluded_from_by_model() {
+        let conn = setup_db();
+        // Insert a metrics row with an empty model_id
+        let metrics_no_model = sample_metrics(1, "claude-code", "", 0.5);
+        upsert_metrics(&conn, &metrics_no_model).unwrap();
+
+        let summary = get_spending_summary(&conn).unwrap();
+        // Total tasks should include it
+        assert_eq!(summary.total_tasks, 1);
+        // But by_model should exclude the empty model_id row
+        assert!(summary.by_model.is_empty());
+    }
+
+    #[test]
+    fn spending_summary_llm_calls_summed() {
+        let conn = setup_db();
+        upsert_metrics(&conn, &sample_metrics(1, "claude-code", "claude-sonnet-4", 0.5)).unwrap();
+        upsert_metrics(&conn, &sample_metrics(2, "claude-code", "claude-sonnet-4", 0.3)).unwrap();
+
+        let summary = get_spending_summary(&conn).unwrap();
+        // Each sample_metrics has llm_calls=3, so total = 6
+        assert_eq!(summary.total_llm_calls, 6);
+    }
+
+    #[test]
+    fn migrate_runs_twice_without_error() {
+        let conn = setup_db();
+        // Second call should not fail
+        migrate(&conn).unwrap();
+    }
 }
