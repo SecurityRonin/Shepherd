@@ -24,30 +24,44 @@ Shepherd currently only manages Claude Code sessions it spawns itself via its in
 
 - Supporting terminal emulators other than iTerm2
 - Taking exclusive control of a tab (closing or locking it in iTerm2)
-- Capturing output from sessions started before Shepherd was running (only live output from adoption point onward)
+- Capturing output from sessions started before Shepherd was running
 
 ---
 
 ## Approach
 
-Use the **iTerm2 WebSocket API protocol implemented natively in Rust** via `prost` (protobuf) and `tokio-tungstenite` (WebSocket). No Python sidecar. The iTerm2 API listens on a Unix socket whose path matches `~/Library/Application Support/iTerm2/iterm2-daemon-*.socket` (versioned name; discovered by glob). Messages use a protobuf schema defined in `api.proto` from the iTerm2 source tree, vendored in the repository at a pinned version.
+Use the **iTerm2 WebSocket API protocol implemented natively in Rust** via `prost` (protobuf) and `tokio-tungstenite` (WebSocket). The iTerm2 API socket is discovered by globbing `~/Library/Application Support/iTerm2/iterm2-daemon-*.socket` (name is versioned per iTerm2 process instance). Proto is vendored in the repository at a pinned iTerm2 release; `build.rs` compiles it with `prost_build` — no network access at build time.
+
+### WebSocket over Unix domain socket
+
+`tokio-tungstenite` does not natively connect over Unix sockets. The client opens the socket with `tokio::net::UnixStream::connect()`, then calls `tokio_tungstenite::client_async_with_config()` passing the stream directly. This is the documented pattern for non-TCP transports.
 
 ---
 
-## API Authentication
+## Authentication
 
 The iTerm2 WebSocket API requires:
 
-1. **Python API enabled in iTerm2 preferences** (Preferences → General → Magic → Enable Python API). If not enabled, the socket exists but connections are immediately refused — Shepherd detects this and shows a one-time actionable warning distinct from "iTerm2 not running."
+1. **Python API enabled** in iTerm2 Preferences → General → Magic → Enable Python API. If disabled, the socket exists but connections are immediately closed — handled as a distinct error from "socket absent."
 
-2. **`cookie` and `key` headers** in the WebSocket handshake. These values are available as environment variables `ITERM2_COOKIE` and `ITERM2_KEY` only when a process is launched from within an iTerm2 Python script context. Since Shepherd is a standalone daemon, it cannot obtain these values from its own environment.
+2. **`cookie` and `key` WebSocket headers** — these are per-iTerm2-process values only available as `ITERM2_COOKIE` / `ITERM2_KEY` environment variables inside processes launched by iTerm2's script runner.
 
-**Solution — companion launch script:** Shepherd ships a small shell script (`shepherd-iterm2-bridge`) that iTerm2 executes via its "AutoLaunch" script mechanism (`~/Library/Application Support/iTerm2/Scripts/AutoLaunch/shepherd-bridge.py`). This script:
-- Has access to `ITERM2_COOKIE` and `ITERM2_KEY` automatically
-- Writes them to a well-known file (`~/.shepherd/iterm2-auth.json`) that the Rust server reads on startup
-- Subscribes to session events and forwards them to the Shepherd server via a local Unix socket or named pipe
+### Credential acquisition: AutoLaunch bridge script
 
-The Rust server reads `~/.shepherd/iterm2-auth.json` to get the cookie/key pair and includes them as WebSocket headers in all connections to the iTerm2 socket. If the file is absent, the iterm2 module is disabled with a clear setup instruction in the Shepherd UI.
+Shepherd ships a minimal Python script installed at:
+`~/Library/Application Support/iTerm2/Scripts/AutoLaunch/shepherd-bridge.py`
+
+This script runs automatically when iTerm2 starts, has the cookie/key env vars, and writes them to `~/.shepherd/iterm2-auth.json` (permissions: `0600`). Its **only job is credential forwarding** — it does not subscribe to iTerm2 events or forward any data. All event subscriptions are made directly by the Rust server.
+
+```json
+{ "cookie": "...", "key": "..." }
+```
+
+The Rust server (`iterm2/auth.rs`):
+- Reads this file at startup
+- Watches it with `notify` crate for changes (handles iTerm2 restarts, which rotate cookie/key and cause the bridge to rewrite the file)
+- On file change: drops current connection, reads new credentials, reconnects
+- If file absent: disables the iterm2 module and shows setup instructions in the UI
 
 ---
 
@@ -57,26 +71,25 @@ The Rust server reads `~/.shepherd/iterm2-auth.json` to get the cookie/key pair 
 
 ```
 iterm2/
-  mod.rs        — public API: Iterm2Client, AdoptedSession, scanner
-  client.rs     — WebSocket connection + protobuf send/recv
-  session.rs    — AdoptedSession: wraps one iTerm2 session ID
-  scanner.rs    — periodic poller; emits AdoptionCandidate events
-  auth.rs       — reads ~/.shepherd/iterm2-auth.json; provides cookie/key
+  mod.rs        — public API surface
+  client.rs     — UnixStream WebSocket + protobuf framing (length-delimited)
+  session.rs    — AdoptedSession: one iTerm2 session under Shepherd management
+  scanner.rs    — periodic poll: discovers claude sessions, emits AdoptionCandidate
+  auth.rs       — reads + watches ~/.shepherd/iterm2-auth.json
 ```
 
 ### Vendored proto
 
-`crates/shepherd-core/proto/iterm2-api.proto` — vendored copy of the iTerm2 `api.proto` at a specific iTerm2 release. Updated manually when the iTerm2 API changes. `build.rs` compiles it with `prost_build` — no network access required at build time.
+`crates/shepherd-core/proto/iterm2-api.proto` — vendored from iTerm2 at a pinned release tag. `build.rs` compiles it with `prost_build`. Updated manually when the iTerm2 API changes.
 
-### New server component: `Iterm2Scanner`
+### Scanner poll loop (5 s interval)
 
-Spawned alongside `PtyManager` at server startup. Runs a 5-second poll loop:
-
-1. Sends `ListSessionsRequest` — gets `SessionSummary` list (fields: `unique_identifier`, `frame`, `grid_size`, `title`)
-2. For each session not already adopted, sends a `VariableRequest` for the `jobName` variable (one round-trip per unadopted session per poll)
-3. If `jobName` contains `"claude"`, also fetches the `path` variable (requires iTerm2 shell integration; falls back to empty string if unavailable)
-4. Emits `AdoptionCandidate { iterm2_session_id, cwd, pid }` for new candidates
-5. Subscribes to `NOTIFY_ON_TERMINATE_SESSION` for each adopted session (immediate exit detection, no 5-second poll lag)
+1. `ListSessionsRequest` → `SessionSummary` list (fields: `unique_identifier`, `title`, `frame`, `grid_size`)
+2. For each session not already adopted:
+   - `VariableRequest(name: "jobName")` — one round-trip per unadopted session
+   - If `jobName` contains `"claude"`: `VariableRequest(name: "path")` for CWD
+   - Emit `AdoptionCandidate { iterm2_session_id, cwd }` (no `pid` — not available without extra round-trip)
+3. For each newly adopted session: subscribe to `NOTIFY_ON_TERMINATE_SESSION` for immediate exit detection
 
 ---
 
@@ -85,44 +98,59 @@ Spawned alongside `PtyManager` at server startup. Runs a 5-second poll loop:
 ```
 iTerm2 tab (claude process)
   │
-  ├─► NOTIFY_ON_SCREEN_UPDATE (session ID only)
-  │       └─► GetBufferRequest ──► screen text ──► gate detector + TerminalOutput event ──► WebSocket ──► frontend
+  ├─► NOTIFY_ON_SCREEN_UPDATE (session_id only)
+  │      └─► 50 ms trailing debounce ──► GetBufferRequest(lines: last 200)
+  │                └─► flatten cells to text ──► gate detector + TerminalOutput event ──► WebSocket ──► frontend
   │
-  └─◄ SendTextRequest ◄── AdoptedSession ◄── TerminalInput / TaskApprove ◄── WebSocket ◄── frontend
+  ├─► NOTIFY_ON_TERMINATE_SESSION ──► task status → "done" / resume trigger
+  │
+  └─◄ SendTextRequest(text) ◄── AdoptedSession ◄── TerminalInput / TaskApprove ◄── WebSocket ◄── frontend
 ```
 
-**Key API corrections:**
+### Screen update debounce
 
-- **Input**: `SendTextRequest` (sends keystrokes to the process's stdin). `InjectRequest` writes to the *display buffer* and must NOT be used for sending input to the running process.
-- **Output**: `NOTIFY_ON_SCREEN_UPDATE` delivers only a session ID notification. A follow-up `GetBufferRequest` is issued to retrieve the actual screen text. This adds one round-trip per screen update.
-- **Process exit**: `NOTIFY_ON_TERMINATE_SESSION` subscription provides immediate notification; no polling needed.
+`NOTIFY_ON_SCREEN_UPDATE` fires per cell update — potentially hundreds per second during active output. The `AdoptedSession` runs a **50 ms trailing debounce**: notifications accumulate in a flag; when no notification has arrived for 50 ms, one `GetBufferRequest` is issued. This keeps `GetBufferRequest` calls bounded to ~20/s maximum during heavy output.
 
-`AdoptedSession` implements the same `write_to` / `kill` / `resize` interface as existing PTY sessions so the rest of the server (WebSocket handler, gate detector, observability) is unchanged.
+### GetBufferResponse → plain text
+
+`GetBufferResponse` returns structured per-character cell data (character, color, attributes). Shepherd flattens it to plain text by iterating each line's cells, extracting the `string_value` of each `Cell`, joining cells into a line string, and joining lines with `\n`. This plain text is what the gate detector and the `TerminalOutput` event both receive.
+
+Only the last 200 lines are requested per `GetBufferRequest` (sufficient for gate detection and terminal display).
+
+### Input
+
+`SendTextRequest` sends text to the process's stdin. This is the correct API method. `InjectRequest` writes to the display buffer and is not used for input.
 
 ---
 
 ## Session Management
 
-### Identity
+### Identity: CWD and Claude session ID
 
-A session is identified by its `cwd`, fetched via the iTerm2 `path` variable. **Note:** `path` is only accurate when iTerm2 shell integration is installed in the user's shell. Without it, `path` may be empty or stale. In this case, Shepherd falls back to the session's `title` string (which often contains the directory), and as a last resort leaves `cwd` as `"unknown"`.
+**CWD** comes from the `path` iTerm2 variable, which requires iTerm2 shell integration. Without it, `path` may be empty; Shepherd falls back to the session `title`, then `"unknown"`.
 
-Claude Code stores session state under `~/.claude/projects/<encoded-cwd>/`. Shepherd reads this directory to enumerate available session IDs for the resume/fresh-start UI.
+**Claude session ID** (for `--resume`) is discovered from `~/.claude/projects/<encoded-cwd>/` — Shepherd lists `.jsonl` files in that directory, sorted by modification time, and extracts the session ID from the filename or first-line metadata. This is the UUID passed to `claude --resume <id>`, distinct from the iTerm2 session ID.
 
 ### Actions
 
 | Action | Mechanism |
 |--------|-----------|
-| **Auto-adopt** | Scanner detects `claude` in tab → creates task immediately |
-| **Resume** | Send `SendTextRequest("\x03")`, subscribe to `NOTIFY_ON_TERMINATE_SESSION`, relaunch with `claude --resume <session-id>` only after termination notification |
-| **Start fresh** | Same as resume but without `--resume` flag |
-| **Kill** | `CloseRequest(force: true)` via the iTerm2 API, which cleanly closes the session |
+| **Auto-adopt** | Scanner finds `claude` in tab → task created immediately |
+| **Resume** | `SendTextRequest("\x03")` to send Ctrl-C → wait for `NOTIFY_ON_TERMINATE_SESSION` → `SendTextRequest("claude --resume <claude-session-id>\n")` to shell prompt |
+| **Start fresh** | Same, but send `SendTextRequest("claude\n")` without `--resume` |
+| **Kill** | `CloseRequest(force: true)` |
 
-**Resume race condition:** The server waits for `NOTIFY_ON_TERMINATE_SESSION` before issuing the relaunch command, preventing two `claude` processes competing for the same session file.
+**Relaunch mechanism:** After `NOTIFY_ON_TERMINATE_SESSION`, the iTerm2 tab returns to the shell prompt. Shepherd sends the relaunch command as a `SendTextRequest` to that shell — the shell executes `claude --resume <id>` naturally. No AppleScript, no new PTY, no new tab.
+
+**Race prevention:** Shepherd never sends the relaunch command until `NOTIFY_ON_TERMINATE_SESSION` is received. A timeout of 5 s is applied; if the process hasn't terminated, `CloseRequest(force: true)` is used before relaunching.
 
 ### Gate enforcement
 
-`NOTIFY_ON_SCREEN_UPDATE` triggers a `GetBufferRequest`. The resulting screen text is passed to the existing gate detector, which matches patterns like `Allow bash tool? (y/n)`. Auto-approve and manual approval both use `SendTextRequest("y\n")`.
+On each `NOTIFY_ON_SCREEN_UPDATE` → debounce → `GetBufferRequest` cycle, the plain-text result is passed to the existing gate detector. Permission patterns (`Allow bash tool? (y/n)`) are matched against this text. Auto-approve and manual approval send `SendTextRequest("y\n")` or `SendTextRequest("n\n")` respectively.
+
+### Terminal resize
+
+`AdoptedSession.resize(cols, rows)` sends a `SetSizeRequest` to iTerm2, which resizes the terminal grid. This satisfies the `resize()` interface the rest of the server expects.
 
 ---
 
@@ -130,9 +158,9 @@ Claude Code stores session state under `~/.claude/projects/<encoded-cwd>/`. Shep
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `POST` | `/api/sessions/:id/resume` | Kill current process, wait for exit, relaunch with `--resume <session-id>` |
-| `POST` | `/api/sessions/:id/fresh` | Kill current process, wait for exit, relaunch without `--resume` |
-| `GET` | `/api/sessions/:id/claude-sessions` | List available Claude session IDs in `~/.claude/projects/<cwd>/` |
+| `POST` | `/api/sessions/:id/resume` | Ctrl-C, wait for exit, send `claude --resume <session-id>` to shell |
+| `POST` | `/api/sessions/:id/fresh` | Ctrl-C, wait for exit, send `claude` to shell |
+| `GET` | `/api/sessions/:id/claude-sessions` | List Claude Code session IDs from `~/.claude/projects/<cwd>/`, sorted newest-first, for the resume picker dropdown |
 
 ---
 
@@ -140,10 +168,9 @@ Claude Code stores session state under `~/.claude/projects/<encoded-cwd>/`. Shep
 
 **Minimal.** Adopted sessions appear as ordinary task cards with two additions:
 
-1. **`iTerm2` source badge** — a small pill on the task card.
-2. **Session picker in task detail** — dropdown of available `~/.claude/projects/` session IDs with `Resume` and `Start Fresh` buttons. Shown instead of the "prompt" field.
-
-**Setup prompt:** If `~/.shepherd/iterm2-auth.json` is absent, the Cloud Settings (or a new Setup panel) shows a one-time instruction: "To enable iTerm2 adoption, install the Shepherd bridge script."
+1. **`iTerm2` source badge** — small pill on the task card.
+2. **Session picker in task detail** — dropdown of Claude session IDs from `GET /api/sessions/:id/claude-sessions` with `Resume` and `Start Fresh` buttons (replaces the "prompt" field present on Shepherd-spawned tasks).
+3. **Setup prompt** — if `~/.shepherd/iterm2-auth.json` is absent, a one-time callout in the UI explains how to install the bridge script.
 
 ---
 
@@ -151,25 +178,33 @@ Claude Code stores session state under `~/.claude/projects/<encoded-cwd>/`. Shep
 
 | Scenario | Handling |
 |----------|----------|
-| iTerm2 not running (socket absent) | Scanner skips silently, retries next poll |
-| Python API disabled (socket present, connection refused) | One-time warning with setup instruction shown in UI |
-| `iterm2-auth.json` absent (no cookie/key) | iterm2 module disabled; setup instruction shown |
-| Proto schema drift / decode error | Per-session warning logged, session skipped |
+| Socket absent (iTerm2 not running) | Silent retry each poll cycle |
+| Python API disabled (socket present, connection refused) | Distinct warning with "Enable Python API in iTerm2 Preferences" instruction |
+| Auth file absent | iterm2 module disabled; setup instruction shown in UI |
+| iTerm2 restarts (cookie/key rotated) | `notify` watcher detects file change → reconnect with new credentials |
+| Proto decode error | Per-session warning logged, session skipped |
 | Process exits unexpectedly | `NOTIFY_ON_TERMINATE_SESSION` → task status `"done"` |
-| User closes tab manually | Same notification; task marked done, not deleted |
-| Duplicate adoption (scanner race) | Dedup by iTerm2 session ID in `HashSet<String>` |
-| `~/.claude/projects/` missing | Resume endpoint returns 404; UI disables Resume button |
+| User closes tab | Same notification; task marked done, not deleted |
+| Duplicate adoption | Dedup by iTerm2 session ID in `HashSet<String>` in scanner |
+| `~/.claude/projects/` missing | `/api/sessions/:id/claude-sessions` returns `[]`; UI disables Resume |
 | `path` variable empty (no shell integration) | Falls back to `title`, then `"unknown"` |
-| Resume relaunch race | Wait for `NOTIFY_ON_TERMINATE_SESSION` before relaunching |
+| Relaunch process timeout | 5 s wait, then `CloseRequest(force: true)` before relaunch |
+| Screen update flood | 50 ms debounce limits `GetBufferRequest` calls to ~20/s |
 
 ---
 
 ## Testing
 
-- **Unit tests** — `scanner.rs`, `session.rs`, `auth.rs` tested against a mock `Iterm2Client` that replays canned protobuf responses. Covers: discovery flow, `VariableRequest` round-trips, screen-update → GetBuffer → gate detector pipeline, `SendTextRequest` for input, terminate notification → task-done transition, resume wait-for-exit sequence.
-- **Integration tests** — gated behind `#[cfg(feature = "iterm2-integration")]`; skipped in CI, run manually with iTerm2 present.
-- **Gate detection** — dedicated tests for the `NOTIFY_ON_SCREEN_UPDATE` → `GetBufferRequest` → gate pattern match path.
-- **Proto build** — vendored `.proto` file; no network access needed in CI.
+- **Unit tests** — mock `Iterm2Client` replaying canned protobuf responses. Critical paths covered:
+  - Discovery: `ListSessionsRequest` → `VariableRequest` round-trips → `AdoptionCandidate` emitted
+  - Output: `NOTIFY_ON_SCREEN_UPDATE` → debounce → `GetBufferRequest` → cell flattening → gate pattern match
+  - Input: `SendTextRequest` called with correct bytes for `TerminalInput` and `TaskApprove`
+  - Exit: `NOTIFY_ON_TERMINATE_SESSION` → task status `"done"`
+  - Resume: Ctrl-C → wait for terminate → relaunch command sent to shell
+  - Auth rotation: file change → reconnect with new credentials
+  - Debounce: burst of 100 notifications → single `GetBufferRequest` issued
+- **Integration tests** — gated behind `#[cfg(feature = "iterm2-integration")]`; skipped in CI
+- **Proto build** — vendored file; no network dependency in CI
 
 ---
 
@@ -178,7 +213,8 @@ Claude Code stores session state under `~/.claude/projects/<encoded-cwd>/`. Shep
 | Crate | Purpose |
 |-------|---------|
 | `prost` + `prost-build` | Compile vendored `api.proto` → Rust types |
-| `tokio-tungstenite` | Async WebSocket client for the iTerm2 Unix socket |
-| `tokio-util` | Codec framing for length-delimited protobuf messages |
+| `tokio-tungstenite` | Async WebSocket over `tokio::net::UnixStream` via `client_async_with_config` |
+| `tokio-util` | Length-delimited codec framing for protobuf messages |
+| `notify` | File-system watcher for `~/.shepherd/iterm2-auth.json` credential rotation |
 
-**System requirement:** iTerm2 3.3+ with Python API enabled. iTerm2 shell integration recommended (for accurate `path`/`cwd` detection) but not required.
+**System requirement:** iTerm2 3.3+ with Python API enabled. iTerm2 shell integration recommended for accurate CWD detection but not required.
