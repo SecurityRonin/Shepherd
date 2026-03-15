@@ -207,7 +207,12 @@ impl CloudClient {
         &self,
         input: &LogoGenInput,
     ) -> Result<CloudLogoResponse, CloudError> {
-        let jwt = auth::load_jwt().ok_or(CloudError::NotAuthenticated)?;
+        let jwt = {
+            #[cfg(test)]
+            { self.test_jwt.clone().ok_or(CloudError::NotAuthenticated)? }
+            #[cfg(not(test))]
+            { auth::load_jwt().ok_or(CloudError::NotAuthenticated)? }
+        };
         let url = format!("{}/api/generate/logo", self.api_url());
 
         let request = CloudLogoRequest::from(input);
@@ -251,7 +256,12 @@ impl CloudClient {
         description: &str,
         vibes: &[String],
     ) -> Result<CloudNameResponse, CloudError> {
-        let jwt = auth::load_jwt().ok_or(CloudError::NotAuthenticated)?;
+        let jwt = {
+            #[cfg(test)]
+            { self.test_jwt.clone().ok_or(CloudError::NotAuthenticated)? }
+            #[cfg(not(test))]
+            { auth::load_jwt().ok_or(CloudError::NotAuthenticated)? }
+        };
         let url = format!("{}/api/generate/name", self.api_url());
 
         let request = CloudNameRequest {
@@ -299,7 +309,12 @@ impl CloudClient {
         phase: &str,
         context: serde_json::Value,
     ) -> Result<CloudNorthStarResponse, CloudError> {
-        let jwt = auth::load_jwt().ok_or(CloudError::NotAuthenticated)?;
+        let jwt = {
+            #[cfg(test)]
+            { self.test_jwt.clone().ok_or(CloudError::NotAuthenticated)? }
+            #[cfg(not(test))]
+            { auth::load_jwt().ok_or(CloudError::NotAuthenticated)? }
+        };
         let url = format!("{}/api/generate/northstar", self.api_url());
 
         let request = CloudNorthStarRequest {
@@ -346,7 +361,12 @@ impl CloudClient {
         url: &str,
         formats: Option<Vec<String>>,
     ) -> Result<CloudScrapeResponse, CloudError> {
-        let jwt = auth::load_jwt().ok_or(CloudError::NotAuthenticated)?;
+        let jwt = {
+            #[cfg(test)]
+            { self.test_jwt.clone().ok_or(CloudError::NotAuthenticated)? }
+            #[cfg(not(test))]
+            { auth::load_jwt().ok_or(CloudError::NotAuthenticated)? }
+        };
         let api_url = format!("{}/api/generate/scrape", self.api_url());
 
         let request = CloudScrapeRequest {
@@ -394,7 +414,12 @@ impl CloudClient {
         max_depth: Option<u32>,
         limit: Option<u32>,
     ) -> Result<CloudCrawlResponse, CloudError> {
-        let jwt = auth::load_jwt().ok_or(CloudError::NotAuthenticated)?;
+        let jwt = {
+            #[cfg(test)]
+            { self.test_jwt.clone().ok_or(CloudError::NotAuthenticated)? }
+            #[cfg(not(test))]
+            { auth::load_jwt().ok_or(CloudError::NotAuthenticated)? }
+        };
         let api_url = format!("{}/api/generate/crawl", self.api_url());
 
         let request = CloudCrawlRequest {
@@ -441,7 +466,12 @@ impl CloudClient {
         &self,
         crawl_id: &str,
     ) -> Result<CloudCrawlStatusResponse, CloudError> {
-        let jwt = auth::load_jwt().ok_or(CloudError::NotAuthenticated)?;
+        let jwt = {
+            #[cfg(test)]
+            { self.test_jwt.clone().ok_or(CloudError::NotAuthenticated)? }
+            #[cfg(not(test))]
+            { auth::load_jwt().ok_or(CloudError::NotAuthenticated)? }
+        };
         let api_url = format!("{}/api/generate/crawl/{crawl_id}", self.api_url());
 
         let resp = self
@@ -475,7 +505,12 @@ impl CloudClient {
         &self,
         request: &CloudVisionRequest,
     ) -> Result<CloudVisionResponse, CloudError> {
-        let jwt = auth::load_jwt().ok_or(CloudError::NotAuthenticated)?;
+        let jwt = {
+            #[cfg(test)]
+            { self.test_jwt.clone().ok_or(CloudError::NotAuthenticated)? }
+            #[cfg(not(test))]
+            { auth::load_jwt().ok_or(CloudError::NotAuthenticated)? }
+        };
         let api_url = format!("{}/api/generate/vision", self.api_url());
 
         let resp = self
@@ -516,7 +551,12 @@ impl CloudClient {
         &self,
         request: &CloudSearchRequest,
     ) -> Result<CloudSearchResponse, CloudError> {
-        let jwt = auth::load_jwt().ok_or(CloudError::NotAuthenticated)?;
+        let jwt = {
+            #[cfg(test)]
+            { self.test_jwt.clone().ok_or(CloudError::NotAuthenticated)? }
+            #[cfg(not(test))]
+            { auth::load_jwt().ok_or(CloudError::NotAuthenticated)? }
+        };
         let url = format!("{}/api/generate/search", self.api_url());
 
         let resp = self
@@ -964,5 +1004,502 @@ mod tests {
         assert_eq!(req.product_description, Some("A foo maker".to_string()));
         assert_eq!(req.colors.len(), 2);
         assert_eq!(req.variants, 2);
+    }
+
+    // ── httpmock-based async tests ────────────────────────────────────────
+
+    use httpmock::prelude::*;
+    use crate::cloud::CloudClient;
+
+    fn logo_input() -> crate::logogen::LogoGenInput {
+        crate::logogen::LogoGenInput {
+            product_name: "TestApp".to_string(),
+            product_description: None,
+            style: LogoStyle::Minimal,
+            colors: vec![],
+            variants: 1,
+        }
+    }
+
+    // ── generate_logo ──────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn generate_logo_200_ok() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/generate/logo");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "variants": [{"index": 0, "url": "https://cdn.example.com/logo.png"}],
+                    "credits_remaining": 48
+                }));
+        });
+        let client = CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let result = client.generate_logo(&logo_input()).await.unwrap();
+        assert_eq!(result.variants.len(), 1);
+        assert_eq!(result.variants[0].url, "https://cdn.example.com/logo.png");
+        assert_eq!(result.credits_remaining, 48);
+    }
+
+    #[tokio::test]
+    async fn generate_logo_401_auth_expired() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/generate/logo");
+            then.status(401).body("Unauthorized");
+        });
+        let client = CloudClient::with_test_jwt(&server.base_url(), "expired-jwt");
+        let result = client.generate_logo(&logo_input()).await;
+        assert!(matches!(result, Err(super::CloudError::AuthExpired)));
+    }
+
+    #[tokio::test]
+    async fn generate_logo_402_insufficient_credits() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/generate/logo");
+            then.status(402).body("Payment Required");
+        });
+        let client = CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let result = client.generate_logo(&logo_input()).await;
+        assert!(matches!(result, Err(super::CloudError::InsufficientCredits { .. })));
+    }
+
+    #[tokio::test]
+    async fn generate_logo_500_api_error() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/generate/logo");
+            then.status(500).body("Internal Server Error");
+        });
+        let client = CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let result = client.generate_logo(&logo_input()).await;
+        match result {
+            Err(super::CloudError::Api { status, .. }) => assert_eq!(status, 500),
+            other => panic!("expected Api error, got {:?}", other),
+        }
+    }
+
+    // ── generate_name ──────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn generate_name_200_ok() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/generate/name");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "candidates": [{"name": "Acme", "tagline": null, "reasoning": "Simple", "domains": []}],
+                    "credits_remaining": 49
+                }));
+        });
+        let client = CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let result = client.generate_name("A task manager", &[]).await.unwrap();
+        assert_eq!(result.candidates.len(), 1);
+        assert_eq!(result.candidates[0].name, "Acme");
+        assert_eq!(result.credits_remaining, 49);
+    }
+
+    #[tokio::test]
+    async fn generate_name_401_auth_expired() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/generate/name");
+            then.status(401).body("Unauthorized");
+        });
+        let client = CloudClient::with_test_jwt(&server.base_url(), "expired-jwt");
+        let result = client.generate_name("desc", &[]).await;
+        assert!(matches!(result, Err(super::CloudError::AuthExpired)));
+    }
+
+    #[tokio::test]
+    async fn generate_name_402_insufficient_credits() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/generate/name");
+            then.status(402).body("Payment Required");
+        });
+        let client = CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let result = client.generate_name("desc", &[]).await;
+        assert!(matches!(result, Err(super::CloudError::InsufficientCredits { .. })));
+    }
+
+    #[tokio::test]
+    async fn generate_name_500_api_error() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/generate/name");
+            then.status(500).body("Server error");
+        });
+        let client = CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let result = client.generate_name("desc", &[]).await;
+        match result {
+            Err(super::CloudError::Api { status, .. }) => assert_eq!(status, 500),
+            other => panic!("expected Api error, got {:?}", other),
+        }
+    }
+
+    // ── generate_northstar ─────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn generate_northstar_200_ok() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/generate/northstar");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "phase": "brand_foundations",
+                    "result": {"name": "Acme"},
+                    "credits_remaining": 35
+                }));
+        });
+        let client = CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let result = client.generate_northstar("brand_foundations", serde_json::json!({})).await.unwrap();
+        assert_eq!(result.phase, "brand_foundations");
+        assert_eq!(result.credits_remaining, 35);
+    }
+
+    #[tokio::test]
+    async fn generate_northstar_401_auth_expired() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/generate/northstar");
+            then.status(401).body("Unauthorized");
+        });
+        let client = CloudClient::with_test_jwt(&server.base_url(), "expired-jwt");
+        let result = client.generate_northstar("phase", serde_json::json!({})).await;
+        assert!(matches!(result, Err(super::CloudError::AuthExpired)));
+    }
+
+    #[tokio::test]
+    async fn generate_northstar_402_insufficient_credits() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/generate/northstar");
+            then.status(402).body("Payment Required");
+        });
+        let client = CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let result = client.generate_northstar("phase", serde_json::json!({})).await;
+        assert!(matches!(result, Err(super::CloudError::InsufficientCredits { .. })));
+    }
+
+    #[tokio::test]
+    async fn generate_northstar_500_api_error() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/generate/northstar");
+            then.status(500).body("Server error");
+        });
+        let client = CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let result = client.generate_northstar("phase", serde_json::json!({})).await;
+        match result {
+            Err(super::CloudError::Api { status, .. }) => assert_eq!(status, 500),
+            other => panic!("expected Api error, got {:?}", other),
+        }
+    }
+
+    // ── scrape_page ────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn scrape_page_200_ok() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/generate/scrape");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "generation_id": "gen-001",
+                    "markdown": "# Hello",
+                    "links": [],
+                    "metadata": {},
+                    "credits_remaining": 49
+                }));
+        });
+        let client = CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let result = client.scrape_page("https://example.com", None).await.unwrap();
+        assert_eq!(result.generation_id, "gen-001");
+        assert_eq!(result.markdown, Some("# Hello".to_string()));
+        assert_eq!(result.credits_remaining, 49);
+    }
+
+    #[tokio::test]
+    async fn scrape_page_401_auth_expired() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/generate/scrape");
+            then.status(401).body("Unauthorized");
+        });
+        let client = CloudClient::with_test_jwt(&server.base_url(), "expired-jwt");
+        let result = client.scrape_page("https://example.com", None).await;
+        assert!(matches!(result, Err(super::CloudError::AuthExpired)));
+    }
+
+    #[tokio::test]
+    async fn scrape_page_402_insufficient_credits() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/generate/scrape");
+            then.status(402).body("Payment Required");
+        });
+        let client = CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let result = client.scrape_page("https://example.com", None).await;
+        assert!(matches!(result, Err(super::CloudError::InsufficientCredits { .. })));
+    }
+
+    #[tokio::test]
+    async fn scrape_page_500_api_error() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/generate/scrape");
+            then.status(500).body("Server error");
+        });
+        let client = CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let result = client.scrape_page("https://example.com", None).await;
+        match result {
+            Err(super::CloudError::Api { status, .. }) => assert_eq!(status, 500),
+            other => panic!("expected Api error, got {:?}", other),
+        }
+    }
+
+    // ── start_crawl ────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn start_crawl_200_ok() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/generate/crawl");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "generation_id": "gen-002",
+                    "crawl_id": "crawl-abc",
+                    "status_url": "https://api.example.com/crawl/crawl-abc",
+                    "credits_remaining": 45
+                }));
+        });
+        let client = CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let result = client.start_crawl("https://example.com", None, None).await.unwrap();
+        assert_eq!(result.crawl_id, "crawl-abc");
+        assert_eq!(result.credits_remaining, 45);
+    }
+
+    #[tokio::test]
+    async fn start_crawl_401_auth_expired() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/generate/crawl");
+            then.status(401).body("Unauthorized");
+        });
+        let client = CloudClient::with_test_jwt(&server.base_url(), "expired-jwt");
+        let result = client.start_crawl("https://example.com", None, None).await;
+        assert!(matches!(result, Err(super::CloudError::AuthExpired)));
+    }
+
+    #[tokio::test]
+    async fn start_crawl_402_insufficient_credits() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/generate/crawl");
+            then.status(402).body("Payment Required");
+        });
+        let client = CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let result = client.start_crawl("https://example.com", None, None).await;
+        assert!(matches!(result, Err(super::CloudError::InsufficientCredits { .. })));
+    }
+
+    #[tokio::test]
+    async fn start_crawl_500_api_error() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/generate/crawl");
+            then.status(500).body("Server error");
+        });
+        let client = CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let result = client.start_crawl("https://example.com", None, None).await;
+        match result {
+            Err(super::CloudError::Api { status, .. }) => assert_eq!(status, 500),
+            other => panic!("expected Api error, got {:?}", other),
+        }
+    }
+
+    // ── get_crawl_status ───────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn get_crawl_status_200_ok() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/api/generate/crawl/crawl-xyz");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "success": true,
+                    "status": "completed",
+                    "total": 3,
+                    "completed": 3,
+                    "data": [
+                        {"markdown": "# Page 1", "metadata": {}},
+                        {"markdown": null, "metadata": {}}
+                    ]
+                }));
+        });
+        let client = CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let result = client.get_crawl_status("crawl-xyz").await.unwrap();
+        assert!(result.success);
+        assert_eq!(result.status, "completed");
+        assert_eq!(result.total, 3);
+        assert_eq!(result.data.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn get_crawl_status_401_auth_expired() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/api/generate/crawl/crawl-xyz");
+            then.status(401).body("Unauthorized");
+        });
+        let client = CloudClient::with_test_jwt(&server.base_url(), "expired-jwt");
+        let result = client.get_crawl_status("crawl-xyz").await;
+        assert!(matches!(result, Err(super::CloudError::AuthExpired)));
+    }
+
+    #[tokio::test]
+    async fn get_crawl_status_404_api_error() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/api/generate/crawl/crawl-xyz");
+            then.status(404).body("Not Found");
+        });
+        let client = CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let result = client.get_crawl_status("crawl-xyz").await;
+        match result {
+            Err(super::CloudError::Api { status, .. }) => assert_eq!(status, 404),
+            other => panic!("expected Api error, got {:?}", other),
+        }
+    }
+
+    // ── analyze_image ──────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn analyze_image_200_ok() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/generate/vision");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "generation_id": "gen-003",
+                    "analysis": "A dashboard screenshot",
+                    "credits_remaining": 48
+                }));
+        });
+        let client = CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let req = CloudVisionRequest {
+            image_url: Some("https://example.com/img.png".to_string()),
+            image_base64: None,
+            prompt: "Describe this".to_string(),
+        };
+        let result = client.analyze_image(&req).await.unwrap();
+        assert_eq!(result.generation_id, "gen-003");
+        assert!(result.analysis.contains("dashboard"));
+        assert_eq!(result.credits_remaining, 48);
+    }
+
+    #[tokio::test]
+    async fn analyze_image_401_auth_expired() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/generate/vision");
+            then.status(401).body("Unauthorized");
+        });
+        let client = CloudClient::with_test_jwt(&server.base_url(), "expired-jwt");
+        let req = CloudVisionRequest { image_url: None, image_base64: None, prompt: "test".to_string() };
+        let result = client.analyze_image(&req).await;
+        assert!(matches!(result, Err(super::CloudError::AuthExpired)));
+    }
+
+    #[tokio::test]
+    async fn analyze_image_402_insufficient_credits() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/generate/vision");
+            then.status(402).body("Payment Required");
+        });
+        let client = CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let req = CloudVisionRequest { image_url: None, image_base64: None, prompt: "test".to_string() };
+        let result = client.analyze_image(&req).await;
+        assert!(matches!(result, Err(super::CloudError::InsufficientCredits { .. })));
+    }
+
+    // ── search ─────────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn search_200_ok() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/generate/search");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "generation_id": "gen-004",
+                    "results": [
+                        {"title": "Actix", "url": "https://actix.rs", "score": 0.95}
+                    ],
+                    "credits_remaining": 49
+                }));
+        });
+        let client = CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let req = CloudSearchRequest {
+            query: "Rust frameworks".to_string(),
+            search_type: None,
+            num_results: None,
+            include_domains: None,
+            exclude_domains: None,
+            start_published_date: None,
+            category: None,
+        };
+        let result = client.search(&req).await.unwrap();
+        assert_eq!(result.generation_id, "gen-004");
+        assert_eq!(result.results.len(), 1);
+        assert_eq!(result.results[0].title, "Actix");
+        assert_eq!(result.credits_remaining, 49);
+    }
+
+    #[tokio::test]
+    async fn search_401_auth_expired() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/generate/search");
+            then.status(401).body("Unauthorized");
+        });
+        let client = CloudClient::with_test_jwt(&server.base_url(), "expired-jwt");
+        let req = CloudSearchRequest {
+            query: "test".to_string(),
+            search_type: None, num_results: None, include_domains: None,
+            exclude_domains: None, start_published_date: None, category: None,
+        };
+        let result = client.search(&req).await;
+        assert!(matches!(result, Err(super::CloudError::AuthExpired)));
+    }
+
+    #[tokio::test]
+    async fn search_402_insufficient_credits() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/generate/search");
+            then.status(402)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({"error": "Insufficient credits"}));
+        });
+        let client = CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let req = CloudSearchRequest {
+            query: "test".to_string(),
+            search_type: None, num_results: None, include_domains: None,
+            exclude_domains: None, start_published_date: None, category: None,
+        };
+        let result = client.search(&req).await;
+        assert!(matches!(result, Err(super::CloudError::InsufficientCredits { .. })));
     }
 }

@@ -156,4 +156,66 @@ mod tests {
         assert!(parsed.task_succeeded);
         assert_eq!(parsed.items_used.len(), 2);
     }
+
+    #[test]
+    fn context_feedback_false_succeeded_roundtrip() {
+        let feedback = ContextFeedback {
+            package_id: "pkg-fail".into(),
+            task_id: 7,
+            task_succeeded: false,
+            items_used: vec![],
+            agent_duration_secs: None,
+            notes: None,
+        };
+        let json = serde_json::to_string(&feedback).unwrap();
+        let parsed: ContextFeedback = serde_json::from_str(&json).unwrap();
+        assert!(!parsed.task_succeeded);
+        assert!(parsed.items_used.is_empty());
+        assert!(parsed.notes.is_none());
+    }
+
+    #[test]
+    fn context_package_no_task_id_serde() {
+        let pkg = ContextPackage {
+            id: "pkg-no-task".into(),
+            task_id: None,
+            items: vec![],
+            mcp_queries: vec![],
+            summary: "No task assigned".into(),
+            created_at: "2026-03-14T00:00:00Z".into(),
+        };
+        let json = serde_json::to_string(&pkg).unwrap();
+        let parsed: ContextPackage = serde_json::from_str(&json).unwrap();
+        assert!(parsed.task_id.is_none());
+        assert_eq!(parsed.id, "pkg-no-task");
+    }
+
+    #[test]
+    fn context_request_clone() {
+        use std::path::PathBuf;
+        let req = ContextRequest {
+            task_id: Some(1),
+            task_title: "Fix auth".into(),
+            task_description: "Auth is broken".into(),
+            repo_path: PathBuf::from("/repo"),
+            agent: "claude-code".into(),
+            max_files: 10,
+        };
+        let cloned = req.clone();
+        assert_eq!(cloned.task_title, "Fix auth");
+        assert_eq!(cloned.max_files, 10);
+    }
+
+    #[test]
+    fn mcp_query_clone() {
+        let query = McpQuery {
+            server: "serena".into(),
+            tool: "find_symbol".into(),
+            params: serde_json::json!({"name": "Foo"}),
+            reason: "Find Foo".into(),
+        };
+        let cloned = query.clone();
+        assert_eq!(cloned.server, "serena");
+        assert_eq!(cloned.tool, "find_symbol");
+    }
 }

@@ -693,4 +693,228 @@ mod tests {
         assert!(json.contains("0.5"));
         assert!(json.contains("2048"));
     }
+
+    // ── httpmock-based async tests ────────────────────────────────────────
+
+    use httpmock::prelude::*;
+    use crate::llm::{ChatMessage, LlmRequest, Role, ImageGenRequest};
+
+    fn basic_llm_request() -> LlmRequest {
+        LlmRequest {
+            messages: vec![ChatMessage::user("Hello")],
+            model: None,
+            max_tokens: 256,
+            temperature: 0.7,
+        }
+    }
+
+    // ── OpenAiProvider::chat ───────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn openai_chat_200_ok() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/chat/completions");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "choices": [{"message": {"role": "assistant", "content": "Hello there!"}}],
+                    "model": "gpt-4o",
+                    "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
+                }));
+        });
+        let provider = OpenAiProvider::new(
+            "sk-test".to_string(),
+            server.base_url(),
+            "gpt-4o".to_string(),
+        );
+        let result = provider.chat(&basic_llm_request()).await.unwrap();
+        assert_eq!(result.content, "Hello there!");
+        assert_eq!(result.model, "gpt-4o");
+        assert_eq!(result.usage.prompt_tokens, 10);
+        assert_eq!(result.usage.completion_tokens, 5);
+        assert_eq!(result.usage.total_tokens, 15);
+    }
+
+    #[tokio::test]
+    async fn openai_chat_500_returns_error() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/chat/completions");
+            then.status(500).body("Internal Server Error");
+        });
+        let provider = OpenAiProvider::new(
+            "sk-test".to_string(),
+            server.base_url(),
+            "gpt-4o".to_string(),
+        );
+        let result = provider.chat(&basic_llm_request()).await;
+        assert!(result.is_err(), "expected error on 500 response");
+    }
+
+    // ── OpenAiProvider::generate_image ────────────────────────────────────
+
+    #[tokio::test]
+    async fn openai_generate_image_url_variant() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/images/generations");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "data": [{"url": "https://cdn.openai.com/img.png", "b64_json": null}]
+                }));
+        });
+        let provider = OpenAiProvider::new(
+            "sk-test".to_string(),
+            server.base_url(),
+            "dall-e-3".to_string(),
+        );
+        let req = ImageGenRequest {
+            prompt: "A blue cat".to_string(),
+            model: None,
+            size: "1024x1024".to_string(),
+            n: 1,
+        };
+        let result = provider.generate_image(&req).await.unwrap();
+        assert_eq!(result.images.len(), 1);
+        assert!(result.images[0].is_url);
+        assert_eq!(result.images[0].data, "https://cdn.openai.com/img.png");
+    }
+
+    #[tokio::test]
+    async fn openai_generate_image_b64_variant() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/images/generations");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "data": [{"url": null, "b64_json": "iVBORw0KGgo="}]
+                }));
+        });
+        let provider = OpenAiProvider::new(
+            "sk-test".to_string(),
+            server.base_url(),
+            "dall-e-3".to_string(),
+        );
+        let req = ImageGenRequest {
+            prompt: "A red dog".to_string(),
+            model: None,
+            size: "512x512".to_string(),
+            n: 1,
+        };
+        let result = provider.generate_image(&req).await.unwrap();
+        assert_eq!(result.images.len(), 1);
+        assert!(!result.images[0].is_url);
+        assert_eq!(result.images[0].data, "iVBORw0KGgo=");
+    }
+
+    // ── AnthropicProvider::chat ────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn anthropic_chat_200_ok() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/v1/messages");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "content": [{"text": "Hello "}, {"text": "world"}],
+                    "model": "claude-sonnet-4-20250514",
+                    "usage": {"input_tokens": 20, "output_tokens": 10}
+                }));
+        });
+        let provider = AnthropicProvider::new(
+            "sk-ant-test".to_string(),
+            server.base_url(),
+            "claude-sonnet-4-20250514".to_string(),
+        );
+        // Include a system message to verify it is filtered out of messages[]
+        let req = LlmRequest {
+            messages: vec![
+                ChatMessage::system("You are helpful"),
+                ChatMessage::user("Hello"),
+            ],
+            model: None,
+            max_tokens: 1024,
+            temperature: 0.5,
+        };
+        let result = provider.chat(&req).await.unwrap();
+        // Multi-content blocks should be joined
+        assert_eq!(result.content, "Hello world");
+        assert_eq!(result.model, "claude-sonnet-4-20250514");
+        assert_eq!(result.usage.prompt_tokens, 20);
+        assert_eq!(result.usage.completion_tokens, 10);
+        assert_eq!(result.usage.total_tokens, 30);
+    }
+
+    #[tokio::test]
+    async fn anthropic_chat_multi_content_joined() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/v1/messages");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "content": [{"text": "Part1"}, {"text": "Part2"}, {"text": "Part3"}],
+                    "model": "claude-opus-4",
+                    "usage": {"input_tokens": 5, "output_tokens": 15}
+                }));
+        });
+        let provider = AnthropicProvider::new(
+            "sk-ant-test".to_string(),
+            server.base_url(),
+            "claude-opus-4".to_string(),
+        );
+        let result = provider.chat(&basic_llm_request()).await.unwrap();
+        assert_eq!(result.content, "Part1Part2Part3");
+        assert_eq!(result.usage.total_tokens, 20);
+    }
+
+    // ── OllamaProvider::chat ───────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn ollama_chat_200_ok() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/chat");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "message": {"role": "assistant", "content": "Hi from Ollama!"},
+                    "model": "llama3",
+                    "prompt_eval_count": 30,
+                    "eval_count": 12
+                }));
+        });
+        let provider = OllamaProvider::new(server.base_url(), "llama3".to_string());
+        let result = provider.chat(&basic_llm_request()).await.unwrap();
+        assert_eq!(result.content, "Hi from Ollama!");
+        assert_eq!(result.model, "llama3");
+        assert_eq!(result.usage.prompt_tokens, 30);
+        assert_eq!(result.usage.completion_tokens, 12);
+        assert_eq!(result.usage.total_tokens, 42);
+    }
+
+    #[tokio::test]
+    async fn ollama_chat_missing_token_counts() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/chat");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "message": {"role": "assistant", "content": "No counts"},
+                    "model": "llama3"
+                }));
+        });
+        let provider = OllamaProvider::new(server.base_url(), "llama3".to_string());
+        let result = provider.chat(&basic_llm_request()).await.unwrap();
+        assert_eq!(result.content, "No counts");
+        // Missing counts default to 0
+        assert_eq!(result.usage.prompt_tokens, 0);
+        assert_eq!(result.usage.completion_tokens, 0);
+        assert_eq!(result.usage.total_tokens, 0);
+    }
 }

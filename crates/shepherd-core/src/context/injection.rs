@@ -365,4 +365,49 @@ mod tests {
         assert!(payload.file_hints.contains(&"src/auth/mod.rs".to_string()));
         assert!(payload.file_hints.contains(&"src/db/mod.rs".to_string()));
     }
+
+    #[test]
+    fn format_prompt_empty_package_has_no_key_files_line() {
+        let pkg = empty_package();
+        let prompt = format_prompt(&pkg);
+        assert!(prompt.contains("Context:"));
+        // No items → "Key files:" line should not appear
+        assert!(!prompt.contains("Key files:"));
+    }
+
+    #[test]
+    fn injection_strategy_clone_and_eq() {
+        let s1 = InjectionStrategy::ClaudeMd;
+        let s2 = s1.clone();
+        assert_eq!(s1, s2);
+
+        let s3 = InjectionStrategy::PromptArg;
+        assert_ne!(s1, s3);
+    }
+
+    #[test]
+    fn remove_claude_md_section_at_end_of_file() {
+        // Section is at the very end — no trailing content
+        let original = "# My Project\n\nSome docs.\n<!-- shepherd-context-start -->\ninjected\n<!-- shepherd-context-end -->";
+        let cleaned = remove_claude_md_section(original);
+        assert!(!cleaned.contains("shepherd-context"));
+        assert!(!cleaned.contains("injected"));
+        assert!(cleaned.contains("# My Project"));
+    }
+
+    #[test]
+    fn prepare_injection_empty_package_file_hints_empty() {
+        let pkg = empty_package();
+        let payload = prepare_injection(&pkg, "claude-code", false);
+        assert!(payload.file_hints.is_empty());
+    }
+
+    #[test]
+    fn format_context_shows_relevance_score_for_all_items() {
+        let pkg = sample_package();
+        let formatted = format_context(&pkg);
+        // Both items should show their scores
+        assert!(formatted.contains("score: 1.00"));
+        assert!(formatted.contains("score: 0.70"));
+    }
 }

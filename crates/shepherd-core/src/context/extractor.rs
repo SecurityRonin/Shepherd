@@ -254,4 +254,52 @@ mod tests {
         assert!(intent.symbols.is_empty());
         assert!(intent.keywords.is_empty());
     }
+
+    #[test]
+    fn task_intent_default_is_empty() {
+        let intent = TaskIntent::default();
+        assert!(intent.file_paths.is_empty());
+        assert!(intent.symbols.is_empty());
+        assert!(intent.keywords.is_empty());
+    }
+
+    #[test]
+    fn task_intent_clone_is_independent() {
+        let intent = extract_intent("Fix src/auth.rs", "Update UserService");
+        let clone = intent.clone();
+        assert_eq!(intent.file_paths, clone.file_paths);
+        assert_eq!(intent.symbols, clone.symbols);
+    }
+
+    #[test]
+    fn extracts_go_file_paths() {
+        let intent = extract_intent("Fix main.go", "Check pkg/server/handler.go");
+        assert!(intent.file_paths.contains(&"main.go".to_string()));
+        assert!(intent.file_paths.contains(&"pkg/server/handler.go".to_string()));
+    }
+
+    #[test]
+    fn extracts_python_file_paths() {
+        let intent = extract_intent("Update app.py", "Check utils/helpers.py");
+        assert!(intent.file_paths.contains(&"app.py".to_string()));
+    }
+
+    #[test]
+    fn extracts_json_file_paths() {
+        let intent = extract_intent("Update package.json", "Check tsconfig.json");
+        assert!(intent.file_paths.contains(&"package.json".to_string()));
+        assert!(intent.file_paths.contains(&"tsconfig.json".to_string()));
+    }
+
+    #[test]
+    fn keywords_filters_pure_numbers() {
+        let intent = extract_intent("Fix bug 12345", "Issue 9999");
+        assert!(!intent.keywords.iter().any(|k| k.chars().all(|c| c.is_ascii_digit())));
+    }
+
+    #[test]
+    fn extracts_sql_file_paths() {
+        let intent = extract_intent("Run migrations.sql", "");
+        assert!(intent.file_paths.contains(&"migrations.sql".to_string()));
+    }
 }

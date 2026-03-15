@@ -2,6 +2,10 @@ import React, { useCallback } from "react";
 import { Layout } from "./features/shared/Layout";
 import { KanbanBoard } from "./features/kanban/KanbanBoard";
 import { FocusView } from "./features/focus/FocusView";
+import { CostDashboard } from "./features/observability/CostDashboard";
+import { ReplayViewer } from "./features/replay/ReplayViewer";
+import { EcosystemManager } from "./features/ecosystem/EcosystemManager";
+import { CloudSettings } from "./features/cloud/CloudSettings";
 import { CommandPalette } from "./features/palette/CommandPalette";
 import { NewTaskDialog } from "./features/tasks/NewTaskDialog";
 import { useWebSocket } from "./hooks/useWebSocket";
@@ -17,6 +21,7 @@ const App: React.FC = () => {
   const setCommandPaletteOpen = useStore((s) => s.setCommandPaletteOpen);
   const isNewTaskDialogOpen = useStore((s) => s.isNewTaskDialogOpen);
   const setNewTaskDialogOpen = useStore((s) => s.setNewTaskDialogOpen);
+  const focusedTaskId = useStore((s) => s.focusedTaskId);
 
   const handleServerEvent = useCallback((event: ServerEvent) => {
     const store = useStore.getState();
@@ -53,13 +58,20 @@ const App: React.FC = () => {
   useKeyboardShortcuts(wsRef);
   useNotifications();
 
+  const renderView = () => {
+    switch (viewMode) {
+      case "focus": return <FocusView />;
+      case "observability": return <CostDashboard />;
+      case "replay": return <ReplayViewer taskId={focusedTaskId ?? undefined} />;
+      case "ecosystem": return <EcosystemManager />;
+      case "cloud": return <CloudSettings />;
+      default: return <KanbanBoard />;
+    }
+  };
+
   return (
     <Layout>
-      {viewMode === "overview" ? (
-        <KanbanBoard />
-      ) : (
-        <FocusView />
-      )}
+      {renderView()}
       <CommandPalette
         isOpen={isCommandPaletteOpen}
         onClose={() => setCommandPaletteOpen(false)}

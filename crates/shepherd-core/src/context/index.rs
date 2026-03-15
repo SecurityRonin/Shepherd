@@ -492,4 +492,71 @@ mod tests {
         let count = scan_and_index(&conn, tmp.path()).unwrap();
         assert_eq!(count, 1); // Only app.ts
     }
+
+    // ── Additional language detection ────────────────────────────
+
+    #[test]
+    fn detect_javascript() {
+        assert_eq!(detect_language("src/index.js"), "javascript");
+        assert_eq!(detect_language("app/component.jsx"), "javascript");
+    }
+
+    #[test]
+    fn detect_go() {
+        assert_eq!(detect_language("main.go"), "go");
+    }
+
+    #[test]
+    fn detect_json() {
+        assert_eq!(detect_language("package.json"), "json");
+        assert_eq!(detect_language("tsconfig.json"), "json");
+    }
+
+    #[test]
+    fn detect_sql() {
+        assert_eq!(detect_language("migrations.sql"), "sql");
+    }
+
+    #[test]
+    fn detect_yaml() {
+        assert_eq!(detect_language("config.yaml"), "yaml");
+        assert_eq!(detect_language("docker-compose.yml"), "yaml");
+    }
+
+    #[test]
+    fn detect_ruby() {
+        assert_eq!(detect_language("app/models/user.rb"), "ruby");
+    }
+
+    #[test]
+    fn detect_shell() {
+        assert_eq!(detect_language("scripts/deploy.sh"), "shell");
+        assert_eq!(detect_language("setup.bash"), "shell");
+        assert_eq!(detect_language("init.zsh"), "shell");
+    }
+
+    #[test]
+    fn content_hash_empty_slice() {
+        let h = content_hash(b"");
+        // Should return a valid 16-char hex string (the FNV offset basis)
+        assert_eq!(h.len(), 16);
+    }
+
+    #[test]
+    fn file_count_after_remove() {
+        let conn = setup_db();
+        upsert_file(&conn, &sample_file("a.rs", "rust")).unwrap();
+        upsert_file(&conn, &sample_file("b.rs", "rust")).unwrap();
+        assert_eq!(file_count(&conn).unwrap(), 2);
+        remove_file(&conn, "a.rs").unwrap();
+        assert_eq!(file_count(&conn).unwrap(), 1);
+    }
+
+    #[test]
+    fn get_files_by_language_empty_result() {
+        let conn = setup_db();
+        upsert_file(&conn, &sample_file("a.rs", "rust")).unwrap();
+        let py_files = get_files_by_language(&conn, "python").unwrap();
+        assert!(py_files.is_empty());
+    }
 }

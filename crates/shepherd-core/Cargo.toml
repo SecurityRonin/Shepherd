@@ -26,3 +26,5 @@ path = "../../tests/integration/lifecycle_test.rs"
 
 [dev-dependencies]
 tempfile = "3"
+httpmock = "0.7"
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

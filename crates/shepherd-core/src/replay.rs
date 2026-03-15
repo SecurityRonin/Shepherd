@@ -582,4 +582,88 @@ mod tests {
         let results = search_events(&conn, 1, "zzzznotfound").unwrap();
         assert!(results.is_empty());
     }
+
+    // ── Multiple sessions same task ──────────────────────────────
+
+    #[test]
+    fn events_from_multiple_sessions_same_task() {
+        let conn = setup_db();
+        // Session 1
+        record_event(&conn, 1, 1, &EventType::SessionStart, "Session 1 start", "", None).unwrap();
+        record_event(&conn, 1, 1, &EventType::Output, "Session 1 output", "done", None).unwrap();
+        record_event(&conn, 1, 1, &EventType::SessionEnd, "Session 1 end", "", None).unwrap();
+        // Session 2 (retry)
+        record_event(&conn, 1, 2, &EventType::SessionStart, "Session 2 start", "", None).unwrap();
+        record_event(&conn, 1, 2, &EventType::SessionEnd, "Session 2 end", "", None).unwrap();
+
+        let timeline = get_timeline(&conn, 1).unwrap();
+        assert_eq!(timeline.len(), 5);
+        // Events from both sessions are returned
+        assert!(timeline.iter().any(|e| e.session_id == 1));
+        assert!(timeline.iter().any(|e| e.session_id == 2));
+    }
+
+    // ── search_events with empty query ───────────────────────────
+
+    #[test]
+    fn search_events_empty_query_matches_all() {
+        let conn = setup_db();
+        record_event(&conn, 1, 1, &EventType::Output, "Alpha", "content-a", None).unwrap();
+        record_event(&conn, 1, 1, &EventType::ToolCall, "Beta", "content-b", None).unwrap();
+        record_event(&conn, 1, 1, &EventType::Error, "Gamma", "content-c", None).unwrap();
+
+        // Empty query → LIKE "%%" matches everything
+        let results = search_events(&conn, 1, "").unwrap();
+        assert_eq!(results.len(), 3);
+    }
+
+    // ── record_event with very long content ──────────────────────
+
+    #[test]
+    fn record_event_very_long_content() {
+        let conn = setup_db();
+        let long_content = "x".repeat(10_000);
+        let id = record_event(
+            &conn, 1, 1,
+            &EventType::Output,
+            "Long output",
+            &long_content,
+            None,
+        ).unwrap();
+        assert!(id > 0);
+
+        let timeline = get_timeline(&conn, 1).unwrap();
+        assert_eq!(timeline[0].content.len(), 10_000);
+    }
+
+    // ── get_events_by_type returns empty when no match ───────────
+
+    #[test]
+    fn get_events_by_type_no_match_returns_empty() {
+        let conn = setup_db();
+        record_event(&conn, 1, 1, &EventType::Output, "Out", "content", None).unwrap();
+        let errors = get_events_by_type(&conn, 1, &EventType::Error).unwrap();
+        assert!(errors.is_empty());
+    }
+
+    // ── timeline event serde roundtrip ───────────────────────────
+
+    #[test]
+    fn timeline_event_serde_roundtrip() {
+        let event = TimelineEvent {
+            id: 1,
+            task_id: 42,
+            session_id: 3,
+            event_type: EventType::LlmCall,
+            summary: "LLM called".into(),
+            content: "{\"model\": \"claude-sonnet-4\"}".into(),
+            metadata: Some("{\"tokens\": 1000}".into()),
+            timestamp: "2026-03-14T00:00:00Z".into(),
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        let parsed: TimelineEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.task_id, 42);
+        assert_eq!(parsed.event_type, EventType::LlmCall);
+        assert_eq!(parsed.metadata.as_deref(), Some("{\"tokens\": 1000}"));
+    }
 }

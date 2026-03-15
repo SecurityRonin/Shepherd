@@ -106,7 +106,12 @@ impl CloudClient {
     /// Refresh the cached credit balance from the server.
     #[tracing::instrument(skip(self))]
     pub async fn refresh_balance(&self) -> Result<u32, CloudError> {
-        let jwt = auth::load_jwt().ok_or(CloudError::NotAuthenticated)?;
+        let jwt = {
+            #[cfg(test)]
+            { self.test_jwt.clone().ok_or(CloudError::NotAuthenticated)? }
+            #[cfg(not(test))]
+            { auth::load_jwt().ok_or(CloudError::NotAuthenticated)? }
+        };
         let profile = self.fetch_profile(&jwt).await?;
 
         auth::save_cached_profile(&profile)
@@ -223,5 +228,56 @@ mod tests {
         for f in &features {
             assert!(f.cost() > 0, "{:?} should have positive cost", f);
         }
+    }
+
+    // ── httpmock-based async tests ────────────────────────────────────────
+
+    #[tokio::test]
+    async fn refresh_balance_200_ok() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/api/credits/balance");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "plan": "pro",
+                    "credits_balance": 37,
+                    "trial_logo": 0,
+                    "trial_name": 0,
+                    "trial_northstar": 0,
+                    "trial_scrape": 0,
+                    "trial_crawl": 0,
+                    "trial_vision": 0,
+                    "trial_search": 0
+                }));
+        });
+
+        use super::super::CloudClient;
+        let client = CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let result = client.refresh_balance().await;
+        // save_cached_profile may succeed or fail depending on env; we only care about the balance
+        match result {
+            Ok(balance) => assert_eq!(balance, 37),
+            Err(super::super::CloudError::Keychain(_)) => {
+                // save_cached_profile failed (e.g. in restricted CI env) — acceptable
+            }
+            Err(e) => panic!("unexpected error: {:?}", e),
+        }
+    }
+
+    #[tokio::test]
+    async fn refresh_balance_401_auth_expired() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/api/credits/balance");
+            then.status(401).body("Unauthorized");
+        });
+
+        use super::super::CloudClient;
+        let client = CloudClient::with_test_jwt(&server.base_url(), "bad-jwt");
+        let result = client.refresh_balance().await;
+        assert!(matches!(result, Err(super::super::CloudError::AuthExpired)));
     }
 }
