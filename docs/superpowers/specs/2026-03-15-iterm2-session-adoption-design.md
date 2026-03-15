@@ -36,6 +36,19 @@ Use the **iTerm2 WebSocket API protocol implemented natively in Rust** via `pros
 
 `tokio-tungstenite` does not natively connect over Unix sockets. The client opens the socket with `tokio::net::UnixStream::connect()`, then calls `tokio_tungstenite::client_async_with_config()` passing the stream directly. This is the documented pattern for non-TCP transports.
 
+The WebSocket handshake request is constructed with `http::Request`:
+
+```rust
+let req = http::Request::builder()
+    .uri("ws://localhost/")
+    .header("x-iterm2-cookie", &auth.cookie)
+    .header("x-iterm2-key", &auth.key)
+    .body(())?;
+tokio_tungstenite::client_async_with_config(req, stream, None).await?
+```
+
+The `uri` is a placeholder (ignored for Unix socket transport); the `x-iterm2-cookie` and `x-iterm2-key` headers carry the per-process credentials required by the iTerm2 API.
+
 ---
 
 ## Authentication
@@ -44,14 +57,14 @@ The iTerm2 WebSocket API requires:
 
 1. **Python API enabled** in iTerm2 Preferences → General → Magic → Enable Python API. If disabled, the socket exists but connections are immediately closed — handled as a distinct error from "socket absent."
 
-2. **`cookie` and `key` WebSocket headers** — these are per-iTerm2-process values only available as `ITERM2_COOKIE` / `ITERM2_KEY` environment variables inside processes launched by iTerm2's script runner.
+2. **`x-iterm2-cookie` and `x-iterm2-key` WebSocket headers** — these are per-iTerm2-process values only available as `ITERM2_COOKIE` / `ITERM2_KEY` environment variables inside processes launched by iTerm2's script runner.
 
 ### Credential acquisition: AutoLaunch bridge script
 
 Shepherd ships a minimal Python script installed at:
 `~/Library/Application Support/iTerm2/Scripts/AutoLaunch/shepherd-bridge.py`
 
-This script runs automatically when iTerm2 starts, has the cookie/key env vars, and writes them to `~/.shepherd/iterm2-auth.json` (permissions: `0600`). Its **only job is credential forwarding** — it does not subscribe to iTerm2 events or forward any data. All event subscriptions are made directly by the Rust server.
+This script runs automatically when iTerm2 starts. iTerm2 injects `ITERM2_COOKIE` and `ITERM2_KEY` into the script's process environment; the script reads these values (`os.environ["ITERM2_COOKIE"]`, `os.environ["ITERM2_KEY"]`) and writes them to `~/.shepherd/iterm2-auth.json` (permissions: `0600`). Its **only job is credential forwarding** — it does not subscribe to iTerm2 events or forward any data. All event subscriptions are made directly by the Rust server.
 
 ```json
 { "cookie": "...", "key": "..." }
@@ -59,7 +72,7 @@ This script runs automatically when iTerm2 starts, has the cookie/key env vars, 
 
 The Rust server (`iterm2/auth.rs`):
 - Reads this file at startup
-- Watches it with `notify` crate for changes (handles iTerm2 restarts, which rotate cookie/key and cause the bridge to rewrite the file)
+- Watches it with `notify` crate (`RecommendedWatcher` on macOS uses FSEvents callbacks). Because the callback is non-async, events are forwarded over a `std::sync::mpsc::channel`; an async task (`tokio::task::spawn_blocking` or a dedicated thread) reads that channel and sends change notifications into a `tokio::sync::mpsc::Sender` for consumption by the async reconnect handler. This avoids blocking the tokio executor.
 - On file change: drops current connection, reads new credentials, reconnects
 - If file absent: disables the iterm2 module and shows setup instructions in the UI
 
@@ -72,7 +85,7 @@ The Rust server (`iterm2/auth.rs`):
 ```
 iterm2/
   mod.rs        — public API surface
-  client.rs     — UnixStream WebSocket + protobuf framing (length-delimited)
+  client.rs     — UnixStream WebSocket + protobuf framing (one message per binary frame)
   session.rs    — AdoptedSession: one iTerm2 session under Shepherd management
   scanner.rs    — periodic poll: discovers claude sessions, emits AdoptionCandidate
   auth.rs       — reads + watches ~/.shepherd/iterm2-auth.json
@@ -80,16 +93,23 @@ iterm2/
 
 ### Vendored proto
 
-`crates/shepherd-core/proto/iterm2-api.proto` — vendored from iTerm2 at a pinned release tag. `build.rs` compiles it with `prost_build`. Updated manually when the iTerm2 API changes.
+`crates/shepherd-core/proto/iterm2-api.proto` — vendored from iTerm2 at a pinned release tag. `build.rs` compiles it with `prost_build`. Generated types are included in `client.rs` via:
+
+```rust
+include!(concat!(env!("OUT_DIR"), "/iterm2.rs"));
+```
+
+Updated manually when the iTerm2 API changes.
 
 ### Scanner poll loop (5 s interval)
 
-1. `ListSessionsRequest` → `SessionSummary` list (fields: `unique_identifier`, `title`, `frame`, `grid_size`)
-2. For each session not already adopted:
-   - `VariableRequest(name: "jobName")` — one round-trip per unadopted session
-   - If `jobName` contains `"claude"`: `VariableRequest(name: "path")` for CWD
+1. `ListSessionsRequest` → `ListSessionsResponse { repeated Window windows }`. Each `Window` has `repeated Tab tabs`; each `Tab` has a `SplitTreeNode root` (recursive split-pane tree). The scanner walks `windows → tabs → SplitTreeNode` recursively, collecting every `SessionSummary` leaf (fields used: `unique_identifier`, `title`).
+2. For each session not already adopted (dedup by `iterm2_session_id` in `HashSet<String>`):
+   - `VariableRequest { session: <unique_identifier>, name: "jobName" }` — **must set `session` field** to scope the query to this session; omitting it queries the focused session
+   - If `jobName` contains `"claude"`: `VariableRequest { session: <unique_identifier>, name: "path" }` for CWD
    - Emit `AdoptionCandidate { iterm2_session_id, cwd }` (no `pid` — not available without extra round-trip)
-3. For each newly adopted session: subscribe to `NOTIFY_ON_TERMINATE_SESSION` for immediate exit detection
+   - Send `NotificationRequest { session: <unique_identifier>, subscribe: true, notification_type: NOTIFY_ON_SCREEN_UPDATE }` to begin receiving screen updates for this session
+3. On first adoption, send a **single global** `NotificationRequest { subscribe: true, notification_type: NOTIFY_ON_TERMINATE_SESSION }` (omit `session` field — this notification type is not session-scoped). The handler filters incoming termination events by `session_id` in the notification payload to identify which adopted session exited.
 
 ---
 
@@ -99,13 +119,17 @@ iterm2/
 iTerm2 tab (claude process)
   │
   ├─► NOTIFY_ON_SCREEN_UPDATE (session_id only)
-  │      └─► 50 ms trailing debounce ──► GetBufferRequest(lines: last 200)
-  │                └─► flatten cells to text ──► gate detector + TerminalOutput event ──► WebSocket ──► frontend
+  │      └─► 50 ms trailing debounce ──► GetBufferRequest(lines: last 200, from scrollback tail)
+  │                └─► cell flattening (hard_eol-aware) ──► gate detector + TerminalOutput event ──► WebSocket ──► frontend
   │
   ├─► NOTIFY_ON_TERMINATE_SESSION ──► task status → "done" / resume trigger
   │
   └─◄ SendTextRequest(text) ◄── AdoptedSession ◄── TerminalInput / TaskApprove ◄── WebSocket ◄── frontend
 ```
+
+### Protobuf framing over WebSocket
+
+Each `ClientOriginatedMessage` / `ServerOriginatedMessage` maps to exactly one WebSocket **binary frame**. The protobuf payload is the entire frame body — no additional length-delimiter prefix is added. The send path is: `prost::Message::encode_to_vec()` → `tungstenite::Message::Binary(bytes)`. The receive path is: `Message::Binary(bytes)` → `prost::Message::decode()`. No `tokio-util` codec is involved.
 
 ### Screen update debounce
 
@@ -113,9 +137,17 @@ iTerm2 tab (claude process)
 
 ### GetBufferResponse → plain text
 
-`GetBufferResponse` returns structured per-character cell data (character, color, attributes). Shepherd flattens it to plain text by iterating each line's cells, extracting the `string_value` of each `Cell`, joining cells into a line string, and joining lines with `\n`. This plain text is what the gate detector and the `TerminalOutput` event both receive.
+`GetBufferResponse` returns structured per-character cell data (`LineContents` per line, each containing `Cell` items). Shepherd flattens it to plain text using a `hard_eol`-aware algorithm:
 
-Only the last 200 lines are requested per `GetBufferRequest` (sufficient for gate detection and terminal display).
+1. For each `LineContents` in the response:
+   a. Concatenate the `string_value` field of every `Cell` in that line to form the line string.
+   b. If `line_contents.hard_eol` is `true`, append `"\n"` after the line string.
+   c. If `hard_eol` is `false` (soft-wrap continuation), append nothing — the line continues without a newline separator.
+2. Concatenate all resulting strings.
+
+This correctly preserves logical line boundaries without inserting spurious newlines at soft-wrap points.
+
+`GetBufferRequest` requests the last 200 lines from the tail of the scrollback buffer. Set `session: <unique_identifier>` and use the `trailing_lines: 200` field (or equivalent — confirm against vendored proto field name; the semantics are "last N lines of the buffer"). If `GetBufferResponse` carries a non-OK status, the update is silently skipped and the next debounce cycle is awaited.
 
 ### Input
 
@@ -179,17 +211,18 @@ On each `NOTIFY_ON_SCREEN_UPDATE` → debounce → `GetBufferRequest` cycle, the
 | Scenario | Handling |
 |----------|----------|
 | Socket absent (iTerm2 not running) | Silent retry each poll cycle |
-| Python API disabled (socket present, connection refused) | Distinct warning with "Enable Python API in iTerm2 Preferences" instruction |
+| Python API disabled (socket exists, WebSocket upgrade fails / connection closed immediately post-connect) | Distinct warning with "Enable Python API in iTerm2 Preferences" instruction |
 | Auth file absent | iterm2 module disabled; setup instruction shown in UI |
 | iTerm2 restarts (cookie/key rotated) | `notify` watcher detects file change → reconnect with new credentials |
 | Proto decode error | Per-session warning logged, session skipped |
 | Process exits unexpectedly | `NOTIFY_ON_TERMINATE_SESSION` → task status `"done"` |
 | User closes tab | Same notification; task marked done, not deleted |
-| Duplicate adoption | Dedup by iTerm2 session ID in `HashSet<String>` in scanner |
+| Duplicate adoption | Dedup by `iterm2_session_id` in `HashSet<String>` in scanner |
 | `~/.claude/projects/` missing | `/api/sessions/:id/claude-sessions` returns `[]`; UI disables Resume |
 | `path` variable empty (no shell integration) | Falls back to `title`, then `"unknown"` |
 | Relaunch process timeout | 5 s wait, then `CloseRequest(force: true)` before relaunch |
 | Screen update flood | 50 ms debounce limits `GetBufferRequest` calls to ~20/s |
+| `GetBufferResponse` non-OK status | Silently skip update; await next debounce cycle |
 
 ---
 
@@ -197,12 +230,13 @@ On each `NOTIFY_ON_SCREEN_UPDATE` → debounce → `GetBufferRequest` cycle, the
 
 - **Unit tests** — mock `Iterm2Client` replaying canned protobuf responses. Critical paths covered:
   - Discovery: `ListSessionsRequest` → `VariableRequest` round-trips → `AdoptionCandidate` emitted
-  - Output: `NOTIFY_ON_SCREEN_UPDATE` → debounce → `GetBufferRequest` → cell flattening → gate pattern match
+  - Output: `NOTIFY_ON_SCREEN_UPDATE` → debounce → `GetBufferRequest` → cell flattening (hard_eol-aware) → gate pattern match
   - Input: `SendTextRequest` called with correct bytes for `TerminalInput` and `TaskApprove`
   - Exit: `NOTIFY_ON_TERMINATE_SESSION` → task status `"done"`
   - Resume: Ctrl-C → wait for terminate → relaunch command sent to shell
   - Auth rotation: file change → reconnect with new credentials
   - Debounce: burst of 100 notifications → single `GetBufferRequest` issued
+  - Cell flattening: soft-wrap lines joined without `\n`; hard_eol lines terminated with `\n`
 - **Integration tests** — gated behind `#[cfg(feature = "iterm2-integration")]`; skipped in CI
 - **Proto build** — vendored file; no network dependency in CI
 
@@ -212,9 +246,9 @@ On each `NOTIFY_ON_SCREEN_UPDATE` → debounce → `GetBufferRequest` cycle, the
 
 | Crate | Purpose |
 |-------|---------|
-| `prost` + `prost-build` | Compile vendored `api.proto` → Rust types |
+| `prost` + `prost-build` | Compile vendored `api.proto` → Rust types; generated types included via `include!(concat!(env!("OUT_DIR"), "/iterm2.rs"))` |
 | `tokio-tungstenite` | Async WebSocket over `tokio::net::UnixStream` via `client_async_with_config` |
-| `tokio-util` | Length-delimited codec framing for protobuf messages |
+| `tokio` | Features required: `net`, `time`, `fs`, `sync` |
 | `notify` | File-system watcher for `~/.shepherd/iterm2-auth.json` credential rotation |
 
 **System requirement:** iTerm2 3.3+ with Python API enabled. iTerm2 shell integration recommended for accurate CWD detection but not required.
