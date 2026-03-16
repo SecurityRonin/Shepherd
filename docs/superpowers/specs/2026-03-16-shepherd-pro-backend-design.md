@@ -114,6 +114,10 @@ STRIPE_WEBHOOK_SECRET=whsec_...
 STRIPE_PRO_PRICE_ID=price_...       # $9/mo recurring
 STRIPE_TOPUP_PRICE_ID=price_...     # $5 one-time, 30 credits
 
+# Upstash Redis — rate limiting
+UPSTASH_REDIS_REST_URL=https://xxx.upstash.io
+UPSTASH_REDIS_REST_TOKEN=AXxx...
+
 # App
 NEXT_PUBLIC_APP_URL=https://api.shepherd.codes
 ```
@@ -210,19 +214,25 @@ begin
 end;
 $$;
 
--- Row Level Security
-alter table public.profiles           enable row level security;
-alter table public.credit_transactions enable row level security;
-alter table public.generations        enable row level security;
-alter table public.trial_usage        enable row level security;
-alter table public.crawl_jobs         enable row level security;
+-- Indexes (all user_id columns queried frequently)
+create index idx_credit_transactions_user_id on public.credit_transactions(user_id);
+create index idx_generations_user_id         on public.generations(user_id);
+create index idx_trial_usage_user_id         on public.trial_usage(user_id);
+create index idx_crawl_jobs_user_id          on public.crawl_jobs(user_id);
 
--- Users can only read their own rows; all writes via service-role
-create policy "own rows" on public.profiles           for select using (auth.uid() = id);
-create policy "own rows" on public.credit_transactions for select using (auth.uid() = user_id);
-create policy "own rows" on public.generations        for select using (auth.uid() = user_id);
-create policy "own rows" on public.trial_usage        for select using (auth.uid() = user_id);
-create policy "own rows" on public.crawl_jobs         for select using (auth.uid() = user_id);
+-- Row Level Security: users SELECT own rows only; all INSERT/UPDATE via service-role
+alter table public.profiles            enable row level security;
+alter table public.credit_transactions enable row level security;
+alter table public.generations         enable row level security;
+alter table public.trial_usage         enable row level security;
+alter table public.crawl_jobs          enable row level security;
+
+create policy "profiles_select_self"  on public.profiles            for select using (auth.uid() = id);
+create policy "txns_select_self"      on public.credit_transactions for select using (auth.uid() = user_id);
+create policy "gen_select_self"       on public.generations         for select using (auth.uid() = user_id);
+create policy "trial_select_self"     on public.trial_usage         for select using (auth.uid() = user_id);
+create policy "crawl_select_self"     on public.crawl_jobs          for select using (auth.uid() = user_id);
+-- No INSERT/UPDATE policies — only service-role key bypasses RLS for writes
 ```
 
 ## Auth Flow
@@ -238,14 +248,17 @@ create policy "own rows" on public.crawl_jobs         for select using (auth.uid
 
 ## Stripe Lifecycle
 
-| Event | Handler action |
-|-------|---------------|
-| `checkout.session.completed` (sub) | set plan=pro, upsert stripe IDs |
-| `invoice.payment_succeeded` (monthly) | reset credits_balance=50, log transaction |
-| `checkout.session.completed` (topup) | +30 credits, log transaction |
-| `customer.subscription.deleted` | plan=free, credits_balance=0 |
+| Event | Condition | Handler action |
+|-------|-----------|---------------|
+| `checkout.session.completed` | `session.mode === 'subscription'` | set plan=pro, upsert stripe_customer_id + stripe_subscription_id |
+| `checkout.session.completed` | `session.mode === 'payment'` | +30 credits (topup), log credit_transaction |
+| `invoice.payment_succeeded` | subscription invoice | reset credits_balance=50, log credit_transaction |
+| `invoice.payment_failed` | any | no action — credits frozen until payment succeeds |
+| `customer.subscription.updated` | any | upsert stripe_subscription_id (handles plan/period changes) |
+| `customer.subscription.deleted` | any | plan=free, credits_balance=0 |
 
-Webhook handler verifies Stripe signature before any DB writes.
+Webhook handler verifies Stripe signature (`stripe.webhooks.constructEvent`) before any DB writes.
+Disambiguate sub vs topup via `session.mode`: `'subscription'` = Pro plan, `'payment'` = credit top-up.
 
 ## Generation Routes
 
@@ -280,6 +293,65 @@ verifyJwt → checkTrialOrDeductCredits → callUpstream → saveGeneration → 
 | vision | 2 | 2 |
 | search | 1 | 2 |
 
+### Generation Response Contracts
+
+All success responses include `credits_remaining: number`.
+
+**POST /api/generate/logo**
+Request: `{ product_name, product_description?, style, colors[], variants: number }`
+Response: `{ variants: [{ index, url }], credits_remaining }`
+Note: return exactly `variants` items — do not hardcode 4.
+
+**POST /api/generate/name**
+Request: `{ description, vibes[], count? }`
+Response: `{ candidates: [{ name, tagline?, reasoning, domains: [{ domain, available }] }], credits_remaining }`
+
+**POST /api/generate/northstar**
+Request: `{ phase: string, context: object }`
+Response: `{ phase, result: object, credits_remaining }`
+
+**POST /api/generate/scrape**
+Request: `{ url, formats?: string[] }`
+Response: `{ generation_id, markdown?, links: string[], metadata: object, credits_remaining }`
+
+**POST /api/generate/crawl**
+Request: `{ url, max_depth?: number, limit?: number }`
+Response: `{ generation_id, crawl_id, status_url, credits_remaining }`
+`status_url` = `https://api.shepherd.codes/api/generate/crawl/{crawl_id}`
+
+**GET /api/generate/crawl/[id]**
+No auth check required beyond JWT. No credit deduction (polling is free).
+Response: `{ success, status: "scraping"|"completed"|"failed", total, completed, data: [{ markdown?, metadata }] }`
+
+**POST /api/generate/vision**
+Request: `{ image_url?: string, image_base64?: string, prompt: string }`
+Exactly one of `image_url` or `image_base64` must be present.
+For `image_base64`: pass as `data:image/png;base64,{value}` in the OpenRouter image content block.
+Response: `{ generation_id, analysis: string, credits_remaining }`
+
+**POST /api/generate/search**
+Request: `{ query, search_type?: "neural"|"keyword"|"auto", num_results?: number, include_domains?: string[], exclude_domains?: string[], start_published_date?: string }`
+Response: `{ generation_id, results: [{ title, url, text?, score, published_date? }], autoprompt?, credits_remaining }`
+Forward all optional fields to Exa if present.
+
+### Balance Response — Trial Pivot Query
+
+`trial_usage` stores one row per `(user_id, feature)`. The balance route pivots this to flat fields:
+
+```sql
+select
+  p.plan, p.credits_balance, p.email, p.github_handle,
+  coalesce((select uses_remaining from trial_usage where user_id = p.id and feature = 'logo'),    2) as trial_logo,
+  coalesce((select uses_remaining from trial_usage where user_id = p.id and feature = 'name'),    2) as trial_name,
+  coalesce((select uses_remaining from trial_usage where user_id = p.id and feature = 'northstar'),2) as trial_northstar,
+  coalesce((select uses_remaining from trial_usage where user_id = p.id and feature = 'scrape'),  2) as trial_scrape,
+  coalesce((select uses_remaining from trial_usage where user_id = p.id and feature = 'crawl'),   2) as trial_crawl,
+  coalesce((select uses_remaining from trial_usage where user_id = p.id and feature = 'vision'),  2) as trial_vision,
+  coalesce((select uses_remaining from trial_usage where user_id = p.id and feature = 'search'),  2) as trial_search
+from profiles p where p.id = $1;
+```
+`coalesce(..., 2)` handles users who have never triggered a trial row (default = 2 remaining).
+
 ### Error Response Contract
 
 ```json
@@ -310,7 +382,7 @@ verifyJwt → checkTrialOrDeductCredits → callUpstream → saveGeneration → 
 
 ## TDD Strategy
 
-Framework: **Vitest** with **MSW** (Mock Service Worker) intercepting all upstream calls.
+Framework: **Vitest** with **MSW** (Mock Service Worker) intercepting all upstream HTTP calls.
 No real API keys in tests. Each route gets a test file with 4 cases minimum:
 `200 ok | 401 unauthed | 402 no credits | 5xx upstream error`.
 
@@ -318,13 +390,40 @@ Stripe webhook tests use `stripe.webhooks.constructEvent` with a test secret.
 
 Run: `npx vitest run` for CI, `npx vitest` for watch mode.
 
+**vitest.config.ts** starter:
+```ts
+import { defineConfig } from 'vitest/config'
+export default defineConfig({
+  test: {
+    environment: 'node',
+    globals: true,
+    setupFiles: ['__tests__/setup.ts'],
+  },
+})
+```
+
+**Mocking Supabase auth:** Mock at the HTTP layer via MSW — intercept
+`https://{SUPABASE_URL}/auth/v1/user`. Return `{ id: 'user-uuid', email: '...' }` for
+authenticated cases and `{ error: 'invalid_jwt' }` + status 401 for unauthenticated cases.
+Do not inject a stub Supabase client — MSW keeps the real client code path exercised.
+
+```ts
+// __tests__/setup.ts
+import { setupServer } from 'msw/node'
+import { http, HttpResponse } from 'msw'
+export const server = setupServer()
+beforeAll(() => server.listen())
+afterEach(() => server.resetHandlers())
+afterAll(() => server.close())
+```
+
 ## Security
 
 - JWT verified on every request via `supabase.auth.getUser(token)`
 - RLS at DB level — defense in depth even if route has a bug
 - Stripe webhook signature verified before any state mutation
 - Service-role key never sent to client
-- CORS: only `shepherd://` scheme and `*.shepherd.codes`
+- CORS: `shepherd://` scheme + `*.shepherd.codes` in production; `localhost:3000` in development (`NODE_ENV !== 'production'`)
 - Rate limit: 10 req/min per user per endpoint (Upstash Ratelimit)
 - All API keys (OpenRouter, Firecrawl, Exa) server-side only, never in responses
 
