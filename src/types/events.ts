@@ -5,6 +5,7 @@ export interface TaskEvent {
   status: string;
   branch: string;
   repo_path: string;
+  iterm2_session_id?: string;
 }
 
 export interface PermissionEvent {

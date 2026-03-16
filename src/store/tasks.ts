@@ -29,6 +29,7 @@ function taskEventToTask(event: TaskEvent): Task {
     isolation_mode: "worktree",
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
+    iterm2_session_id: event.iterm2_session_id,
   };
 }
 

@@ -18,6 +18,7 @@ export interface Task {
   status: TaskStatus;
   created_at: string;
   updated_at: string;
+  iterm2_session_id?: string;
   gate_results?: { gate: string; passed: boolean }[];
   diffs?: FileDiff[];
 }
