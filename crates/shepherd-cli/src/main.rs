@@ -108,7 +108,7 @@ async fn main() -> Result<()> {
 
             if !resp.status().is_success() {
                 eprintln!("Error: Could not connect to Shepherd server at {base_url}");
-                eprintln!("Is the server running? Start with: shepherd");
+                eprintln!("Is the server running? Start with: shep");
                 std::process::exit(1);
             }
 

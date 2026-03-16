@@ -7,6 +7,10 @@ edition.workspace = true
 name = "shepherd"
 path = "src/main.rs"
 
+[[bin]]
+name = "shep"
+path = "src/main.rs"
+
 [dependencies]
 shepherd-core = { workspace = true }
 anyhow = { workspace = true }

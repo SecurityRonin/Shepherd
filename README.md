@@ -45,17 +45,19 @@ Shepherd fixes that.
 # macOS
 brew install shepherd-codes/tap/shepherd
 
-# Linux
+# Linux / from source
 curl -fsSL https://shepherd.codes/install.sh | sh
 
 # Windows
 winget install shepherd-codes.shepherd
 ```
 
+Installs both `shepherd` and `shep` (same binary, your choice).
+
 **Then run:**
 
 ```bash
-shepherd
+shep
 ```
 
 That's it. The GUI opens. What happens next depends on how you work:
@@ -82,7 +84,7 @@ From then on, every new iTerm2 session automatically registers with Shepherd.
 ```bash
 # From the GUI: click "+ New Task", fill in the form, pick your agent
 # Or from the CLI:
-shepherd new "Add rate limiting to the API" \
+shep new "Add rate limiting to the API" \
   --agent claude-code \
   --repo ~/src/myapp \
   --isolation worktree
@@ -269,22 +271,18 @@ Zero git commands. Zero context switches.
 ### CLI for when you'd rather type
 
 ```bash
-shepherd                    # start server + open GUI
-shepherd status             # 3 running · 1 needs input · 2 done
-shepherd new "task"         # create task (--agent, --isolation flags)
-shepherd approve 4          # approve task #4
-shepherd approve --all      # approve all pending
-shepherd pr 7               # create PR for task #7
-shepherd pr 7 --base dev    # PR against a different branch
-shepherd gates 7            # run quality gates for task #7
-shepherd namegen "AI tool"  # brainstorm product names from CLI
-shepherd init               # init .shepherd/ in current project
-shepherd stop               # stop server
-shepherd completions bash   # generate shell completions
-
-alias shep=shepherd
-shep s               # status
-shep a               # approve next
+shep                        # start server + open GUI
+shep status                 # 3 running · 1 needs input · 2 done  (alias: shep s)
+shep new "task"             # create task (--agent, --isolation flags)
+shep approve 4              # approve task #4                      (alias: shep a)
+shep approve --all          # approve all pending
+shep pr 7                   # create PR for task #7
+shep pr 7 --base dev        # PR against a different branch
+shep gates 7                # run quality gates for task #7
+shep namegen "AI tool"      # brainstorm product names from CLI
+shep init                   # init .shepherd/ in current project
+shep stop                   # stop server
+shep completions bash       # generate shell completions
 ```
 
 GUI and CLI share the same server. Same state. Use both.
@@ -301,7 +299,7 @@ GUI and CLI share the same server. Same state. Use both.
 
 **New Project Wizard**: guided journey from zero to shipping — North Star strategy, brand name with domain validation, logo generation, and Superpowers setup. Skip any step, jump anywhere, dismiss entirely. Always optional, never forced.
 
-**Product Name Generator**: describe your product, get 20+ candidates with automatic RDAP domain checks, npm, PyPI, and GitHub conflict validation. All-clear names sorted first. Available from CLI: `shepherd namegen "AI productivity tool" --vibes bold minimal`.
+**Product Name Generator**: describe your product, get 20+ candidates with automatic RDAP domain checks, npm, PyPI, and GitHub conflict validation. All-clear names sorted first. Available from CLI: `shep namegen "AI productivity tool" --vibes bold minimal`.
 
 **Logo Generator**: pick a style (minimal, geometric, mascot, abstract), get 4 variants, auto-export to PNG (all sizes), favicon.ico, apple-touch-icon, macOS .icns, Windows .ico, and web manifest.
 
@@ -362,10 +360,12 @@ curl -fsSL https://shepherd.codes/install.sh | sh
 # Windows
 winget install shepherd-codes.shepherd
 
-# From source
+# From source (installs both `shepherd` and `shep`)
 git clone https://github.com/SecurityRonin/Shepherd.git
-cd Shepherd && cargo build --release && npm install && npm run build
+cd Shepherd && bash scripts/install.sh && npm install && npm run build
 ```
+
+Both `shepherd` and `shep` are installed — they're the same binary. Use whichever you prefer. Most examples in this README use `shep`.
 
 <h2 id="adapters">Writing a custom adapter</h2>
 
