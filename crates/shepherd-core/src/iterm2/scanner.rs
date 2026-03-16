@@ -6,6 +6,7 @@ use std::collections::HashSet;
 const KNOWN_AGENTS: &[(&str, &str)] = &[
     ("claude", "claude-code"),
     ("codex", "codex"),
+    ("adal", "adal"),
     ("aider", "aider"),
     ("gemini", "gemini-cli"),
     ("opencode", "opencode"),
@@ -336,6 +337,11 @@ mod tests {
     }
 
     #[test]
+    fn test_detect_agent_adal() {
+        assert_eq!(detect_agent("adal"), Some("adal"));
+    }
+
+    #[test]
     fn test_detect_agent_aider() {
         assert_eq!(detect_agent("aider"), Some("aider"));
     }
@@ -408,6 +414,15 @@ mod tests {
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].agent_name, "codex");
         assert_eq!(candidates[0].cwd, "/home/user/proj");
+    }
+
+    #[tokio::test]
+    async fn test_scan_finds_adal_session() {
+        make_agent_mock!(MockAdal, "sess-adal", "adal", "/src/myrepo");
+        let mut scanner = Scanner::new(std::collections::HashSet::new());
+        let candidates = scanner.scan(&mut MockAdal { calls: 0 }).await.unwrap();
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].agent_name, "adal");
     }
 
     #[tokio::test]
