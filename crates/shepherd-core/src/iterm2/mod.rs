@@ -1,2 +1,4 @@
 pub mod auth;
-// client, scanner, session added in Tasks 5-7
+pub mod client;
+pub mod scanner;
+pub mod session;
