@@ -54,6 +54,14 @@ mod tests {
     use super::*;
     use crate::iterm2::client::iterm2;
 
+    #[test]
+    fn test_adopted_session_new_stores_fields() {
+        let s = AdoptedSession::new(99, "iterm2-sess-xyz".to_string(), "/home/user/proj".to_string());
+        assert_eq!(s.task_id, 99);
+        assert_eq!(s.iterm2_session_id, "iterm2-sess-xyz");
+        assert_eq!(s.cwd, "/home/user/proj");
+    }
+
     fn make_line(text: &str, hard_eol: bool) -> iterm2::LineContents {
         iterm2::LineContents {
             text: Some(text.to_string()),

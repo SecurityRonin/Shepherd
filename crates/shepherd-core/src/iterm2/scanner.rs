@@ -205,6 +205,31 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_mark_adopted_tracks_session() {
+        let mut scanner = Scanner::new(std::collections::HashSet::new());
+        assert!(!scanner.adopted.contains("sess-a"));
+        scanner.mark_adopted("sess-a".to_string());
+        assert!(scanner.adopted.contains("sess-a"));
+    }
+
+    #[test]
+    fn test_mark_terminated_removes_session() {
+        let mut adopted = std::collections::HashSet::new();
+        adopted.insert("sess-b".to_string());
+        let mut scanner = Scanner::new(adopted);
+        assert!(scanner.adopted.contains("sess-b"));
+        scanner.mark_terminated("sess-b");
+        assert!(!scanner.adopted.contains("sess-b"));
+    }
+
+    #[test]
+    fn test_mark_terminated_noop_when_not_adopted() {
+        let mut scanner = Scanner::new(std::collections::HashSet::new());
+        // Should not panic when removing a session that was never added
+        scanner.mark_terminated("never-adopted");
+    }
+
     #[tokio::test]
     async fn test_scan_finds_claude_session() {
         struct MockT { calls: usize }

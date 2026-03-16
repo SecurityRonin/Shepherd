@@ -129,6 +129,163 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_resume_session_not_found() {
+        let state = test_state().await;
+        let app = crate::build_router(state);
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/sessions/9999/resume")
+                    .header("content-type", "application/json")
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_resume_session_non_iterm2_task_returns_bad_request() {
+        let state = test_state().await;
+        let task_id = {
+            let conn = state.db.lock().await;
+            shepherd_core::db::queries::create_task(&conn, &CreateTask {
+                title: "regular task".into(),
+                prompt: None,
+                agent_id: "claude".into(),
+                repo_path: None,
+                isolation_mode: None,
+                iterm2_session_id: None,
+            })
+            .unwrap()
+            .id
+        };
+        let app = crate::build_router(state);
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(&format!("/api/sessions/{task_id}/resume"))
+                    .header("content-type", "application/json")
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_resume_session_iterm2_task_returns_accepted() {
+        let state = test_state().await;
+        let task_id = {
+            let conn = state.db.lock().await;
+            shepherd_core::db::queries::create_task(&conn, &CreateTask {
+                title: "iTerm2 task".into(),
+                prompt: None,
+                agent_id: "iterm2-adopted".into(),
+                repo_path: Some("/tmp/proj".into()),
+                isolation_mode: None,
+                iterm2_session_id: Some("sess-resume-test".into()),
+            })
+            .unwrap()
+            .id
+        };
+        let app = crate::build_router(state);
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(&format!("/api/sessions/{task_id}/resume"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"claude_session_id":"abc-session"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    }
+
+    #[tokio::test]
+    async fn test_fresh_session_not_found() {
+        let state = test_state().await;
+        let app = crate::build_router(state);
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/sessions/9999/fresh")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_fresh_session_non_iterm2_task_returns_bad_request() {
+        let state = test_state().await;
+        let task_id = {
+            let conn = state.db.lock().await;
+            shepherd_core::db::queries::create_task(&conn, &CreateTask {
+                title: "regular task".into(),
+                prompt: None,
+                agent_id: "claude".into(),
+                repo_path: None,
+                isolation_mode: None,
+                iterm2_session_id: None,
+            })
+            .unwrap()
+            .id
+        };
+        let app = crate::build_router(state);
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(&format!("/api/sessions/{task_id}/fresh"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_fresh_session_iterm2_task_returns_accepted() {
+        let state = test_state().await;
+        let task_id = {
+            let conn = state.db.lock().await;
+            shepherd_core::db::queries::create_task(&conn, &CreateTask {
+                title: "iTerm2 task".into(),
+                prompt: None,
+                agent_id: "iterm2-adopted".into(),
+                repo_path: Some("/tmp/proj".into()),
+                isolation_mode: None,
+                iterm2_session_id: Some("sess-fresh-test".into()),
+            })
+            .unwrap()
+            .id
+        };
+        let app = crate::build_router(state);
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(&format!("/api/sessions/{task_id}/fresh"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    }
+
+    #[tokio::test]
     async fn test_list_claude_sessions_non_iterm2_task() {
         let state = test_state().await;
         let task_id = {

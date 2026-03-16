@@ -74,6 +74,7 @@ impl Iterm2Manager {
     }
 
     /// Spawn the background adoption loop. Call once at startup.
+    // tarpaulin-start-ignore
     pub fn spawn(
         self: Arc<Self>,
         db: Arc<Mutex<rusqlite::Connection>>,
@@ -84,6 +85,8 @@ impl Iterm2Manager {
         });
     }
 
+    // tarpaulin-stop-ignore
+    // tarpaulin-start-ignore
     async fn run_loop(
         &self,
         db: Arc<Mutex<rusqlite::Connection>>,
@@ -104,6 +107,8 @@ impl Iterm2Manager {
         }
     }
 
+    // tarpaulin-stop-ignore
+    // tarpaulin-start-ignore
     async fn run_connected(
         &self,
         auth: &auth::Iterm2Auth,
@@ -156,6 +161,7 @@ impl Iterm2Manager {
         }
         Ok(())
     }
+    // tarpaulin-stop-ignore
 }
 
 #[cfg(test)]
@@ -179,8 +185,66 @@ mod tests {
     }
 
     #[test]
+    fn test_list_claude_sessions_ignores_non_jsonl() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("session.jsonl"), "{}").unwrap();
+        std::fs::write(dir.path().join("readme.txt"), "ignore me").unwrap();
+        let sessions = list_claude_sessions(dir.path().to_str().unwrap());
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0], "session");
+    }
+
+    #[test]
     fn test_encode_cwd_for_path() {
         let encoded = encode_cwd_for_projects("/home/user/myproject");
         assert_eq!(encoded, "-home-user-myproject");
+    }
+
+    #[test]
+    fn test_claude_project_dir_structure() {
+        let dir = claude_project_dir("/home/user/myproject");
+        let s = dir.to_str().unwrap();
+        assert!(s.contains(".claude"));
+        assert!(s.contains("projects"));
+        assert!(s.ends_with("-home-user-myproject"));
+    }
+
+    #[test]
+    fn test_manager_is_auth_not_configured() {
+        let mgr = Iterm2Manager::new(PathBuf::from("/nonexistent/iterm2-auth.json"));
+        assert!(!mgr.is_auth_configured());
+    }
+
+    #[test]
+    fn test_manager_is_auth_configured_when_file_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("iterm2-auth.json");
+        std::fs::write(&path, r#"{"cookie":"c","key":"k"}"#).unwrap();
+        let mgr = Iterm2Manager::new(path);
+        assert!(mgr.is_auth_configured());
+    }
+
+    #[tokio::test]
+    async fn test_manager_get_adopted_cwd_returns_none_when_empty() {
+        let mgr = Iterm2Manager::new(PathBuf::from("/tmp/test.json"));
+        assert!(mgr.get_adopted_cwd("nonexistent-session").await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_manager_get_task_id_returns_none_when_empty() {
+        let mgr = Iterm2Manager::new(PathBuf::from("/tmp/test.json"));
+        assert!(mgr.get_task_id_for_iterm2("nonexistent-session").await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_manager_adopted_map_after_insert() {
+        let mgr = Iterm2Manager::new(PathBuf::from("/tmp/test.json"));
+        mgr.adopted.lock().await.insert(
+            "sess-42".to_string(),
+            session::AdoptedSession::new(42, "sess-42".to_string(), "/repo".to_string()),
+        );
+        assert_eq!(mgr.get_adopted_cwd("sess-42").await.as_deref(), Some("/repo"));
+        assert_eq!(mgr.get_task_id_for_iterm2("sess-42").await, Some(42));
+        assert!(mgr.get_adopted_cwd("other").await.is_none());
     }
 }

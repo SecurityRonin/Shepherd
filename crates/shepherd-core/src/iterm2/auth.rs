@@ -90,4 +90,22 @@ mod tests {
         let result = load_auth(f.path());
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_default_auth_path_is_in_shepherd_dir() {
+        let path = default_auth_path();
+        let s = path.to_str().unwrap();
+        assert!(s.contains(".shepherd"), "path should be under ~/.shepherd: {s}");
+        assert!(s.ends_with("iterm2-auth.json"), "path should end with iterm2-auth.json: {s}");
+    }
+
+    #[test]
+    fn test_watch_auth_does_not_panic_on_bad_path() {
+        // watch_auth spawns a background thread; verify it starts without panic
+        // even when the watched path doesn't exist.
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+        watch_auth(std::path::PathBuf::from("/nonexistent/iterm2-auth.json"), tx);
+        // Give the thread a moment to start and exit gracefully
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
 }
