@@ -94,7 +94,8 @@ shepherd-pro/
 ## Environment Variables
 
 ```bash
-# OpenRouter — covers logo (Ideogram), name, northstar, vision (Claude 3.5 Sonnet)
+# OpenRouter — covers logo (ideogram/ideogram-v2), name (claude-sonnet-4-6),
+#              northstar (claude-opus-4-6), vision (claude-sonnet-4-6)
 OPENROUTER_API_KEY=sk-or-v1-...
 
 # Firecrawl — scrape + crawl
@@ -299,16 +300,16 @@ All success responses include `credits_remaining: number`.
 
 **POST /api/generate/logo**
 Request: `{ product_name, product_description?, style, colors[], variants: number }`
-Response: `{ variants: [{ index, url }], credits_remaining }`
+Response: `{ generation_id, variants: [{ index, url }], credits_remaining }`
 Note: return exactly `variants` items — do not hardcode 4.
 
 **POST /api/generate/name**
 Request: `{ description, vibes[], count? }`
-Response: `{ candidates: [{ name, tagline?, reasoning, domains: [{ domain, available }] }], credits_remaining }`
+Response: `{ generation_id, candidates: [{ name, tagline?, reasoning, domains: [{ domain, available }] }], credits_remaining }`
 
 **POST /api/generate/northstar**
 Request: `{ phase: string, context: object }`
-Response: `{ phase, result: object, credits_remaining }`
+Response: `{ generation_id, phase, result: object, credits_remaining }`
 
 **POST /api/generate/scrape**
 Request: `{ url, formats?: string[] }`
