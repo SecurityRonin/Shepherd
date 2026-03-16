@@ -155,20 +155,20 @@ No single tool combines Kanban + rules engine + quality gates + multi-agent + on
 
 ### Agent-agnostic from day one
 
-Nine first-class agents, plus iTerm2 session adoption for agents already running in your terminal. Drop a TOML file to add any other terminal-based agent.
+Nine agents supported out of the box, plus iTerm2 session adoption for agents already running in your terminal. Drop a TOML file to add any other terminal-based agent.
 
-| Agent | Status | Hook Protocol | iTerm2 Adoption |
-|-------|--------|---------------|-----------------|
-| Claude Code | First-class | Native hooks | ✓ |
-| Codex CLI | First-class | Output parsing | ✓ |
-| AdaL | First-class | Output parsing | ✓ (featured partner) |
-| OpenCode | First-class | Output parsing | ✓ |
-| Gemini CLI | First-class | Output parsing | ✓ |
-| Aider | First-class | Output parsing | ✓ |
-| Goose | First-class | Output parsing | ✓ |
-| Plandex | First-class | Output parsing | ✓ |
-| gptme | First-class | Output parsing | ✓ |
-| Your agent | [Write a TOML](docs/adapters.md) | Output parsing | — |
+| Agent | Hook Protocol | iTerm2 Adoption |
+|-------|---------------|-----------------|
+| Claude Code | Native hooks | ✓ |
+| Codex CLI | Output parsing | ✓ |
+| AdaL | Output parsing | ✓ |
+| OpenCode | Output parsing | ✓ |
+| Gemini CLI | Output parsing | ✓ |
+| Aider | Output parsing | ✓ |
+| Goose | Output parsing | ✓ |
+| Plandex | Output parsing | ✓ |
+| gptme | Output parsing | ✓ |
+| Your agent | [Write a TOML](docs/adapters.md) | — |
 
 ### YOLO mode with a brain
 
@@ -321,7 +321,7 @@ FRONTEND (Tauri 2.0 · ~600KB binary)
     ▼
 BACKEND (Rust · localhost)
 ├── PTY Manager      — spawn/kill agents, stream output, nono.sh sandbox
-├── Agent Adapters   — TOML-defined, 6 first-class + community
+├── Agent Adapters   — TOML-defined, 9 built-in + community
 ├── YOLO Engine      — YAML rules, deny/allow, audit log
 ├── Quality Gates    — lint/format/type/test + plugin gates
 ├── LLM Client       — OpenAI, Anthropic, Ollama (provider-agnostic)
@@ -430,7 +430,7 @@ Restart Shepherd. Your agent shows up in the New Task dropdown.
 
 ## Roadmap
 
-**v1.0** (current): Core engine, Kanban board, 9 first-class agents, YOLO engine, quality gates, PR pipeline, CLI with shell completions, LLM client (OpenAI/Anthropic/Ollama), name generator, logo generator, North Star PMF wizard, contextual triggers, nono.sh sandbox, ecosystem auto-install (Superpowers + context-mode + Alaya), new project wizard, iTerm2 session adoption (9 agents, session picker, permission prompt detection, bridge script). 1,100+ tests.
+**v1.0** (current): Core engine, Kanban board, 9 agents, YOLO engine, quality gates, PR pipeline, CLI with shell completions, LLM client (OpenAI/Anthropic/Ollama), name generator, logo generator, North Star PMF wizard, contextual triggers, nono.sh sandbox, ecosystem auto-install (Superpowers + context-mode + Alaya), new project wizard, iTerm2 session adoption (9 agents, session picker, permission prompt detection, bridge script). 1,100+ tests.
 
 **v1.1**: Best-of-N (run same task on multiple agents, compare outputs). Issue tracker integration (Linear, GitHub Issues, Jira). Event-driven automations.
 
