@@ -1,10 +1,30 @@
 use crate::iterm2::client::{iterm2, iterm2::list_sessions_response, Iterm2Transport};
 use std::collections::HashSet;
 
+/// Pairs of (jobName substring, canonical agent identifier).
+/// Order matters: first match wins.
+const KNOWN_AGENTS: &[(&str, &str)] = &[
+    ("claude", "claude-code"),
+    ("codex", "codex"),
+    ("aider", "aider"),
+    ("gemini", "gemini-cli"),
+    ("opencode", "opencode"),
+];
+
+/// Return the canonical agent name if `job_name` matches a known agent.
+pub fn detect_agent(job_name: &str) -> Option<&'static str> {
+    KNOWN_AGENTS
+        .iter()
+        .find(|(pat, _)| job_name.contains(*pat))
+        .map(|(_, name)| *name)
+}
+
 #[derive(Debug)]
 pub struct AdoptionCandidate {
     pub iterm2_session_id: String,
     pub cwd: String,
+    /// Canonical name of the detected coding agent (e.g. "claude-code", "aider").
+    pub agent_name: String,
 }
 
 pub struct Scanner {
@@ -25,7 +45,7 @@ impl Scanner {
     }
 
     /// One scan pass: list sessions, query jobName for unadopted ones,
-    /// return candidates where jobName contains "claude".
+    /// return candidates where jobName matches a known coding agent.
     pub async fn scan(
         &mut self,
         transport: &mut dyn Iterm2Transport,
@@ -72,10 +92,11 @@ impl Scanner {
                 _ => String::new(),
             };
 
-            // values are JSON-encoded: check if it contains "claude"
-            if !job_name.contains("claude") {
+            // values are JSON-encoded: check if it matches a known coding agent
+            let Some(agent_name) = detect_agent(&job_name) else {
                 continue;
-            }
+            };
+            let agent_name = agent_name.to_string();
 
             // Query CWD (path variable, requires shell integration)
             let path_resp = transport.send_recv(iterm2::ClientOriginatedMessage {
@@ -111,7 +132,7 @@ impl Scanner {
                 )),
             }).await?;
 
-            candidates.push(AdoptionCandidate { iterm2_session_id: session_id, cwd });
+            candidates.push(AdoptionCandidate { iterm2_session_id: session_id, cwd, agent_name });
         }
         Ok(candidates)
     }
@@ -255,6 +276,7 @@ mod tests {
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].iterm2_session_id, "sess-1");
         assert_eq!(candidates[0].cwd, "/home/user/myproject");
+        assert_eq!(candidates[0].agent_name, "claude-code");
     }
 
     #[tokio::test]
@@ -299,5 +321,119 @@ mod tests {
         let mut scanner = Scanner::new(adopted);
         let candidates = scanner.scan(&mut MockT).await.unwrap();
         assert!(candidates.is_empty());
+    }
+
+    // ── detect_agent unit tests ──────────────────────────────────────────────
+
+    #[test]
+    fn test_detect_agent_claude() {
+        assert_eq!(detect_agent("claude"), Some("claude-code"));
+    }
+
+    #[test]
+    fn test_detect_agent_codex() {
+        assert_eq!(detect_agent("codex"), Some("codex"));
+    }
+
+    #[test]
+    fn test_detect_agent_aider() {
+        assert_eq!(detect_agent("aider"), Some("aider"));
+    }
+
+    #[test]
+    fn test_detect_agent_gemini() {
+        assert_eq!(detect_agent("gemini"), Some("gemini-cli"));
+    }
+
+    #[test]
+    fn test_detect_agent_opencode() {
+        assert_eq!(detect_agent("opencode"), Some("opencode"));
+    }
+
+    #[test]
+    fn test_detect_agent_unknown_returns_none() {
+        assert_eq!(detect_agent("vim"), None);
+        assert_eq!(detect_agent("bash"), None);
+        assert_eq!(detect_agent(""), None);
+    }
+
+    #[test]
+    fn test_detect_agent_substring_match() {
+        // jobName values are JSON-encoded; may include quotes or path prefixes
+        assert_eq!(detect_agent("\"claude\""), Some("claude-code"));
+        assert_eq!(detect_agent("/usr/local/bin/aider"), Some("aider"));
+    }
+
+    // ── scan tests for non-claude agents ────────────────────────────────────
+
+    /// Helper: a mock that returns a single-session list then two variable responses.
+    macro_rules! make_agent_mock {
+        ($name:ident, $sess:expr, $job:expr, $cwd:expr) => {
+            struct $name { calls: usize }
+            #[async_trait::async_trait]
+            impl crate::iterm2::client::Iterm2Transport for $name {
+                async fn send_recv(
+                    &mut self,
+                    _: iterm2::ClientOriginatedMessage,
+                ) -> anyhow::Result<iterm2::ServerOriginatedMessage> {
+                    let r = match self.calls {
+                        0 => make_list_response(vec![($sess, "title")]),
+                        1 => make_variable_response($job),
+                        2 => make_variable_response($cwd),
+                        _ => panic!("unexpected call {}", self.calls),
+                    };
+                    self.calls += 1;
+                    Ok(r)
+                }
+                async fn send_only(
+                    &mut self,
+                    _: iterm2::ClientOriginatedMessage,
+                ) -> anyhow::Result<()> {
+                    Ok(())
+                }
+                async fn recv(
+                    &mut self,
+                ) -> anyhow::Result<iterm2::ServerOriginatedMessage> {
+                    futures_util::future::pending().await
+                }
+            }
+        };
+    }
+
+    #[tokio::test]
+    async fn test_scan_finds_codex_session() {
+        make_agent_mock!(MockCodex, "sess-codex", "codex", "/home/user/proj");
+        let mut scanner = Scanner::new(std::collections::HashSet::new());
+        let candidates = scanner.scan(&mut MockCodex { calls: 0 }).await.unwrap();
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].agent_name, "codex");
+        assert_eq!(candidates[0].cwd, "/home/user/proj");
+    }
+
+    #[tokio::test]
+    async fn test_scan_finds_aider_session() {
+        make_agent_mock!(MockAider, "sess-aider", "aider", "/src/myrepo");
+        let mut scanner = Scanner::new(std::collections::HashSet::new());
+        let candidates = scanner.scan(&mut MockAider { calls: 0 }).await.unwrap();
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].agent_name, "aider");
+    }
+
+    #[tokio::test]
+    async fn test_scan_finds_gemini_session() {
+        make_agent_mock!(MockGemini, "sess-gemini", "gemini", "/src/project");
+        let mut scanner = Scanner::new(std::collections::HashSet::new());
+        let candidates = scanner.scan(&mut MockGemini { calls: 0 }).await.unwrap();
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].agent_name, "gemini-cli");
+    }
+
+    #[tokio::test]
+    async fn test_scan_finds_opencode_session() {
+        make_agent_mock!(MockOpencode, "sess-opencode", "opencode", "/src/app");
+        let mut scanner = Scanner::new(std::collections::HashSet::new());
+        let candidates = scanner.scan(&mut MockOpencode { calls: 0 }).await.unwrap();
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].agent_name, "opencode");
     }
 }

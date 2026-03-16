@@ -132,16 +132,17 @@ impl Iterm2Manager {
             let task = {
                 let conn = db.lock().await;
                 crate::db::queries::create_task(&conn, &CreateTask {
-                    title: format!("iTerm2: {}", candidate.cwd),
+                    title: format!("{}: {}", candidate.agent_name, candidate.cwd),
                     prompt: None,
-                    agent_id: "iterm2-adopted".to_string(),
+                    agent_id: format!("iterm2-{}", candidate.agent_name),
                     repo_path: Some(candidate.cwd.clone()),
                     isolation_mode: Some("none".to_string()),
                     iterm2_session_id: Some(candidate.iterm2_session_id.clone()),
                 })?
             };
             tracing::info!(
-                "Adopted iTerm2 session {} as task {}",
+                "Adopted {} session {} as task {}",
+                candidate.agent_name,
                 candidate.iterm2_session_id,
                 task.id
             );
