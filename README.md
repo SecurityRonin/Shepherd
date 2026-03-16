@@ -11,6 +11,7 @@
 
 <p align="center">
   <a href="https://shepherd.codes">Website</a> ·
+  <a href="#get-started-in-60-seconds">Quick Start</a> ·
   <a href="#install">Install</a> ·
   <a href="#features">Features</a> ·
   <a href="#adapters">Adapters</a> ·
@@ -33,6 +34,83 @@ You have 12 agents running across 4 repos. One needs approval. Two finished 10 m
 You built this workflow. You love these tools. But managing them? That part sucks.
 
 Shepherd fixes that.
+
+---
+
+## Get started in 60 seconds
+
+**Install:**
+
+```bash
+# macOS
+brew install shepherd-codes/tap/shepherd
+
+# Linux
+curl -fsSL https://shepherd.codes/install.sh | sh
+
+# Windows
+winget install shepherd-codes.shepherd
+```
+
+**Then run:**
+
+```bash
+shepherd
+```
+
+That's it. The GUI opens. What happens next depends on how you work:
+
+---
+
+### Path A — You already have agents running in iTerm2
+
+Shepherd finds them automatically. No config, no restart, no flags.
+
+Every iTerm2 pane running a known agent (Claude Code, Codex, AdaL, Aider, Gemini CLI, OpenCode, Goose, Plandex, gptme) appears on the Kanban board within seconds. Click any card to see the terminal, approve permissions, or review diffs.
+
+**Make adoption persistent across new windows** (30 seconds, one-time):
+
+1. Open iTerm2 → **Preferences → Profiles → General**
+2. Under **"Send text at start"**, add: `shepherd-bridge &`
+
+From then on, every new iTerm2 session automatically registers with Shepherd.
+
+---
+
+### Path B — Start a new task from Shepherd
+
+```bash
+# From the GUI: click "+ New Task", fill in the form, pick your agent
+# Or from the CLI:
+shepherd new "Add rate limiting to the API" \
+  --agent claude-code \
+  --repo ~/src/myapp \
+  --isolation worktree
+```
+
+Shepherd spawns the agent in an isolated git worktree, streams its output to the board, and waits for your input when it needs approval.
+
+---
+
+### Daily workflow (once you're set up)
+
+```
+1. Open Shepherd (or it's already running in the background)
+2. Glance at the board — see what's running, what needs you, what's done
+3. Click a "Needs Input" card → approve or deny in one keystroke (⌘ ⏎)
+4. When a task reaches "Review" → inspect the diff inline
+5. Click "Create PR" → done. Shepherd stages, commits, rebases, and pushes.
+```
+
+**Keyboard shortcuts that matter:**
+
+| Key | Action |
+|-----|--------|
+| `⌘ N` | New task |
+| `⌘ ⏎` | Approve current |
+| `⌘ ⇧ ⏎` | Approve all pending |
+| `⌘ K` | Command palette |
+| `⌘ 0` | Toggle overview / focus |
 
 ---
 
@@ -272,8 +350,10 @@ AGENTS (your existing tools, unchanged)
 
 <h2 id="install">Install</h2>
 
+See **[Get started in 60 seconds](#get-started-in-60-seconds)** at the top for the full quickstart.
+
 ```bash
-# macOS (Homebrew)
+# macOS
 brew install shepherd-codes/tap/shepherd
 
 # Linux
@@ -284,25 +364,7 @@ winget install shepherd-codes.shepherd
 
 # From source
 git clone https://github.com/SecurityRonin/Shepherd.git
-cd Shepherd && cargo build --release
-```
-
-## Quick start
-
-```bash
-# 1. Start Shepherd
-shepherd
-
-# 2. Create your first task
-shepherd new "Add user authentication to the API" \
-  --agent claude-code \
-  --repo ~/src/myapp \
-  --isolation worktree
-
-# 3. Watch it work from the Kanban board
-# 4. Approve permissions as they come in
-# 5. Review diffs when it's done
-# 6. One-click PR
+cd Shepherd && cargo build --release && npm install && npm run build
 ```
 
 <h2 id="adapters">Writing a custom adapter</h2>
