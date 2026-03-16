@@ -28,6 +28,7 @@ async fn start_test_server() -> (String, tokio::task::JoinHandle<()>) {
             pty,
             event_tx,
             llm_provider: None,
+            iterm2: None,
         });
 
         let app = shepherd_server::build_router(state);

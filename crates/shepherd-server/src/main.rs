@@ -1,4 +1,4 @@
-use shepherd_core::{adapters::AdapterRegistry, config, db, pty::{PtyManager, sandbox::SandboxProfile}, yolo::YoloEngine};
+use shepherd_core::{adapters::AdapterRegistry, config, db, iterm2::{auth::default_auth_path, Iterm2Manager}, pty::{PtyManager, sandbox::SandboxProfile}, yolo::YoloEngine};
 use shepherd_server::state::AppState;
 use std::sync::Arc;
 use tokio::sync::{broadcast, Mutex};
@@ -63,6 +63,8 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
+    let iterm2 = Arc::new(Iterm2Manager::new(default_auth_path()));
+
     let state = Arc::new(AppState {
         db: Arc::new(Mutex::new(conn)),
         config: cfg,
@@ -71,7 +73,12 @@ async fn main() -> anyhow::Result<()> {
         pty,
         event_tx,
         llm_provider: None,
+        iterm2: Some(iterm2.clone()),
     });
+
+    if let Some(ref mgr) = state.iterm2 {
+        mgr.clone().spawn(state.db.clone(), state.event_tx.clone());
+    }
 
     let app = shepherd_server::build_router(state.clone());
 

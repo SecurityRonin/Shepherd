@@ -2,6 +2,7 @@ use rusqlite::Connection;
 use shepherd_core::adapters::AdapterRegistry;
 use shepherd_core::config::types::ShepherdConfig;
 use shepherd_core::events::ServerEvent;
+use shepherd_core::iterm2::Iterm2Manager;
 use shepherd_core::pty::PtyManager;
 use shepherd_core::yolo::YoloEngine;
 use std::sync::Arc;
@@ -15,4 +16,5 @@ pub struct AppState {
     pub pty: PtyManager,
     pub event_tx: broadcast::Sender<ServerEvent>,
     pub llm_provider: Option<Box<dyn shepherd_core::llm::LlmProvider>>,
+    pub iterm2: Option<Arc<Iterm2Manager>>,
 }

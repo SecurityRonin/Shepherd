@@ -1,4 +1,5 @@
 pub mod gates;
+pub mod iterm2;
 pub mod health;
 pub mod logogen;
 pub mod namegen;
