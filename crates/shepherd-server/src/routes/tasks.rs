@@ -39,6 +39,7 @@ pub async fn create_task(
         status: task.status.as_str().to_string(),
         branch: task.branch.clone(),
         repo_path: task.repo_path.clone(),
+        iterm2_session_id: task.iterm2_session_id.clone(),
     }));
     Ok((
         StatusCode::CREATED,

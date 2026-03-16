@@ -6,7 +6,7 @@ use super::models::{CreateTask, Task, TaskStatus};
 /// Map a database row to a `Task` struct.
 ///
 /// Expects columns in order: id, title, prompt, agent_id, repo_path,
-/// branch, isolation_mode, status, created_at, updated_at.
+/// branch, isolation_mode, status, created_at, updated_at, iterm2_session_id.
 fn row_to_task(row: &Row) -> rusqlite::Result<Task> {
     Ok(Task {
         id: row.get(0)?,
@@ -20,18 +20,20 @@ fn row_to_task(row: &Row) -> rusqlite::Result<Task> {
             .unwrap_or(TaskStatus::Queued),
         created_at: row.get(8)?,
         updated_at: row.get(9)?,
+        iterm2_session_id: row.get(10)?,
     })
 }
 
 pub fn create_task(conn: &Connection, input: &CreateTask) -> Result<Task> {
     conn.execute(
-        "INSERT INTO tasks (title, prompt, agent_id, repo_path, isolation_mode) VALUES (?1, ?2, ?3, ?4, ?5)",
+        "INSERT INTO tasks (title, prompt, agent_id, repo_path, isolation_mode, iterm2_session_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
         params![
             input.title,
             input.prompt.as_deref().unwrap_or(""),
             input.agent_id,
             input.repo_path.as_deref().unwrap_or(""),
             input.isolation_mode.as_deref().unwrap_or("worktree"),
+            input.iterm2_session_id,
         ],
     )?;
     let id = conn.last_insert_rowid();
@@ -40,7 +42,7 @@ pub fn create_task(conn: &Connection, input: &CreateTask) -> Result<Task> {
 
 pub fn get_task(conn: &Connection, id: i64) -> Result<Task> {
     let task = conn.query_row(
-        "SELECT id, title, prompt, agent_id, repo_path, branch, isolation_mode, status, created_at, updated_at FROM tasks WHERE id = ?1",
+        "SELECT id, title, prompt, agent_id, repo_path, branch, isolation_mode, status, created_at, updated_at, iterm2_session_id FROM tasks WHERE id = ?1",
         params![id],
         row_to_task,
     )?;
@@ -49,7 +51,7 @@ pub fn get_task(conn: &Connection, id: i64) -> Result<Task> {
 
 pub fn list_tasks(conn: &Connection) -> Result<Vec<Task>> {
     let mut stmt = conn.prepare(
-        "SELECT id, title, prompt, agent_id, repo_path, branch, isolation_mode, status, created_at, updated_at FROM tasks ORDER BY id"
+        "SELECT id, title, prompt, agent_id, repo_path, branch, isolation_mode, status, created_at, updated_at, iterm2_session_id FROM tasks ORDER BY id"
     )?;
     let tasks = stmt.query_map([], row_to_task)?
         .collect::<Result<Vec<_>, _>>()?;
@@ -77,6 +79,19 @@ pub fn count_by_status(conn: &Connection) -> Result<Vec<(String, i64)>> {
     Ok(counts)
 }
 
+pub fn find_task_by_iterm2_id(
+    conn: &Connection,
+    iterm2_id: &str,
+) -> rusqlite::Result<Option<Task>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, title, prompt, agent_id, repo_path, branch, isolation_mode,
+                status, created_at, updated_at, iterm2_session_id
+         FROM tasks WHERE iterm2_session_id = ?1 LIMIT 1",
+    )?;
+    let mut rows = stmt.query_map([iterm2_id], row_to_task)?;
+    rows.next().transpose()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -93,6 +108,7 @@ mod tests {
                 agent_id: "claude-code".into(),
                 repo_path: Some("/tmp/test".into()),
                 isolation_mode: None,
+                iterm2_session_id: None,
             },
         )
         .unwrap();
@@ -112,6 +128,7 @@ mod tests {
             agent_id: "claude-code".into(),
             repo_path: None,
             isolation_mode: None,
+            iterm2_session_id: None,
         }).unwrap();
         create_task(&conn, &CreateTask {
             title: "Task 2".into(),
@@ -119,6 +136,7 @@ mod tests {
             agent_id: "codex".into(),
             repo_path: None,
             isolation_mode: None,
+            iterm2_session_id: None,
         }).unwrap();
 
         let tasks = list_tasks(&conn).unwrap();
@@ -134,6 +152,7 @@ mod tests {
             agent_id: "claude-code".into(),
             repo_path: None,
             isolation_mode: None,
+            iterm2_session_id: None,
         }).unwrap();
 
         update_task_status(&conn, task.id, &TaskStatus::Running).unwrap();
@@ -145,10 +164,10 @@ mod tests {
     fn test_count_by_status() {
         let conn = open_memory().unwrap();
         create_task(&conn, &CreateTask {
-            title: "T1".into(), prompt: None, agent_id: "a".into(), repo_path: None, isolation_mode: None,
+            title: "T1".into(), prompt: None, agent_id: "a".into(), repo_path: None, isolation_mode: None, iterm2_session_id: None,
         }).unwrap();
         create_task(&conn, &CreateTask {
-            title: "T2".into(), prompt: None, agent_id: "a".into(), repo_path: None, isolation_mode: None,
+            title: "T2".into(), prompt: None, agent_id: "a".into(), repo_path: None, isolation_mode: None, iterm2_session_id: None,
         }).unwrap();
 
         let counts = count_by_status(&conn).unwrap();
@@ -167,6 +186,7 @@ mod tests {
                 agent_id: "claude-code".into(),
                 repo_path: None,
                 isolation_mode: None,
+                iterm2_session_id: None,
             },
         )
         .unwrap();
@@ -177,5 +197,44 @@ mod tests {
 
         let tasks = list_tasks(&conn).unwrap();
         assert!(tasks.is_empty());
+    }
+
+    #[test]
+    fn test_find_task_by_iterm2_id_found() {
+        let conn = open_memory().unwrap();
+        let task = create_task(&conn, &CreateTask {
+            title: "iterm2 session".into(),
+            prompt: None,
+            agent_id: "claude".into(),
+            repo_path: None,
+            isolation_mode: None,
+            iterm2_session_id: Some("session-xyz".into()),
+        }).unwrap();
+        let found = find_task_by_iterm2_id(&conn, "session-xyz").unwrap();
+        assert_eq!(found.map(|t| t.id), Some(task.id));
+    }
+
+    #[test]
+    fn test_find_task_by_iterm2_id_not_found() {
+        let conn = open_memory().unwrap();
+        let result = find_task_by_iterm2_id(&conn, "no-such-id").unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_update_task_status_changes_status() {
+        use crate::db::models::TaskStatus;
+        let conn = open_memory().unwrap();
+        let task = create_task(&conn, &CreateTask {
+            title: "status test".into(),
+            prompt: None,
+            agent_id: "claude".into(),
+            repo_path: None,
+            isolation_mode: None,
+            iterm2_session_id: None,
+        }).unwrap();
+        update_task_status(&conn, task.id, &TaskStatus::Done).unwrap();
+        let updated = get_task(&conn, task.id).unwrap();
+        assert_eq!(updated.status, TaskStatus::Done);
     }
 }

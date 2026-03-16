@@ -48,6 +48,7 @@ pub struct Task {
     pub status: TaskStatus,
     pub created_at: String,
     pub updated_at: String,
+    pub iterm2_session_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,6 +58,7 @@ pub struct CreateTask {
     pub agent_id: String,
     pub repo_path: Option<String>,
     pub isolation_mode: Option<String>,
+    pub iterm2_session_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -130,6 +132,7 @@ mod tests {
             agent_id: "claude-code".into(),
             repo_path: Some("/home/user/repo".into()),
             isolation_mode: Some("worktree".into()),
+            iterm2_session_id: None,
         };
         let json = serde_json::to_string(&task).unwrap();
         let parsed: CreateTask = serde_json::from_str(&json).unwrap();
@@ -148,6 +151,7 @@ mod tests {
             agent_id: "codex".into(),
             repo_path: None,
             isolation_mode: None,
+            iterm2_session_id: None,
         };
         let json = serde_json::to_string(&task).unwrap();
         let parsed: CreateTask = serde_json::from_str(&json).unwrap();

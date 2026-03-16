@@ -52,6 +52,7 @@ pub struct TaskEvent {
     pub status: String,
     pub branch: String,
     pub repo_path: String,
+    pub iterm2_session_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -127,6 +128,7 @@ mod tests {
             status: "queued".into(),
             branch: "feat/test".into(),
             repo_path: "/tmp".into(),
+            iterm2_session_id: None,
         });
         let json = serde_json::to_string(&event).unwrap();
         assert!(json.contains("task_created"));
@@ -228,6 +230,7 @@ mod tests {
                 status: "running".into(),
                 branch: "main".into(),
                 repo_path: "/repo".into(),
+                iterm2_session_id: None,
             }],
             pending_permissions: vec![PermissionEvent {
                 id: 10,
@@ -428,6 +431,7 @@ mod tests {
                     status: "queued".into(),
                     branch: "feat/a".into(),
                     repo_path: "/repo/a".into(),
+                    iterm2_session_id: None,
                 },
                 TaskEvent {
                     id: 2,
@@ -436,6 +440,7 @@ mod tests {
                     status: "done".into(),
                     branch: "feat/b".into(),
                     repo_path: "/repo/b".into(),
+                    iterm2_session_id: None,
                 },
             ],
             pending_permissions: vec![],

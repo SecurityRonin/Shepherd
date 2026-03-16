@@ -64,6 +64,7 @@ async fn handle_client_event(event: ClientEvent, state: &AppState) {
                 agent_id,
                 repo_path,
                 isolation_mode,
+                iterm2_session_id: None,
             };
             if let Ok(task) = shepherd_core::db::queries::create_task(&db, &input) {
                 let _ = state
@@ -76,6 +77,7 @@ async fn handle_client_event(event: ClientEvent, state: &AppState) {
                             status: task.status.as_str().to_string(),
                             branch: task.branch,
                             repo_path: task.repo_path,
+                            iterm2_session_id: task.iterm2_session_id,
                         },
                     ));
             }

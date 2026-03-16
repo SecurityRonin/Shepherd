@@ -83,6 +83,12 @@ fn migrate(conn: &Connection) -> Result<()> {
         ",
     )?;
 
+    // Idempotent: silently ignored if column already exists
+    conn.execute(
+        "ALTER TABLE tasks ADD COLUMN iterm2_session_id TEXT",
+        [],
+    ).ok();
+
     // Context orchestrator tables
     crate::context::feedback::migrate(conn)?;
     crate::context::index::migrate(conn)?;
@@ -124,5 +130,23 @@ mod tests {
             )
             .unwrap();
         assert_eq!(name, "default");
+    }
+
+    #[test]
+    fn test_tasks_table_has_iterm2_session_id_column() {
+        let conn = open_memory().unwrap();
+        conn.execute(
+            "INSERT INTO tasks (title, prompt, agent_id, repo_path, branch, isolation_mode, status, iterm2_session_id)
+             VALUES ('t', '', 'claude', '', '', 'none', 'running', 'abc-123')",
+            [],
+        ).unwrap();
+        let val: Option<String> = conn
+            .query_row(
+                "SELECT iterm2_session_id FROM tasks WHERE title = 't'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(val.as_deref(), Some("abc-123"));
     }
 }
