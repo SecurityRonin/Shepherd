@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// Base URL for the Shepherd Pro cloud API.
-pub const DEFAULT_API_URL: &str = "https://shepherd-pro.vercel.app";
+pub const DEFAULT_API_URL: &str = "https://api.shepherd.codes";
 
 /// Credit costs for generative features.
 pub const CREDIT_COST_LOGO: u32 = 2;
