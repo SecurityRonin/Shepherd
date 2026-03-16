@@ -19,6 +19,15 @@ reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-feature
 async-trait = "0.1"
 base64 = "0.22"
 image = "0.25"
+prost = "0.13"
+tokio-tungstenite = "0.24"
+http = "1.0"
+notify = "6"
+futures-util = "0.3"
+glob = "0.3"
+
+[build-dependencies]
+prost-build = "0.13"
 
 [[test]]
 name = "lifecycle_test"
