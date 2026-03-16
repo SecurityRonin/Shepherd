@@ -260,12 +260,12 @@ verifyJwt → checkTrialOrDeductCredits → callUpstream → saveGeneration → 
 | Route | Upstream | Model / API |
 |-------|----------|-------------|
 | `POST /api/generate/logo` | OpenRouter | `ideogram/ideogram-v2` — 4 variants |
-| `POST /api/generate/name` | OpenRouter + RDAP | `anthropic/claude-3.5-haiku` + domain checks |
-| `POST /api/generate/northstar` | OpenRouter | `anthropic/claude-3.5-sonnet` |
+| `POST /api/generate/name` | OpenRouter + RDAP | `anthropic/claude-sonnet-4-6` + domain checks |
+| `POST /api/generate/northstar` | OpenRouter | `anthropic/claude-opus-4-6` |
 | `POST /api/generate/scrape` | Firecrawl | `/scrape` → markdown |
 | `POST /api/generate/crawl` | Firecrawl | `/crawl` async → crawl_id |
 | `GET  /api/generate/crawl/[id]` | Firecrawl | `/crawl/{id}` poll |
-| `POST /api/generate/vision` | OpenRouter | `anthropic/claude-3.5-sonnet` (vision) |
+| `POST /api/generate/vision` | OpenRouter | `anthropic/claude-sonnet-4-6` (vision) |
 | `POST /api/generate/search` | Exa | `/search` neural + keyword |
 
 ### Credit Costs
