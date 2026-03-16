@@ -4,6 +4,7 @@ import type { PermissionEvent } from "../../types/events";
 import { AgentBadge } from "../shared/AgentBadge";
 import { StatusIndicator } from "../shared/StatusIndicator";
 import { useTaskStaleness } from "../../hooks/useTaskStaleness";
+import { Iterm2Badge } from "../iterm2/Iterm2Badge";
 
 export interface TaskCardProps {
   task: Task;
@@ -73,12 +74,13 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         )}
       </div>
 
-      {/* Row 2: Agent badge + branch */}
+      {/* Row 2: Agent badge + branch + iTerm2 badge */}
       <div className="mt-1.5 flex items-center gap-2">
         <AgentBadge agentId={task.agent_id} />
         <span className="truncate text-xs font-mono text-shepherd-muted">
           {task.branch}
         </span>
+        {task.iterm2_session_id && <Iterm2Badge />}
       </div>
 
       {/* Row 3: Status-specific content */}

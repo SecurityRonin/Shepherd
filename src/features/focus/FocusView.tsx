@@ -1,10 +1,12 @@
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import { useStore } from "../../store";
 import { AgentBadge } from "../shared/AgentBadge";
 import { SessionSidebar } from "./SessionSidebar";
 import { Terminal } from "./Terminal";
 import { DiffViewer } from "./DiffViewer";
 import { PermissionPrompt } from "./PermissionPrompt";
+import { SessionPicker } from "../iterm2/SessionPicker";
+import { SetupPrompt } from "../iterm2/SetupPrompt";
 
 const STATUS_COLORS: Record<string, string> = {
   queued: "bg-shepherd-muted",
@@ -37,6 +39,18 @@ export const FocusView: React.FC = () => {
   const tasks = useStore((s) => s.tasks);
 
   const task = focusedTaskId !== null ? tasks[focusedTaskId] : undefined;
+
+  // iTerm2 session picker state
+  const [claudeSessions, setClaudeSessions] = useState<string[]>([]);
+  const [setupDismissed, setSetupDismissed] = useState(false);
+
+  useEffect(() => {
+    if (!task?.iterm2_session_id) return;
+    fetch(`/api/sessions/${task.id}/claude-sessions`)
+      .then(r => r.json())
+      .then(data => setClaudeSessions(data.sessions ?? []))
+      .catch(() => {});
+  }, [task?.id, task?.iterm2_session_id]);
 
   // Resizable right panel state
   const [rightPanelWidth, setRightPanelWidth] = useState(400);
@@ -116,6 +130,29 @@ export const FocusView: React.FC = () => {
         <div className="flex-1 flex min-h-0">
           {/* Center panel: Terminal + Permission prompt */}
           <div className="flex-1 flex flex-col min-w-0">
+            {/* iTerm2 session controls */}
+            {task.iterm2_session_id && (
+              <div className="px-4 py-2 border-b border-shepherd-border space-y-2">
+                {!setupDismissed && claudeSessions.length === 0 && (
+                  <SetupPrompt onDismiss={() => setSetupDismissed(true)} />
+                )}
+                <SessionPicker
+                  taskId={task.id}
+                  sessions={claudeSessions}
+                  onResume={sessionId =>
+                    fetch(`/api/sessions/${task.id}/resume`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ claude_session_id: sessionId }),
+                    })
+                  }
+                  onFresh={() =>
+                    fetch(`/api/sessions/${task.id}/fresh`, { method: 'POST' })
+                  }
+                />
+              </div>
+            )}
+
             {/* Terminal */}
             <Terminal taskId={task.id} />
 
