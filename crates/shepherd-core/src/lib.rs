@@ -1,4 +1,5 @@
 pub mod adapters;
+pub mod iterm2;
 pub mod cloud;
 pub mod config;
 pub mod context;
