@@ -1,3 +1,4 @@
+pub mod alaya;
 pub mod superpowers;
 pub mod context_mode;
 pub mod context7;
