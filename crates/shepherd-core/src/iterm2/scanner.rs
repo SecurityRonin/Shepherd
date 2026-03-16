@@ -10,6 +10,9 @@ const KNOWN_AGENTS: &[(&str, &str)] = &[
     ("aider", "aider"),
     ("gemini", "gemini-cli"),
     ("opencode", "opencode"),
+    ("goose", "goose"),
+    ("plandex", "plandex"),
+    ("gptme", "gptme"),
 ];
 
 /// Return the canonical agent name if `job_name` matches a known agent.
@@ -354,6 +357,21 @@ mod tests {
     #[test]
     fn test_detect_agent_opencode() {
         assert_eq!(detect_agent("opencode"), Some("opencode"));
+    }
+
+    #[test]
+    fn test_detect_agent_goose() {
+        assert_eq!(detect_agent("goose"), Some("goose"));
+    }
+
+    #[test]
+    fn test_detect_agent_plandex() {
+        assert_eq!(detect_agent("plandex"), Some("plandex"));
+    }
+
+    #[test]
+    fn test_detect_agent_gptme() {
+        assert_eq!(detect_agent("gptme"), Some("gptme"));
     }
 
     #[test]
