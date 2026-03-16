@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>One screen. Every agent. Full control.</strong><br/>
-  The missing command center for developers running Claude Code, Codex, AdaL, OpenCode, Gemini CLI, and Aider at the same time.
+  The missing command center for developers running Claude Code, Codex, AdaL, OpenCode, Gemini CLI, Aider, Goose, and more — simultaneously.
 </p>
 
 <p align="center">
@@ -75,17 +75,20 @@ No single tool combines Kanban + rules engine + quality gates + multi-agent + on
 
 ### Agent-agnostic from day one
 
-Six first-class adapters. Drop a TOML file to add any terminal-based agent.
+Nine first-class agents, plus iTerm2 session adoption for agents already running in your terminal. Drop a TOML file to add any other terminal-based agent.
 
-| Agent | Status | Hook Protocol |
-|-------|--------|---------------|
-| Claude Code | First-class | Native hooks |
-| Codex CLI | First-class | Output parsing |
-| AdaL | First-class | Output parsing |
-| OpenCode | First-class | Output parsing |
-| Gemini CLI | First-class | Output parsing |
-| Aider | First-class | Output parsing |
-| Your agent | [Write a TOML](docs/adapters.md) | Output parsing |
+| Agent | Status | Hook Protocol | iTerm2 Adoption |
+|-------|--------|---------------|-----------------|
+| Claude Code | First-class | Native hooks | ✓ |
+| Codex CLI | First-class | Output parsing | ✓ |
+| AdaL | First-class | Output parsing | ✓ (featured partner) |
+| OpenCode | First-class | Output parsing | ✓ |
+| Gemini CLI | First-class | Output parsing | ✓ |
+| Aider | First-class | Output parsing | ✓ |
+| Goose | First-class | Output parsing | ✓ |
+| Plandex | First-class | Output parsing | ✓ |
+| gptme | First-class | Output parsing | ✓ |
+| Your agent | [Write a TOML](docs/adapters.md) | Output parsing | — |
 
 ### YOLO mode with a brain
 
@@ -115,6 +118,27 @@ allow:
 Every action is logged. Auto-approved or manual. Full audit trail in SQLite.
 
 **Kernel-level guardrails via [nono.sh](https://nono.sh):** Even in YOLO mode, agents run inside a kernel-enforced sandbox. SSH keys, AWS credentials, and shell configs are blocked by default. Child processes inherit all restrictions. No API to escape, not even for nono itself.
+
+### iTerm2 Session Adoption
+
+Already have agents running in iTerm2? Shepherd finds them automatically — no restart required.
+
+On launch, Shepherd scans every iTerm2 pane, detects which ones are running a known coding agent (by process name), and pulls them into the Kanban board as live tasks. You get full oversight of sessions you started before Shepherd was running.
+
+```
+iTerm2 window                    Shepherd Kanban
+─────────────────                ─────────────────
+  pane 1: claude  ──────────▶   [claude-code: ~/src/api]   🟣 iTerm2
+  pane 2: adal    ──────────▶   [adal: ~/src/frontend]     🟣 iTerm2
+  pane 3: aider   ──────────▶   [aider: ~/src/infra]       🟣 iTerm2
+  pane 4: vim          ✗        (not a coding agent)
+```
+
+**For Claude Code sessions**, Shepherd offers a session picker on the task card: choose a previous Claude Code session to resume (sorted newest-first by mtime) or start fresh. No `--continue` flags to remember.
+
+**For all other agents**, tasks appear immediately in the board with a purple "iTerm2" badge and the detected agent name.
+
+Setup takes 30 seconds: add `shepherd-bridge.py` to your iTerm2 AutoLaunch profile (`Preferences → Profiles → General → Send text at start`). The bridge forwards your iTerm2 cookie and key to Shepherd's auth file so session scanning works without manual configuration.
 
 ### Quality gates that block bad PRs
 
@@ -207,7 +231,7 @@ GUI and CLI share the same server. Same state. Use both.
 
 **Contextual Triggers**: Shepherd detects when your project is missing a name, logo, or strategy docs and suggests the right tool via non-intrusive toast notifications. Dismiss once and it won't come back.
 
-**Ecosystem Auto-Install**: auto-detects and offers to install [Obra Superpowers](https://github.com/obra/superpowers) and [context-mode](https://github.com/mksglu/context-mode) into each agent's own config directory (`~/.claude/`, `~/.codex/`, `~/.opencode/`). Shepherd manages the meta-layer, agents stay native.
+**Ecosystem Auto-Install**: auto-detects and offers to install [Obra Superpowers](https://github.com/obra/superpowers), [context-mode](https://github.com/mksglu/context-mode), and [Alaya](https://github.com/SecurityRonin/alaya) into each agent's config. Superpowers and context-mode drop into `~/.claude/`, `~/.codex/`, `~/.opencode/`. Alaya is injected as an MCP server entry into `~/.claude.json` — preferring a local build at `~/src/alaya/target/release/alaya-mcp` if present, otherwise pulling from npm. Shepherd manages the meta-layer; agents stay native.
 
 ## Architecture
 
@@ -226,7 +250,8 @@ BACKEND (Rust · localhost)
 ├── Quality Gates    — lint/format/type/test + plugin gates
 ├── LLM Client       — OpenAI, Anthropic, Ollama (provider-agnostic)
 ├── Lifecycle Tools  — name gen, logo gen, North Star PMF, wizard
-├── Ecosystem        — Superpowers + context-mode auto-install
+├── Ecosystem        — Superpowers + context-mode + Alaya MCP auto-install
+├── iTerm2 Manager   — session adoption, jobName detection, 9 agents
 ├── Triggers         — contextual suggestions (name, logo, strategy)
 ├── PR Pipeline      — stage, commit, rebase, gates, push, gh pr create
 └── State (SQLite)   — tasks, sessions, permissions, diffs, gate results
@@ -235,7 +260,8 @@ BACKEND (Rust · localhost)
 AGENTS (your existing tools, unchanged)
 ├── Claude Code    ├── Codex CLI    ├── AdaL
 ├── OpenCode       ├── Gemini CLI   ├── Aider
-└── community adapters
+├── Goose          ├── Plandex      ├── gptme
+└── community adapters (TOML)
 ```
 
 **Why Tauri over Electron**: ~600KB vs ~150MB. Native performance. Rust backend. No bundled Chromium.
@@ -342,7 +368,7 @@ Restart Shepherd. Your agent shows up in the New Task dropdown.
 
 ## Roadmap
 
-**v1.0** (current): Core engine, Kanban board, 6 adapters, YOLO engine, quality gates, PR pipeline, CLI with shell completions, LLM client (OpenAI/Anthropic/Ollama), name generator, logo generator, North Star PMF wizard, contextual triggers, nono.sh sandbox, ecosystem auto-install, new project wizard. 280 tests.
+**v1.0** (current): Core engine, Kanban board, 9 first-class agents, YOLO engine, quality gates, PR pipeline, CLI with shell completions, LLM client (OpenAI/Anthropic/Ollama), name generator, logo generator, North Star PMF wizard, contextual triggers, nono.sh sandbox, ecosystem auto-install (Superpowers + context-mode + Alaya), new project wizard, iTerm2 session adoption (9 agents, session picker, permission prompt detection, bridge script). 1,100+ tests.
 
 **v1.1**: Best-of-N (run same task on multiple agents, compare outputs). Issue tracker integration (Linear, GitHub Issues, Jira). Event-driven automations.
 
@@ -368,6 +394,7 @@ If you find Shepherd useful, star the repo. It helps others find it.
 - [North Star Advisor](https://northstaradvisor.app/) for product-market fit and strategic planning
 - [Obra Superpowers](https://github.com/obra/superpowers) for brainstorming, planning, and agentic development workflows
 - [context-mode](https://github.com/mksglu/context-mode) for intelligent context window management and token optimization
+- [Alaya](https://github.com/SecurityRonin/alaya) for persistent episodic/semantic memory across agent sessions
 - [nono.sh](https://nono.sh) for kernel-level agent sandboxing (Landlock on Linux, Seatbelt on macOS)
 
 Strategy to spec to plan to code. Every token counts. No agent escapes the sandbox.
