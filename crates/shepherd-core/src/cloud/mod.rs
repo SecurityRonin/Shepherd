@@ -2,6 +2,7 @@ pub mod auth;
 pub mod credits;
 pub mod generation;
 pub mod sync;
+pub mod observability;
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
