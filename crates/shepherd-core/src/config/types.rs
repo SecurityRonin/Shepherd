@@ -18,6 +18,8 @@ pub struct ShepherdConfig {
     pub sandbox: SandboxConfig,
     #[serde(default)]
     pub ecosystem: EcosystemConfig,
+    #[serde(default)]
+    pub cloud: CloudFeaturesConfig,
 }
 
 fn default_port() -> u16 { 7532 }
@@ -37,6 +39,7 @@ impl Default for ShepherdConfig {
             sound_enabled: false,
             sandbox: SandboxConfig::default(),
             ecosystem: EcosystemConfig::default(),
+            cloud: CloudFeaturesConfig::default(),
         }
     }
 }
@@ -83,6 +86,29 @@ pub struct EcosystemConfig {
 
 fn default_true() -> bool { true }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CloudFeaturesConfig {
+    #[serde(default = "default_true")]
+    pub sync_enabled: bool,
+    #[serde(default)]
+    pub sync_machine_id: Option<String>,
+    #[serde(default = "default_true")]
+    pub observability_push_enabled: bool,
+    #[serde(default = "default_true")]
+    pub notifications_enabled: bool,
+}
+
+impl Default for CloudFeaturesConfig {
+    fn default() -> Self {
+        Self {
+            sync_enabled: true,
+            sync_machine_id: None,
+            observability_push_enabled: true,
+            notifications_enabled: true,
+        }
+    }
+}
+
 impl Default for EcosystemConfig {
     fn default() -> Self {
         Self {
@@ -94,5 +120,61 @@ impl Default for EcosystemConfig {
             auto_detect_context_hub: true,
             offer_install_on_new_task: true,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cloud_features_config_defaults() {
+        let config = CloudFeaturesConfig::default();
+        assert!(config.sync_enabled);
+        assert!(config.sync_machine_id.is_none());
+        assert!(config.observability_push_enabled);
+        assert!(config.notifications_enabled);
+    }
+
+    #[test]
+    fn cloud_features_config_serde_roundtrip() {
+        let config = CloudFeaturesConfig {
+            sync_enabled: false,
+            sync_machine_id: Some("mbp-2024".to_string()),
+            observability_push_enabled: true,
+            notifications_enabled: false,
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let parsed: CloudFeaturesConfig = serde_json::from_str(&json).unwrap();
+        assert!(!parsed.sync_enabled);
+        assert_eq!(parsed.sync_machine_id, Some("mbp-2024".to_string()));
+        assert!(parsed.observability_push_enabled);
+        assert!(!parsed.notifications_enabled);
+    }
+
+    #[test]
+    fn shepherd_config_defaults() {
+        let config = ShepherdConfig::default();
+        assert_eq!(config.port, 7532);
+        assert_eq!(config.max_agents, 10);
+        assert!(config.cloud.sync_enabled);
+        assert!(config.cloud.notifications_enabled);
+    }
+
+    #[test]
+    fn shepherd_config_deserialize_without_cloud_section() {
+        // Existing configs without [cloud] should still parse correctly
+        let toml_str = r#"
+            port = 8080
+            max_agents = 5
+        "#;
+        let config: ShepherdConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.port, 8080);
+        assert_eq!(config.max_agents, 5);
+        // cloud defaults kick in
+        assert!(config.cloud.sync_enabled);
+        assert!(config.cloud.observability_push_enabled);
+        assert!(config.cloud.notifications_enabled);
+        assert!(config.cloud.sync_machine_id.is_none());
     }
 }
