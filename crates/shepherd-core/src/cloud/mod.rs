@@ -3,6 +3,7 @@ pub mod credits;
 pub mod generation;
 pub mod sync;
 pub mod observability;
+pub mod notifications;
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
