@@ -1,6 +1,33 @@
 use std::time::Duration;
 
+use serde::{Deserialize, Serialize};
+
 use super::{auth, CloudClient};
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SyncConfigPayload {
+    pub machine_id: String,
+    pub config: serde_json::Value,
+    pub version: u32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SyncConfigEntry {
+    pub machine_id: String,
+    pub config: serde_json::Value,
+    pub version: u32,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SyncPullResponse {
+    pub config: Option<SyncConfigEntry>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SyncPullAllResponse {
+    pub configs: Vec<SyncConfigEntry>,
+}
 
 /// Default interval between background balance refreshes.
 pub const SYNC_INTERVAL: Duration = Duration::from_secs(300); // 5 minutes
@@ -54,6 +81,66 @@ pub async fn sync_now(client: &CloudClient) -> Result<(), super::CloudError> {
     Ok(())
 }
 
+impl CloudClient {
+    pub async fn push_config(&self, payload: &SyncConfigPayload) -> Result<(), super::CloudError> {
+        let jwt = self.get_jwt()?;
+        let url = format!("{}/api/sync/push", self.api_url());
+        let resp = self.http.post(&url)
+            .bearer_auth(&jwt)
+            .json(payload)
+            .send()
+            .await
+            .map_err(|e| super::CloudError::Network(e.to_string()))?;
+
+        if !resp.status().is_success() {
+            let status = resp.status().as_u16();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(super::CloudError::Api { status, message: body });
+        }
+        Ok(())
+    }
+
+    pub async fn pull_config(&self, machine_id: &str) -> Result<Option<SyncConfigEntry>, super::CloudError> {
+        let jwt = self.get_jwt()?;
+        let url = format!("{}/api/sync/pull?machine_id={}", self.api_url(), machine_id);
+        let resp = self.http.get(&url)
+            .bearer_auth(&jwt)
+            .send()
+            .await
+            .map_err(|e| super::CloudError::Network(e.to_string()))?;
+
+        if !resp.status().is_success() {
+            let status = resp.status().as_u16();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(super::CloudError::Api { status, message: body });
+        }
+
+        let result: SyncPullResponse = resp.json().await
+            .map_err(|e| super::CloudError::Network(e.to_string()))?;
+        Ok(result.config)
+    }
+
+    pub async fn pull_all_configs(&self) -> Result<Vec<SyncConfigEntry>, super::CloudError> {
+        let jwt = self.get_jwt()?;
+        let url = format!("{}/api/sync/pull", self.api_url());
+        let resp = self.http.get(&url)
+            .bearer_auth(&jwt)
+            .send()
+            .await
+            .map_err(|e| super::CloudError::Network(e.to_string()))?;
+
+        if !resp.status().is_success() {
+            let status = resp.status().as_u16();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(super::CloudError::Api { status, message: body });
+        }
+
+        let result: SyncPullAllResponse = resp.json().await
+            .map_err(|e| super::CloudError::Network(e.to_string()))?;
+        Ok(result.configs)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -91,5 +178,34 @@ mod tests {
             valid
         };
         assert_eq!(clamped, valid);
+    }
+
+    #[test]
+    fn sync_config_payload_serializes() {
+        let payload = SyncConfigPayload {
+            machine_id: "mbp-2024".to_string(),
+            config: serde_json::json!({
+                "quality_gates": {"lint": true},
+                "yolo_mode": false
+            }),
+            version: 1,
+        };
+        let json = serde_json::to_string(&payload).unwrap();
+        assert!(json.contains("mbp-2024"));
+        assert!(json.contains("quality_gates"));
+    }
+
+    #[test]
+    fn sync_config_response_deserializes() {
+        let json = r#"{"config":{"machine_id":"mbp","config":{"yolo":true},"version":1,"updated_at":"2026-03-17T00:00:00Z"}}"#;
+        let resp: SyncPullResponse = serde_json::from_str(json).unwrap();
+        assert!(resp.config.is_some());
+    }
+
+    #[test]
+    fn sync_configs_response_deserializes() {
+        let json = r#"{"configs":[{"machine_id":"mbp","config":{"yolo":true},"version":1,"updated_at":"2026-03-17"}]}"#;
+        let resp: SyncPullAllResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.configs.len(), 1);
     }
 }
