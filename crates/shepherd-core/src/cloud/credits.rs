@@ -223,6 +223,21 @@ mod tests {
     }
 
     #[test]
+    fn feature_cost_name() {
+        assert_eq!(Feature::Name.cost(), 1);
+    }
+
+    #[test]
+    fn feature_cost_logo() {
+        assert_eq!(Feature::Logo.cost(), 2);
+    }
+
+    #[test]
+    fn feature_cost_northstar() {
+        assert_eq!(Feature::NorthStar.cost(), 15);
+    }
+
+    #[test]
     fn all_features_have_positive_costs() {
         let features = [Feature::Logo, Feature::Name, Feature::NorthStar, Feature::Scrape, Feature::Crawl, Feature::Vision, Feature::Search];
         for f in &features {

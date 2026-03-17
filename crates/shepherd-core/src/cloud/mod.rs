@@ -21,18 +21,25 @@ pub const CREDIT_COST_SEARCH: u32 = 1;
 /// Number of free trials per generative feature.
 pub const TRIAL_LIMIT: u32 = 2;
 
+/// Monthly credits included with Free plan.
+pub const FREE_MONTHLY_CREDITS: u32 = 2;
+
 /// Monthly credits included with Pro subscription.
-pub const PRO_MONTHLY_CREDITS: u32 = 50;
+pub const PRO_MONTHLY_CREDITS: u32 = 100;
+
+/// Monthly credits included with Pro Plus subscription.
+pub const PRO_PLUS_MONTHLY_CREDITS: u32 = 300;
 
 /// Credits included in a top-up purchase.
-pub const TOPUP_CREDITS: u32 = 30;
+pub const TOPUP_CREDITS: u32 = 50;
 
 /// User's subscription plan.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum Plan {
     Free,
     Pro,
+    ProPlus,
 }
 
 impl Default for Plan {
@@ -46,6 +53,7 @@ impl fmt::Display for Plan {
         match self {
             Plan::Free => write!(f, "free"),
             Plan::Pro => write!(f, "pro"),
+            Plan::ProPlus => write!(f, "pro_plus"),
         }
     }
 }
@@ -238,6 +246,14 @@ impl CloudClient {
     pub fn api_url(&self) -> &str {
         &self.config.api_url
     }
+
+    /// Extract JWT, encapsulating the test/prod conditional.
+    pub(crate) fn get_jwt(&self) -> Result<String, CloudError> {
+        #[cfg(test)]
+        { self.test_jwt.clone().ok_or(CloudError::NotAuthenticated) }
+        #[cfg(not(test))]
+        { auth::load_jwt().ok_or(CloudError::NotAuthenticated) }
+    }
 }
 
 impl Default for CloudClient {
@@ -330,8 +346,8 @@ mod tests {
         assert_eq!(CREDIT_COST_VISION, 2);
         assert_eq!(CREDIT_COST_SEARCH, 1);
         assert_eq!(TRIAL_LIMIT, 2);
-        assert_eq!(PRO_MONTHLY_CREDITS, 50);
-        assert_eq!(TOPUP_CREDITS, 30);
+        assert_eq!(PRO_MONTHLY_CREDITS, 100);
+        assert_eq!(TOPUP_CREDITS, 50);
     }
 
     #[test]
@@ -508,5 +524,38 @@ mod tests {
         }"#;
         let resp: BalanceResponse = serde_json::from_str(json).unwrap();
         assert_eq!(resp.trial_search, 3);
+    }
+
+    #[test]
+    fn plan_pro_plus_display() {
+        assert_eq!(Plan::ProPlus.to_string(), "pro_plus");
+    }
+
+    #[test]
+    fn plan_pro_plus_serde() {
+        let json = serde_json::to_string(&Plan::ProPlus).unwrap();
+        assert_eq!(json, "\"pro_plus\"");
+        let parsed: Plan = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, Plan::ProPlus);
+    }
+
+    #[test]
+    fn free_monthly_credits_constant() {
+        assert_eq!(FREE_MONTHLY_CREDITS, 2);
+    }
+
+    #[test]
+    fn pro_monthly_credits_updated() {
+        assert_eq!(PRO_MONTHLY_CREDITS, 100);
+    }
+
+    #[test]
+    fn pro_plus_monthly_credits_constant() {
+        assert_eq!(PRO_PLUS_MONTHLY_CREDITS, 300);
+    }
+
+    #[test]
+    fn topup_credits_updated() {
+        assert_eq!(TOPUP_CREDITS, 50);
     }
 }
