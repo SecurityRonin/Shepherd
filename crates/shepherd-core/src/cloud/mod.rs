@@ -4,6 +4,7 @@ pub mod generation;
 pub mod sync;
 pub mod observability;
 pub mod notifications;
+pub mod templates;
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
