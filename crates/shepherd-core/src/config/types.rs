@@ -76,6 +76,8 @@ pub struct EcosystemConfig {
     #[serde(default = "default_true")]
     pub auto_detect_frontend_design: bool,
     #[serde(default = "default_true")]
+    pub auto_detect_context_hub: bool,
+    #[serde(default = "default_true")]
     pub offer_install_on_new_task: bool,
 }
 
@@ -89,6 +91,7 @@ impl Default for EcosystemConfig {
             auto_detect_context7: true,
             auto_detect_ralph_loop: true,
             auto_detect_frontend_design: true,
+            auto_detect_context_hub: true,
             offer_install_on_new_task: true,
         }
     }

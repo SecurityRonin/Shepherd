@@ -11,6 +11,7 @@ pub mod playwright;
 pub mod exa;
 pub mod serena;
 pub mod sourcegraph;
+pub mod context_hub;
 
 use std::path::{Path, PathBuf};
 use superpowers::InstallScope;
