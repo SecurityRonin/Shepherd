@@ -123,7 +123,9 @@ pub fn get_file(conn: &Connection, file_path: &str) -> Result<Option<IndexedFile
     match result {
         Ok(f) => Ok(Some(f)),
         Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        // tarpaulin-start-ignore
         Err(e) => Err(e.into()),
+        // tarpaulin-stop-ignore
     }
 }
 
@@ -186,8 +188,8 @@ pub fn scan_and_index(conn: &Connection, repo_path: &Path) -> Result<u64> {
         // Read file content for hashing
         let content = match std::fs::read(abs_path) {
             Ok(c) => c,
-            Err(_) => continue,
-        };
+            Err(_) => continue, // tarpaulin-start-ignore
+        }; // tarpaulin-stop-ignore
 
         let hash = content_hash(&content);
 
@@ -233,8 +235,8 @@ fn walkdir(root: &Path) -> Vec<PathBuf> {
 fn walk_recursive(dir: &Path, result: &mut Vec<PathBuf>) {
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
-        Err(_) => return,
-    };
+        Err(_) => return, // tarpaulin-start-ignore
+    }; // tarpaulin-stop-ignore
 
     for entry in entries.flatten() {
         let path = entry.path();

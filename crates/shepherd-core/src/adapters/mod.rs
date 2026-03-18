@@ -88,4 +88,78 @@ deny = "n\n"
         assert_eq!(adapter.agent.name, "Test Agent");
         assert_eq!(adapter.agent.command, "test-cli");
     }
+
+    #[test]
+    fn test_empty_registry() {
+        let registry = AdapterRegistry::new();
+        assert!(registry.is_empty());
+        assert_eq!(registry.len(), 0);
+        assert!(registry.list().is_empty());
+        assert!(registry.get("nonexistent").is_none());
+    }
+
+    #[test]
+    fn test_load_dir_nonexistent() {
+        let mut registry = AdapterRegistry::new();
+        let result = registry.load_dir(std::path::Path::new("/nonexistent/dir"));
+        assert!(result.is_ok()); // Returns Ok(()) for missing dirs
+        assert!(registry.is_empty());
+    }
+
+    #[test]
+    fn test_load_dir_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut registry = AdapterRegistry::new();
+        registry.load_dir(dir.path()).unwrap();
+        assert!(registry.is_empty());
+    }
+
+    #[test]
+    fn test_load_dir_skips_non_toml() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("readme.txt"), "not a toml").unwrap();
+        fs::write(dir.path().join("config.json"), "{}").unwrap();
+        let mut registry = AdapterRegistry::new();
+        registry.load_dir(dir.path()).unwrap();
+        assert!(registry.is_empty());
+    }
+
+    #[test]
+    fn test_list_returns_all_adapters() {
+        let dir = tempfile::tempdir().unwrap();
+        let toml_content = r#"
+[agent]
+name = "Agent A"
+command = "agent-a"
+
+[status]
+working_patterns = ["Working"]
+idle_patterns = ["$"]
+input_patterns = ["?"]
+error_patterns = ["Error"]
+
+[permissions]
+approve = "y\n"
+approve_all = "Y\n"
+deny = "n\n"
+"#;
+        fs::write(dir.path().join("agent-a.toml"), toml_content).unwrap();
+        let mut registry = AdapterRegistry::new();
+        registry.load_dir(dir.path()).unwrap();
+        assert_eq!(registry.len(), 1);
+        assert!(!registry.is_empty());
+        let list = registry.list();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].0, "agent-a");
+        assert_eq!(list[0].1.agent.name, "Agent A");
+    }
+
+    #[test]
+    fn test_load_invalid_toml() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("bad.toml"), "not valid toml [[[").unwrap();
+        let mut registry = AdapterRegistry::new();
+        let result = registry.load_dir(dir.path());
+        assert!(result.is_err());
+    }
 }

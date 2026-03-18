@@ -1,5 +1,6 @@
 use axum::{extract::State, http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
+use shepherd_core::cloud::CloudError;
 use shepherd_core::logogen::{self, ExportedFile, LogoGenInput, LogoStyle};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -84,20 +85,15 @@ fn parse_style(s: &str) -> LogoStyle {
 // ── Handlers ─────────────────────────────────────────────────────────
 
 /// POST /api/logogen — generate logo variants.
+///
+/// Tries cloud generation first if available and authenticated.
+/// Falls back to local LLM provider if cloud is unavailable or user isn't signed in.
+/// Hard errors (insufficient credits) are returned directly.
 #[tracing::instrument(skip(state, req))]
 pub async fn generate_logo(
     State(state): State<Arc<AppState>>,
     Json(req): Json<LogoGenRequest>,
 ) -> Result<Json<LogoGenResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let provider = state.llm_provider.as_ref().ok_or_else(|| {
-        (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(serde_json::json!({
-                "error": "LLM provider not configured"
-            })),
-        )
-    })?;
-
     let input = LogoGenInput {
         product_name: req.product_name,
         product_description: req.product_description,
@@ -105,6 +101,51 @@ pub async fn generate_logo(
         colors: req.colors,
         variants: 4,
     };
+
+    // Try cloud generation first.
+    if let Some(ref cloud) = state.cloud_client {
+        if state.config.cloud.cloud_generation_enabled {
+            match cloud.generate_logo(&input).await {
+                Ok(cloud_resp) => {
+                    let variants = cloud_resp
+                        .variants
+                        .into_iter()
+                        .map(|v| VariantResponse {
+                            index: v.index,
+                            image_data: v.url,
+                            is_url: true,
+                        })
+                        .collect();
+                    return Ok(Json(LogoGenResponse { variants }));
+                }
+                Err(CloudError::NotAuthenticated | CloudError::AuthExpired) => {
+                    tracing::info!("Cloud auth unavailable, falling back to local LLM");
+                }
+                Err(CloudError::InsufficientCredits { required, available }) => {
+                    return Err((
+                        StatusCode::PAYMENT_REQUIRED,
+                        Json(serde_json::json!({
+                            "error": format!("Insufficient credits: need {required}, have {available}"),
+                            "code": "insufficient_credits"
+                        })),
+                    ));
+                }
+                Err(e) => {
+                    tracing::warn!("Cloud logo generation failed, falling back to local: {e}");
+                }
+            }
+        }
+    }
+
+    // Fallback: local LLM provider.
+    let provider = state.llm_provider.as_ref().ok_or_else(|| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({
+                "error": "No generation provider available. Sign in to Shepherd Pro or configure a local LLM."
+            })),
+        )
+    })?;
 
     let result = logogen::generate::generate_logos(provider.as_ref(), &input)
         .await
@@ -260,6 +301,27 @@ mod tests {
     }
 
     #[test]
+    fn variant_response_url_flag() {
+        // Cloud responses should have is_url=true
+        let cloud_variant = VariantResponse {
+            index: 0,
+            image_data: "https://cdn.example.com/logo.png".to_string(),
+            is_url: true,
+        };
+        let json = serde_json::to_value(&cloud_variant).unwrap();
+        assert!(json["is_url"].as_bool().unwrap());
+
+        // Local responses should have is_url=false
+        let local_variant = VariantResponse {
+            index: 0,
+            image_data: "iVBORw0KGgo...".to_string(),
+            is_url: false,
+        };
+        let json = serde_json::to_value(&local_variant).unwrap();
+        assert!(!json["is_url"].as_bool().unwrap());
+    }
+
+    #[test]
     fn logogen_response_serialize() {
         let response = LogoGenResponse {
             variants: vec![
@@ -299,5 +361,61 @@ mod tests {
         let files = json["files"].as_array().unwrap();
         assert_eq!(files.len(), 1);
         assert_eq!(files[0]["size_bytes"], 9999);
+    }
+
+    #[test]
+    fn request_to_logogen_input_conversion() {
+        // Test that the handler's conversion logic from request to input is correct
+        let req = LogoGenRequest {
+            product_name: "TestBrand".to_string(),
+            product_description: Some("A great product".to_string()),
+            style: "Geometric".to_string(),
+            colors: vec!["#FF0000".to_string()],
+        };
+
+        let input = LogoGenInput {
+            product_name: req.product_name,
+            product_description: req.product_description,
+            style: parse_style(&req.style),
+            colors: req.colors,
+            variants: 4,
+        };
+
+        assert_eq!(input.product_name, "TestBrand");
+        assert_eq!(input.product_description, Some("A great product".to_string()));
+        assert_eq!(input.style, LogoStyle::Geometric);
+        assert_eq!(input.colors, vec!["#FF0000"]);
+        assert_eq!(input.variants, 4);
+    }
+
+    #[test]
+    fn export_response_multiple_files() {
+        let response = ExportResponse {
+            files: vec![
+                ExportedFileResponse {
+                    path: "/tmp/icon-16.png".to_string(),
+                    format: "png".to_string(),
+                    size_bytes: 256,
+                    dimensions: Some((16, 16)),
+                },
+                ExportedFileResponse {
+                    path: "/tmp/icon-32.png".to_string(),
+                    format: "png".to_string(),
+                    size_bytes: 512,
+                    dimensions: Some((32, 32)),
+                },
+                ExportedFileResponse {
+                    path: "/tmp/favicon.ico".to_string(),
+                    format: "ico".to_string(),
+                    size_bytes: 1024,
+                    dimensions: None,
+                },
+            ],
+        };
+
+        let json = serde_json::to_value(&response).unwrap();
+        let files = json["files"].as_array().unwrap();
+        assert_eq!(files.len(), 3);
+        assert!(files[2]["dimensions"].is_null());
     }
 }

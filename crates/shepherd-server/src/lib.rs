@@ -26,7 +26,13 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/api/sessions/:id/claude-sessions", get(routes::iterm2::list_claude_sessions))
         .route("/api/sessions/:id/resume", post(routes::iterm2::resume_session))
         .route("/api/sessions/:id/fresh", post(routes::iterm2::fresh_session))
+        .route("/api/cloud/status", get(routes::cloud::cloud_status))
+        .route("/api/cloud/balance", get(routes::cloud::cloud_balance))
+        .route("/api/cloud/costs", get(routes::cloud::cloud_costs))
         .route("/ws", get(ws::ws_handler))
         .layer(CorsLayer::permissive())
         .with_state(state)
 }
+
+#[cfg(test)]
+mod handler_tests;

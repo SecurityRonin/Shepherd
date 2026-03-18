@@ -179,4 +179,161 @@ mod tests {
         assert!(!resp.sent);
         assert_eq!(resp.reason, Some("event_not_enabled".to_string()));
     }
+
+    // ── httpmock-based async tests ────────────────────────────────────────
+
+    fn make_test_payload() -> NotificationPayload {
+        NotificationPayload {
+            event_type: NotificationEvent::AgentFinished,
+            agent_id: "claude-code".to_string(),
+            machine_id: "mbp-2024".to_string(),
+            task_summary: Some("Built login page".to_string()),
+            gate_name: None,
+            error: None,
+            cost_usd: None,
+            budget_usd: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn get_notification_preferences_200_ok() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/api/notifications/preferences");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "preferences": {
+                        "slack_webhook_url": "https://hooks.slack.com/T/B/x",
+                        "email_enabled": true,
+                        "events": ["agent_finished", "gate_failed"]
+                    }
+                }));
+        });
+
+        let client = super::super::CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let prefs = client.get_notification_preferences().await.unwrap();
+        assert!(prefs.email_enabled);
+        assert_eq!(prefs.events.len(), 2);
+        assert_eq!(prefs.events[0], NotificationEvent::AgentFinished);
+        assert_eq!(prefs.events[1], NotificationEvent::GateFailed);
+        assert_eq!(prefs.slack_webhook_url, Some("https://hooks.slack.com/T/B/x".to_string()));
+    }
+
+    #[tokio::test]
+    async fn get_notification_preferences_401_auth_expired() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/api/notifications/preferences");
+            then.status(401).body("Unauthorized");
+        });
+
+        let client = super::super::CloudClient::with_test_jwt(&server.base_url(), "bad-jwt");
+        let result = client.get_notification_preferences().await;
+        match result {
+            Err(super::super::CloudError::Api { status, .. }) => assert_eq!(status, 401),
+            other => panic!("expected Api error with status 401, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn get_notification_preferences_500_server_error() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/api/notifications/preferences");
+            then.status(500).body("Internal Server Error");
+        });
+
+        let client = super::super::CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let result = client.get_notification_preferences().await;
+        match result {
+            Err(super::super::CloudError::Api { status, message }) => {
+                assert_eq!(status, 500);
+                assert!(message.contains("Internal Server Error"));
+            }
+            other => panic!("expected Api error with status 500, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn send_notification_200_sent_true() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/notifications/send");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "sent": true,
+                    "reason": null
+                }));
+        });
+
+        let client = super::super::CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let payload = make_test_payload();
+        let sent = client.send_notification(&payload).await.unwrap();
+        assert!(sent);
+    }
+
+    #[tokio::test]
+    async fn send_notification_200_sent_false() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/notifications/send");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "sent": false,
+                    "reason": "event_not_enabled"
+                }));
+        });
+
+        let client = super::super::CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let payload = make_test_payload();
+        let sent = client.send_notification(&payload).await.unwrap();
+        assert!(!sent);
+    }
+
+    #[tokio::test]
+    async fn send_notification_401_auth_expired() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/notifications/send");
+            then.status(401).body("Unauthorized");
+        });
+
+        let client = super::super::CloudClient::with_test_jwt(&server.base_url(), "bad-jwt");
+        let payload = make_test_payload();
+        let result = client.send_notification(&payload).await;
+        match result {
+            Err(super::super::CloudError::Api { status, .. }) => assert_eq!(status, 401),
+            other => panic!("expected Api error with status 401, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn send_notification_500_server_error() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/notifications/send");
+            then.status(500).body("boom");
+        });
+
+        let client = super::super::CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let payload = make_test_payload();
+        let result = client.send_notification(&payload).await;
+        match result {
+            Err(super::super::CloudError::Api { status, message }) => {
+                assert_eq!(status, 500);
+                assert_eq!(message, "boom");
+            }
+            other => panic!("expected Api error with status 500, got: {:?}", other),
+        }
+    }
 }

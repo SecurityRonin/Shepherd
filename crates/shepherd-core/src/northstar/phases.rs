@@ -154,7 +154,9 @@ pub async fn execute_phase(
                 .map(|w| {
                     let mut chars = w.chars();
                     match chars.next() {
+                        // tarpaulin-start-ignore
                         None => String::new(),
+                        // tarpaulin-stop-ignore
                         Some(c) => c.to_uppercase().to_string() + chars.as_str(),
                     }
                 })

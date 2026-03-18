@@ -100,6 +100,56 @@ mod tests {
     }
 
     #[test]
+    fn test_auth_serde_roundtrip() {
+        let auth = Iterm2Auth {
+            cookie: "mycookie123".to_string(),
+            key: "mykey456".to_string(),
+        };
+        let json = serde_json::to_string(&auth).unwrap();
+        let parsed: Iterm2Auth = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.cookie, "mycookie123");
+        assert_eq!(parsed.key, "mykey456");
+    }
+
+    #[test]
+    fn test_auth_debug() {
+        let auth = Iterm2Auth {
+            cookie: "c".to_string(),
+            key: "k".to_string(),
+        };
+        let debug = format!("{:?}", auth);
+        assert!(debug.contains("Iterm2Auth"));
+    }
+
+    #[test]
+    fn test_auth_clone() {
+        let auth = Iterm2Auth {
+            cookie: "c".to_string(),
+            key: "k".to_string(),
+        };
+        let cloned = auth.clone();
+        assert_eq!(cloned.cookie, auth.cookie);
+        assert_eq!(cloned.key, auth.key);
+    }
+
+    #[test]
+    fn test_load_auth_missing_fields() {
+        let mut f = NamedTempFile::new().unwrap();
+        write!(f, r#"{{"cookie":"only_cookie"}}"#).unwrap();
+        let result = load_auth(f.path());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_load_auth_extra_fields_ignored() {
+        let mut f = NamedTempFile::new().unwrap();
+        write!(f, r#"{{"cookie":"c","key":"k","extra":"ignored"}}"#).unwrap();
+        let auth = load_auth(f.path()).unwrap();
+        assert_eq!(auth.cookie, "c");
+        assert_eq!(auth.key, "k");
+    }
+
+    #[test]
     fn test_watch_auth_does_not_panic_on_bad_path() {
         // watch_auth spawns a background thread; verify it starts without panic
         // even when the watched path doesn't exist.

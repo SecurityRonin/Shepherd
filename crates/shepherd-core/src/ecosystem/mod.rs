@@ -168,3 +168,158 @@ impl EcosystemPlugin {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_plugin() -> EcosystemPlugin {
+        EcosystemPlugin {
+            name: "test-plugin",
+            description: "A test plugin",
+            compatible_agents: &["claude-code", "aider"],
+            feature_key: "test-plugin-key",
+            plugin_cache_dirs: &[("claude-code", ".cache/test-plugin")],
+            user_settings_paths: &[("claude-code", ".config/claude/settings.json")],
+            project_settings_paths: &[("claude-code", ".claude/settings.json")],
+            install_targets: &[
+                ("claude-code", true, ".config/claude/test-plugin.json"),
+                ("claude-code", false, ".claude/test-plugin.json"),
+            ],
+            config_content: r#"{"enabled": true}"#,
+        }
+    }
+
+    #[test]
+    fn test_is_compatible_true() {
+        let plugin = test_plugin();
+        assert!(plugin.is_compatible("claude-code"));
+        assert!(plugin.is_compatible("aider"));
+    }
+
+    #[test]
+    fn test_is_compatible_false() {
+        let plugin = test_plugin();
+        assert!(!plugin.is_compatible("vim"));
+        assert!(!plugin.is_compatible(""));
+    }
+
+    #[test]
+    fn test_detect_incompatible_agent() {
+        let plugin = test_plugin();
+        let home = std::path::Path::new("/tmp/fake-home");
+        let result = plugin.detect("vim", home, None);
+        assert!(!result.installed);
+    }
+
+    #[test]
+    fn test_detect_not_installed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let plugin = test_plugin();
+        let result = plugin.detect("claude-code", tmp.path(), None);
+        assert!(!result.installed);
+        assert_eq!(result.scope, InstallScope::User);
+        assert!(result.path.is_none());
+    }
+
+    #[test]
+    fn test_detect_user_scope_via_cache_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cache_dir = tmp.path().join(".cache/test-plugin");
+        std::fs::create_dir_all(&cache_dir).unwrap();
+        let plugin = test_plugin();
+        let result = plugin.detect("claude-code", tmp.path(), None);
+        assert!(result.installed);
+        assert_eq!(result.scope, InstallScope::User);
+        assert!(result.path.is_some());
+    }
+
+    #[test]
+    fn test_detect_user_scope_via_settings() {
+        let tmp = tempfile::tempdir().unwrap();
+        let settings_path = tmp.path().join(".config/claude/settings.json");
+        std::fs::create_dir_all(settings_path.parent().unwrap()).unwrap();
+        std::fs::write(&settings_path, r#"{"mcpServers": {"test-plugin-key": {}}}"#).unwrap();
+        let plugin = test_plugin();
+        let result = plugin.detect("claude-code", tmp.path(), None);
+        assert!(result.installed);
+        assert_eq!(result.scope, InstallScope::User);
+    }
+
+    #[test]
+    fn test_detect_project_scope() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("project");
+        let settings_path = project.join(".claude/settings.json");
+        std::fs::create_dir_all(settings_path.parent().unwrap()).unwrap();
+        std::fs::write(&settings_path, r#"{"mcpServers": {"test-plugin-key": {}}}"#).unwrap();
+        let plugin = test_plugin();
+        let result = plugin.detect("claude-code", tmp.path(), Some(&project));
+        assert!(result.installed);
+        assert_eq!(result.scope, InstallScope::Project);
+    }
+
+    #[test]
+    fn test_install_config_incompatible() {
+        let plugin = test_plugin();
+        assert!(plugin.install_config("vim", InstallScope::User).is_none());
+    }
+
+    #[test]
+    fn test_install_config_user_scope() {
+        let plugin = test_plugin();
+        let config = plugin.install_config("claude-code", InstallScope::User).unwrap();
+        assert_eq!(config.agent, "claude-code");
+        assert_eq!(config.scope, InstallScope::User);
+        assert_eq!(config.config_content, r#"{"enabled": true}"#);
+    }
+
+    #[test]
+    fn test_install_config_project_scope() {
+        let plugin = test_plugin();
+        let config = plugin.install_config("claude-code", InstallScope::Project).unwrap();
+        assert_eq!(config.scope, InstallScope::Project);
+    }
+
+    #[test]
+    fn test_install_config_no_matching_target() {
+        let plugin = test_plugin();
+        // aider is compatible but has no install target
+        assert!(plugin.install_config("aider", InstallScope::User).is_none());
+    }
+
+    #[test]
+    fn test_plugin_detection_result_debug() {
+        let result = PluginDetectionResult {
+            installed: true,
+            scope: InstallScope::User,
+            path: Some(std::path::PathBuf::from("/test")),
+        };
+        let debug = format!("{:?}", result);
+        assert!(debug.contains("installed: true"));
+    }
+
+    #[test]
+    fn test_plugin_install_config_debug() {
+        let config = PluginInstallConfig {
+            agent: "claude-code".to_string(),
+            scope: InstallScope::User,
+            target_path: std::path::PathBuf::from("/test"),
+            config_content: "{}".to_string(),
+        };
+        let debug = format!("{:?}", config);
+        assert!(debug.contains("claude-code"));
+    }
+
+    #[test]
+    fn test_detect_returns_none_when_no_project_match() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        let plugin = test_plugin();
+        // detect with project that has no settings file containing feature_key
+        let result = plugin.detect("claude-code", tmp.path(), Some(&project));
+        // Should not find project-scope match, falls through to None
+        assert!(!result.installed || result.scope != InstallScope::Project);
+    }
+}

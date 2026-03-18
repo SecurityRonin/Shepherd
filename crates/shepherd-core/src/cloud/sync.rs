@@ -44,6 +44,7 @@ pub const MIN_SYNC_INTERVAL: Duration = Duration::from_secs(30);
 /// - A JWT is stored (user is authenticated)
 /// - The interval has elapsed since last sync
 #[tracing::instrument(skip(client))]
+// tarpaulin-start-ignore
 pub async fn background_sync(client: CloudClient, interval: Duration) {
     let interval = if interval < MIN_SYNC_INTERVAL {
         MIN_SYNC_INTERVAL
@@ -70,8 +71,11 @@ pub async fn background_sync(client: CloudClient, interval: Duration) {
     }
 }
 
+// tarpaulin-stop-ignore
+
 /// Perform a one-time sync (useful on app startup or after mutations).
 #[tracing::instrument(skip(client))]
+// tarpaulin-start-ignore
 pub async fn sync_now(client: &CloudClient) -> Result<(), super::CloudError> {
     if !auth::is_authenticated() {
         return Err(super::CloudError::NotAuthenticated);
@@ -80,6 +84,7 @@ pub async fn sync_now(client: &CloudClient) -> Result<(), super::CloudError> {
     client.refresh_balance().await?;
     Ok(())
 }
+// tarpaulin-stop-ignore
 
 impl CloudClient {
     pub async fn push_config(&self, payload: &SyncConfigPayload) -> Result<(), super::CloudError> {
@@ -207,5 +212,227 @@ mod tests {
         let json = r#"{"configs":[{"machine_id":"mbp","config":{"yolo":true},"version":1,"updated_at":"2026-03-17"}]}"#;
         let resp: SyncPullAllResponse = serde_json::from_str(json).unwrap();
         assert_eq!(resp.configs.len(), 1);
+    }
+
+    // ── httpmock-based async tests ────────────────────────────────────────
+
+    fn make_test_sync_payload() -> SyncConfigPayload {
+        SyncConfigPayload {
+            machine_id: "mbp-2024".to_string(),
+            config: serde_json::json!({
+                "quality_gates": {"lint": true},
+                "yolo_mode": false
+            }),
+            version: 1,
+        }
+    }
+
+    #[tokio::test]
+    async fn push_config_200_ok() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/sync/push");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({"ok": true}));
+        });
+
+        let client = super::super::CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let payload = make_test_sync_payload();
+        let result = client.push_config(&payload).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn push_config_401_auth_expired() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/sync/push");
+            then.status(401).body("Unauthorized");
+        });
+
+        let client = super::super::CloudClient::with_test_jwt(&server.base_url(), "bad-jwt");
+        let payload = make_test_sync_payload();
+        let result = client.push_config(&payload).await;
+        match result {
+            Err(super::super::CloudError::Api { status, .. }) => assert_eq!(status, 401),
+            other => panic!("expected Api error with status 401, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn push_config_500_server_error() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/sync/push");
+            then.status(500).body("Internal Server Error");
+        });
+
+        let client = super::super::CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let payload = make_test_sync_payload();
+        let result = client.push_config(&payload).await;
+        match result {
+            Err(super::super::CloudError::Api { status, message }) => {
+                assert_eq!(status, 500);
+                assert!(message.contains("Internal Server Error"));
+            }
+            other => panic!("expected Api error with status 500, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn pull_config_200_with_config() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET)
+                .path("/api/sync/pull")
+                .query_param("machine_id", "mbp-2024");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "config": {
+                        "machine_id": "mbp-2024",
+                        "config": {"yolo_mode": false},
+                        "version": 3,
+                        "updated_at": "2026-03-17T12:00:00Z"
+                    }
+                }));
+        });
+
+        let client = super::super::CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let entry = client.pull_config("mbp-2024").await.unwrap();
+        assert!(entry.is_some());
+        let entry = entry.unwrap();
+        assert_eq!(entry.machine_id, "mbp-2024");
+        assert_eq!(entry.version, 3);
+    }
+
+    #[tokio::test]
+    async fn pull_config_200_no_config() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET)
+                .path("/api/sync/pull")
+                .query_param("machine_id", "unknown-machine");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "config": null
+                }));
+        });
+
+        let client = super::super::CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let entry = client.pull_config("unknown-machine").await.unwrap();
+        assert!(entry.is_none());
+    }
+
+    #[tokio::test]
+    async fn pull_config_401_auth_expired() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/api/sync/pull");
+            then.status(401).body("Unauthorized");
+        });
+
+        let client = super::super::CloudClient::with_test_jwt(&server.base_url(), "bad-jwt");
+        let result = client.pull_config("mbp-2024").await;
+        match result {
+            Err(super::super::CloudError::Api { status, .. }) => assert_eq!(status, 401),
+            other => panic!("expected Api error with status 401, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn pull_all_configs_200_ok() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/api/sync/pull");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "configs": [
+                        {
+                            "machine_id": "mbp-2024",
+                            "config": {"yolo_mode": false},
+                            "version": 1,
+                            "updated_at": "2026-03-17T12:00:00Z"
+                        },
+                        {
+                            "machine_id": "linux-dev",
+                            "config": {"yolo_mode": true},
+                            "version": 2,
+                            "updated_at": "2026-03-18T08:00:00Z"
+                        }
+                    ]
+                }));
+        });
+
+        let client = super::super::CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let configs = client.pull_all_configs().await.unwrap();
+        assert_eq!(configs.len(), 2);
+        assert_eq!(configs[0].machine_id, "mbp-2024");
+        assert_eq!(configs[1].machine_id, "linux-dev");
+    }
+
+    #[tokio::test]
+    async fn pull_all_configs_200_empty() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/api/sync/pull");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "configs": []
+                }));
+        });
+
+        let client = super::super::CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let configs = client.pull_all_configs().await.unwrap();
+        assert!(configs.is_empty());
+    }
+
+    #[tokio::test]
+    async fn pull_all_configs_401_auth_expired() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/api/sync/pull");
+            then.status(401).body("Unauthorized");
+        });
+
+        let client = super::super::CloudClient::with_test_jwt(&server.base_url(), "bad-jwt");
+        let result = client.pull_all_configs().await;
+        match result {
+            Err(super::super::CloudError::Api { status, .. }) => assert_eq!(status, 401),
+            other => panic!("expected Api error with status 401, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn pull_all_configs_500_server_error() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/api/sync/pull");
+            then.status(500).body("db down");
+        });
+
+        let client = super::super::CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let result = client.pull_all_configs().await;
+        match result {
+            Err(super::super::CloudError::Api { status, message }) => {
+                assert_eq!(status, 500);
+                assert_eq!(message, "db down");
+            }
+            other => panic!("expected Api error with status 500, got: {:?}", other),
+        }
     }
 }

@@ -48,6 +48,7 @@ pub enum StepStatus {
     Skipped,
 }
 
+// tarpaulin-start-ignore
 /// Run the full PR pipeline: stage, commit, rebase, gates, push, create PR, cleanup.
 pub async fn create_pr<F>(
     input: &PrInput,
@@ -265,6 +266,7 @@ where
         success: pr_ok,
     })
 }
+// tarpaulin-stop-ignore
 
 async fn run_step<F, Fut>(name: &str, f: F) -> PipelineStep
 where

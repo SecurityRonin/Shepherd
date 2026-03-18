@@ -29,6 +29,7 @@ async fn start_test_server() -> (String, tokio::task::JoinHandle<()>) {
             event_tx,
             llm_provider: None,
             iterm2: None,
+            cloud_client: None,
         });
 
         let app = shepherd_server::build_router(state);
@@ -124,4 +125,225 @@ async fn test_delete_task() {
         .await
         .unwrap();
     assert!(tasks.is_empty());
+}
+
+#[tokio::test]
+async fn test_cloud_status_endpoint() {
+    let (url, _handle) = start_test_server().await;
+    let client = Client::new();
+    let resp: Value = client
+        .get(format!("{url}/api/cloud/status"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    // With cloud_client: None, cloud is not available
+    assert_eq!(resp["cloud_available"], false);
+    assert_eq!(resp["authenticated"], false);
+    assert!(resp["plan"].is_null());
+    assert!(resp["credits_balance"].is_null());
+    // cloud_generation_enabled reflects the config default (true), not cloud availability
+    assert_eq!(resp["cloud_generation_enabled"], true);
+}
+
+#[tokio::test]
+async fn test_cloud_costs_endpoint() {
+    let (url, _handle) = start_test_server().await;
+    let client = Client::new();
+    let resp: Value = client
+        .get(format!("{url}/api/cloud/costs"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let features = resp["features"].as_array().unwrap();
+    assert_eq!(features.len(), 7);
+    // Verify all expected feature names are present
+    let names: Vec<&str> = features.iter().map(|f| f["name"].as_str().unwrap()).collect();
+    assert!(names.contains(&"logo"));
+    assert!(names.contains(&"name"));
+    assert!(names.contains(&"northstar"));
+    assert!(names.contains(&"scrape"));
+    assert!(names.contains(&"crawl"));
+    assert!(names.contains(&"vision"));
+    assert!(names.contains(&"search"));
+    // All costs should be positive integers
+    for feature in features {
+        assert!(feature["credits"].as_u64().unwrap() > 0);
+    }
+}
+
+#[tokio::test]
+async fn test_northstar_phases_endpoint() {
+    let (url, _handle) = start_test_server().await;
+    let client = Client::new();
+    let resp: Value = client
+        .get(format!("{url}/api/northstar/phases"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(resp["total"], 13);
+    let phases = resp["phases"].as_array().unwrap();
+    assert_eq!(phases.len(), 13);
+    // All phases should have sequential IDs starting at 1
+    for (i, phase) in phases.iter().enumerate() {
+        assert_eq!(phase["id"].as_u64().unwrap(), (i + 1) as u64);
+        assert!(!phase["name"].as_str().unwrap().is_empty());
+        assert!(!phase["description"].as_str().unwrap().is_empty());
+        assert!(phase["document_count"].as_u64().unwrap() > 0);
+    }
+}
+
+#[tokio::test]
+async fn test_cloud_balance_unavailable() {
+    let (url, _handle) = start_test_server().await;
+    let client = Client::new();
+    let resp = client
+        .get(format!("{url}/api/cloud/balance"))
+        .send()
+        .await
+        .unwrap();
+    // With cloud_client: None, should return 503
+    assert_eq!(resp.status(), 503);
+    let body: Value = resp.json().await.unwrap();
+    assert!(body["error"].as_str().unwrap().contains("not available"));
+}
+
+#[tokio::test]
+async fn test_logogen_no_provider_returns_503() {
+    let (url, _handle) = start_test_server().await;
+    let client = Client::new();
+    let resp = client
+        .post(format!("{url}/api/logogen"))
+        .json(&json!({
+            "product_name": "Test",
+            "style": "minimal"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 503);
+    let body: Value = resp.json().await.unwrap();
+    assert!(body["error"].as_str().unwrap().contains("No generation provider"));
+}
+
+#[tokio::test]
+async fn test_namegen_no_provider_returns_503() {
+    let (url, _handle) = start_test_server().await;
+    let client = Client::new();
+    let resp = client
+        .post(format!("{url}/api/namegen"))
+        .json(&json!({
+            "description": "A test product"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 503);
+    let body: Value = resp.json().await.unwrap();
+    assert!(body["error"].as_str().unwrap().contains("No generation provider"));
+}
+
+#[tokio::test]
+async fn test_northstar_execute_invalid_phase() {
+    let (url, _handle) = start_test_server().await;
+    let client = Client::new();
+    let resp = client
+        .post(format!("{url}/api/northstar/phase"))
+        .json(&json!({
+            "product_name": "Test",
+            "product_description": "A test",
+            "phase_id": 99
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
+    let body: Value = resp.json().await.unwrap();
+    assert!(body["error"].as_str().unwrap().contains("Unknown phase_id"));
+}
+
+#[tokio::test]
+async fn test_northstar_execute_no_provider() {
+    let (url, _handle) = start_test_server().await;
+    let client = Client::new();
+    let resp = client
+        .post(format!("{url}/api/northstar/phase"))
+        .json(&json!({
+            "product_name": "Test",
+            "product_description": "A test",
+            "phase_id": 1
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 503);
+    let body: Value = resp.json().await.unwrap();
+    assert!(body["error"].as_str().unwrap().contains("No generation provider"));
+}
+
+#[tokio::test]
+async fn test_gates_task_not_found() {
+    let (url, _handle) = start_test_server().await;
+    let client = Client::new();
+    let resp = client
+        .post(format!("{url}/api/tasks/99999/gates"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 404);
+}
+
+#[tokio::test]
+async fn test_pr_task_not_found() {
+    let (url, _handle) = start_test_server().await;
+    let client = Client::new();
+    let resp = client
+        .post(format!("{url}/api/tasks/99999/pr"))
+        .json(&json!({}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 404);
+}
+
+#[tokio::test]
+async fn test_delete_nonexistent_task() {
+    let (url, _handle) = start_test_server().await;
+    let client = Client::new();
+    // SQLite DELETE succeeds even when no row matches, so the handler returns 200
+    let resp = client
+        .delete(format!("{url}/api/tasks/99999"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["deleted"], 99999);
+}
+
+#[tokio::test]
+async fn test_logogen_export_invalid_base64() {
+    let (url, _handle) = start_test_server().await;
+    let client = Client::new();
+    let resp = client
+        .post(format!("{url}/api/logogen/export"))
+        .json(&json!({
+            "image_base64": "not-valid-base64",
+            "product_name": "Test"
+        }))
+        .send()
+        .await
+        .unwrap();
+    // Invalid base64 triggers the export error path
+    assert_eq!(resp.status(), 500);
+    let body: Value = resp.json().await.unwrap();
+    assert!(body["error"].as_str().unwrap().contains("Icon export failed"));
 }

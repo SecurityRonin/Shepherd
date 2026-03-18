@@ -1,3 +1,4 @@
+pub mod cloud;
 pub mod gates;
 pub mod iterm2;
 pub mod health;

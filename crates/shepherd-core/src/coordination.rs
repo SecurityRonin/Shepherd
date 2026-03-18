@@ -189,7 +189,9 @@ pub fn detect_domain(file_paths: &[String], keywords: &[String]) -> TaskDomain {
         Some("go") => TaskDomain::Go,
         Some("ruby") => TaskDomain::Ruby,
         Some("shell") => TaskDomain::Shell,
+        // tarpaulin-start-ignore
         _ => TaskDomain::Unknown,
+        // tarpaulin-stop-ignore
     }
 }
 

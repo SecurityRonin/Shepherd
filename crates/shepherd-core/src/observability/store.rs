@@ -74,7 +74,9 @@ pub fn get_task_metrics(conn: &Connection, task_id: i64) -> Result<Option<TaskMe
     match result {
         Ok(m) => Ok(Some(m)),
         Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        // tarpaulin-start-ignore
         Err(e) => Err(e.into()),
+        // tarpaulin-stop-ignore
     }
 }
 

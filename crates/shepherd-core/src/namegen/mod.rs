@@ -118,7 +118,6 @@ pub fn calculate_status(validation: &NameValidation) -> ValidationStatus {
     }
 
     // Gather all availability signals
-    let mut all_available = true;
     let mut any_unavailable = false;
     let mut has_any_data = false;
 
@@ -128,7 +127,6 @@ pub fn calculate_status(validation: &NameValidation) -> ValidationStatus {
             has_any_data = true;
             if !available {
                 any_unavailable = true;
-                all_available = false;
             }
         }
     }
@@ -141,7 +139,6 @@ pub fn calculate_status(validation: &NameValidation) -> ValidationStatus {
         has_any_data = true;
         if !available {
             any_unavailable = true;
-            all_available = false;
         }
     }
 
@@ -149,9 +146,7 @@ pub fn calculate_status(validation: &NameValidation) -> ValidationStatus {
         return ValidationStatus::Pending;
     }
 
-    if all_available {
-        ValidationStatus::AllClear
-    } else if any_unavailable {
+    if any_unavailable {
         ValidationStatus::Partial
     } else {
         ValidationStatus::AllClear
@@ -485,5 +480,222 @@ mod tests {
         assert_eq!(sorted.candidates[0].validation.overall_status, ValidationStatus::AllClear);
         assert_eq!(sorted.candidates[1].validation.overall_status, ValidationStatus::AllClear);
         assert_eq!(sorted.candidates[2].validation.overall_status, ValidationStatus::Partial);
+    }
+
+    #[test]
+    fn calculate_status_only_npm_unavailable() {
+        let validation = NameValidation {
+            domains: vec![],
+            npm_available: Some(false),
+            pypi_available: None,
+            github_available: None,
+            negative_associations: Vec::new(),
+            overall_status: ValidationStatus::Pending,
+        };
+        assert_eq!(calculate_status(&validation), ValidationStatus::Partial);
+    }
+
+    #[test]
+    fn calculate_status_only_pypi_unavailable() {
+        let validation = NameValidation {
+            domains: vec![],
+            npm_available: None,
+            pypi_available: Some(false),
+            github_available: None,
+            negative_associations: Vec::new(),
+            overall_status: ValidationStatus::Pending,
+        };
+        assert_eq!(calculate_status(&validation), ValidationStatus::Partial);
+    }
+
+    #[test]
+    fn calculate_status_only_github_unavailable() {
+        let validation = NameValidation {
+            domains: vec![],
+            npm_available: None,
+            pypi_available: None,
+            github_available: Some(false),
+            negative_associations: Vec::new(),
+            overall_status: ValidationStatus::Pending,
+        };
+        assert_eq!(calculate_status(&validation), ValidationStatus::Partial);
+    }
+
+    #[test]
+    fn calculate_status_registries_all_available_no_domains() {
+        let validation = NameValidation {
+            domains: vec![],
+            npm_available: Some(true),
+            pypi_available: Some(true),
+            github_available: Some(true),
+            negative_associations: Vec::new(),
+            overall_status: ValidationStatus::Pending,
+        };
+        assert_eq!(calculate_status(&validation), ValidationStatus::AllClear);
+    }
+
+    #[test]
+    fn calculate_status_negative_associations_override_everything() {
+        let validation = NameValidation {
+            domains: vec![DomainCheck {
+                domain: "great.com".into(),
+                available: Some(true),
+                error: None,
+            }],
+            npm_available: Some(true),
+            pypi_available: Some(true),
+            github_available: Some(true),
+            negative_associations: vec!["offensive term".into()],
+            overall_status: ValidationStatus::Pending,
+        };
+        assert_eq!(calculate_status(&validation), ValidationStatus::Conflicted);
+    }
+
+    #[test]
+    fn name_gen_result_empty_candidates() {
+        let result = NameGenResult { candidates: vec![] };
+        let sorted = result.sorted();
+        assert!(sorted.candidates.is_empty());
+    }
+
+    #[test]
+    fn name_gen_input_clone() {
+        let input = NameGenInput {
+            description: "test".into(),
+            vibes: vec!["cool".into()],
+            count: 5,
+        };
+        let cloned = input.clone();
+        assert_eq!(cloned.description, "test");
+        assert_eq!(cloned.vibes.len(), 1);
+        assert_eq!(cloned.count, 5);
+    }
+
+    #[test]
+    fn name_candidate_clone() {
+        let candidate = NameCandidate {
+            name: "acme".into(),
+            tagline: Some("build it".into()),
+            reasoning: "good name".into(),
+            validation: NameValidation::default(),
+        };
+        let cloned = candidate.clone();
+        assert_eq!(cloned.name, "acme");
+        assert_eq!(cloned.tagline, Some("build it".into()));
+    }
+
+    #[test]
+    fn name_gen_result_clone() {
+        let result = NameGenResult {
+            candidates: vec![NameCandidate {
+                name: "foo".into(),
+                tagline: None,
+                reasoning: "short".into(),
+                validation: NameValidation::default(),
+            }],
+        };
+        let cloned = result.clone();
+        assert_eq!(cloned.candidates.len(), 1);
+        assert_eq!(cloned.candidates[0].name, "foo");
+    }
+
+    #[test]
+    fn validation_status_equality() {
+        assert_eq!(ValidationStatus::AllClear, ValidationStatus::AllClear);
+        assert_ne!(ValidationStatus::AllClear, ValidationStatus::Partial);
+        assert_ne!(ValidationStatus::Partial, ValidationStatus::Conflicted);
+        assert_ne!(ValidationStatus::Pending, ValidationStatus::AllClear);
+    }
+
+    struct MockLlmProvider;
+
+    #[async_trait::async_trait]
+    impl crate::llm::LlmProvider for MockLlmProvider {
+        async fn chat(
+            &self,
+            request: &crate::llm::LlmRequest,
+        ) -> anyhow::Result<crate::llm::LlmResponse> {
+            use crate::llm::Role;
+
+            let system_msg = request
+                .messages
+                .iter()
+                .find(|m| m.role == Role::System)
+                .map(|m| m.content.as_str())
+                .unwrap_or("");
+
+            let content = if system_msg.contains("naming expert") {
+                // Brainstorm response
+                r#"[
+                    {"name": "testify", "tagline": "Test with confidence", "reasoning": "Testing + verify"},
+                    {"name": "validox", "reasoning": "Validation + orthodox"}
+                ]"#
+                .to_string()
+            } else if system_msg.contains("brand safety") {
+                // Negative associations scan - no concerns
+                "[]".to_string()
+            } else {
+                "[]".to_string()
+            };
+
+            Ok(crate::llm::LlmResponse {
+                content,
+                model: "mock".to_string(),
+                usage: crate::llm::TokenUsage {
+                    prompt_tokens: 10,
+                    completion_tokens: 10,
+                    total_tokens: 20,
+                },
+            })
+        }
+
+        fn name(&self) -> &str {
+            "mock"
+        }
+    }
+
+    #[tokio::test]
+    async fn test_generate_names_with_mock_provider() {
+        let provider = MockLlmProvider;
+        let input = NameGenInput {
+            description: "A testing framework".to_string(),
+            vibes: vec!["modern".to_string()],
+            count: 2,
+        };
+
+        let result = generate_names(&provider, &input).await.unwrap();
+        assert_eq!(result.candidates.len(), 2);
+
+        // Verify candidates have names from the mock response
+        let names: Vec<&str> = result
+            .candidates
+            .iter()
+            .map(|c| c.name.as_str())
+            .collect();
+        assert!(names.contains(&"testify"));
+        assert!(names.contains(&"validox"));
+
+        // Verify validation was attempted for each candidate
+        for candidate in &result.candidates {
+            // Status should be calculated (not the initial Pending default)
+            // Actual status depends on network availability during the test:
+            // - If network calls succeed: Partial (domains registered) or AllClear
+            // - If network calls fail: Pending (no data from unwrap_or_default)
+            assert!(matches!(
+                candidate.validation.overall_status,
+                ValidationStatus::AllClear
+                    | ValidationStatus::Partial
+                    | ValidationStatus::Pending
+            ));
+            // Negative associations should be empty (mock returns [])
+            assert!(candidate.validation.negative_associations.is_empty());
+        }
+
+        // Verify tagline handling
+        let testify = result.candidates.iter().find(|c| c.name == "testify").unwrap();
+        assert_eq!(testify.tagline.as_deref(), Some("Test with confidence"));
+
+        let validox = result.candidates.iter().find(|c| c.name == "validox").unwrap();
+        assert!(validox.tagline.is_none());
     }
 }

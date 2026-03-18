@@ -128,4 +128,137 @@ mod tests {
         let role: AgentRole = serde_json::from_str(json).unwrap();
         assert_eq!(role.config["max_turns"], 10);
     }
+
+    // ── httpmock-based async tests ────────────────────────────────────────
+
+    fn templates_response_json() -> serde_json::Value {
+        serde_json::json!({
+            "templates": [
+                {
+                    "id": "tdd-pipeline",
+                    "name": "TDD Pipeline",
+                    "description": "Three-agent TDD workflow",
+                    "category": "pipeline",
+                    "agents": [{"role": "planner", "agent_type": "claude-code", "config": {"focus": "test-first"}}],
+                    "quality_gates": ["lint", "test"],
+                    "is_premium": false
+                },
+                {
+                    "id": "pair-review",
+                    "name": "Pair Review",
+                    "description": "Two-agent pair programming",
+                    "category": "pair",
+                    "agents": [
+                        {"role": "driver", "agent_type": "claude-code", "config": {}},
+                        {"role": "reviewer", "agent_type": "claude-code", "config": {}}
+                    ],
+                    "quality_gates": ["lint"],
+                    "is_premium": true
+                }
+            ]
+        })
+    }
+
+    #[tokio::test]
+    async fn list_templates_200_no_filters() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/api/templates");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(templates_response_json());
+        });
+
+        let client = super::super::CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let templates = client.list_templates(None, true).await.unwrap();
+        assert_eq!(templates.len(), 2);
+        assert_eq!(templates[0].id, "tdd-pipeline");
+        assert!(!templates[0].is_premium);
+        assert_eq!(templates[1].id, "pair-review");
+        assert!(templates[1].is_premium);
+    }
+
+    #[tokio::test]
+    async fn list_templates_200_with_category_filter() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET)
+                .path("/api/templates")
+                .query_param("category", "pipeline")
+                .query_param("include_premium", "false");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "templates": [{
+                        "id": "tdd-pipeline",
+                        "name": "TDD Pipeline",
+                        "description": "Three-agent TDD workflow",
+                        "category": "pipeline",
+                        "agents": [{"role": "planner", "agent_type": "claude-code", "config": {}}],
+                        "quality_gates": ["lint", "test"],
+                        "is_premium": false
+                    }]
+                }));
+        });
+
+        let client = super::super::CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let templates = client.list_templates(Some("pipeline"), false).await.unwrap();
+        assert_eq!(templates.len(), 1);
+        assert_eq!(templates[0].category, TemplateCategory::Pipeline);
+    }
+
+    #[tokio::test]
+    async fn list_templates_200_empty() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/api/templates");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({"templates": []}));
+        });
+
+        let client = super::super::CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let templates = client.list_templates(None, true).await.unwrap();
+        assert!(templates.is_empty());
+    }
+
+    #[tokio::test]
+    async fn list_templates_500_server_error() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/api/templates");
+            then.status(500).body("Internal Server Error");
+        });
+
+        let client = super::super::CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let result = client.list_templates(None, true).await;
+        match result {
+            Err(super::super::CloudError::Api { status, message }) => {
+                assert_eq!(status, 500);
+                assert!(message.contains("Internal Server Error"));
+            }
+            other => panic!("expected Api error with status 500, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn list_templates_404_not_found() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/api/templates");
+            then.status(404).body("Not Found");
+        });
+
+        let client = super::super::CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let result = client.list_templates(None, true).await;
+        match result {
+            Err(super::super::CloudError::Api { status, .. }) => assert_eq!(status, 404),
+            other => panic!("expected Api error with status 404, got: {:?}", other),
+        }
+    }
 }

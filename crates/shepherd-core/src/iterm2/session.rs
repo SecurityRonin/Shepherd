@@ -127,6 +127,38 @@ mod tests {
     }
 
     #[test]
+    fn test_detect_permission_prompt_case_insensitive() {
+        let text = "ALLOW Edit Tool?\n(Y/N) [y]: ";
+        let tool = detect_permission_prompt(text);
+        assert!(tool.is_some());
+    }
+
+    #[test]
+    fn test_detect_permission_prompt_yn_without_allow() {
+        // Has (y/n) but no "allow" keyword
+        let text = "Continue?\n(y/n): ";
+        assert!(detect_permission_prompt(text).is_none());
+    }
+
+    #[test]
+    fn test_detect_permission_prompt_allow_without_yn() {
+        // Has "allow" but no (y/n)
+        let text = "Allow bash tool? Press enter to continue.";
+        assert!(detect_permission_prompt(text).is_none());
+    }
+
+    #[test]
+    fn test_flatten_buffer_no_text() {
+        // Line with no text should still add newline for hard eol
+        let line = iterm2::LineContents {
+            text: None,
+            continuation: Some(iterm2::line_contents::Continuation::HardEol as i32),
+            ..Default::default()
+        };
+        assert_eq!(flatten_buffer(&[line]), "\n");
+    }
+
+    #[test]
     fn test_detect_permission_prompt_extracts_tool_name() {
         let text = "Allow bash tool?\n(y/n) [y]: ";
         let tool = detect_permission_prompt(text).unwrap();

@@ -1,4 +1,4 @@
-use shepherd_core::{adapters::AdapterRegistry, config, db, iterm2::{auth::default_auth_path, Iterm2Manager}, pty::{PtyManager, sandbox::SandboxProfile}, yolo::YoloEngine};
+use shepherd_core::{adapters::AdapterRegistry, cloud::CloudClient, config, db, iterm2::{auth::default_auth_path, Iterm2Manager}, pty::{PtyManager, sandbox::SandboxProfile}, yolo::YoloEngine};
 use shepherd_server::state::AppState;
 use std::sync::Arc;
 use tokio::sync::{broadcast, Mutex};
@@ -65,6 +65,14 @@ async fn main() -> anyhow::Result<()> {
 
     let iterm2 = Arc::new(Iterm2Manager::new(default_auth_path()));
 
+    let cloud_client = if cfg.cloud.cloud_generation_enabled {
+        tracing::info!("Cloud generation enabled — initialising CloudClient");
+        Some(CloudClient::new())
+    } else {
+        tracing::info!("Cloud generation disabled by config");
+        None
+    };
+
     let state = Arc::new(AppState {
         db: Arc::new(Mutex::new(conn)),
         config: cfg,
@@ -74,6 +82,7 @@ async fn main() -> anyhow::Result<()> {
         event_tx,
         llm_provider: None,
         iterm2: Some(iterm2.clone()),
+        cloud_client,
     });
 
     if let Some(ref mgr) = state.iterm2 {

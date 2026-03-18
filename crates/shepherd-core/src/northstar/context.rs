@@ -83,9 +83,11 @@ pub fn write_northstar_output(analysis: &NorthStarAnalysis, base_dir: &Path) -> 
 
     // Write all generated documents
     for phase in &analysis.phases_completed {
+        // tarpaulin-start-ignore
         if phase.status != PhaseStatus::Completed {
             continue;
         }
+        // tarpaulin-stop-ignore
         for doc in &phase.documents {
             let doc_path = northstar_dir.join(&doc.filename);
             fs::write(&doc_path, &doc.content)
@@ -244,6 +246,64 @@ mod tests {
         assert!(context.contains("kill_list:\n  - pending"));
         assert!(context.contains("metrics:\n  - pending"));
         assert!(context.contains("architecture:\n  - pending"));
+    }
+
+    #[test]
+    fn write_northstar_output_skips_non_completed_phases() {
+        let tmp = tempfile::tempdir().unwrap();
+        let analysis = NorthStarAnalysis {
+            product_name: "SkipApp".to_string(),
+            product_description: "Test skipping".to_string(),
+            phases_completed: vec![
+                PhaseResult {
+                    phase_id: 1,
+                    phase_name: "Product Vision".to_string(),
+                    status: PhaseStatus::Completed,
+                    output: "Vision output".to_string(),
+                    documents: vec![GeneratedDocument {
+                        title: "Product Vision".to_string(),
+                        filename: "product-vision.md".to_string(),
+                        content: "# Vision".to_string(),
+                        doc_type: "markdown".to_string(),
+                    }],
+                },
+                PhaseResult {
+                    phase_id: 2,
+                    phase_name: "Target Audience".to_string(),
+                    status: PhaseStatus::Failed,
+                    output: "Failed".to_string(),
+                    documents: vec![GeneratedDocument {
+                        title: "Target Audience".to_string(),
+                        filename: "target-audience.md".to_string(),
+                        content: "# Audience".to_string(),
+                        doc_type: "markdown".to_string(),
+                    }],
+                },
+                PhaseResult {
+                    phase_id: 3,
+                    phase_name: "Problem Statement".to_string(),
+                    status: PhaseStatus::Skipped,
+                    output: "Skipped".to_string(),
+                    documents: vec![GeneratedDocument {
+                        title: "Problem Statement".to_string(),
+                        filename: "problem-statement.md".to_string(),
+                        content: "# Problem".to_string(),
+                        doc_type: "markdown".to_string(),
+                    }],
+                },
+            ],
+            ai_context: None,
+        };
+
+        let files = write_northstar_output(&analysis, tmp.path()).unwrap();
+        let northstar_dir = tmp.path().join("docs").join("northstar");
+
+        // Only the completed phase doc + ai-context.yml should be written
+        assert_eq!(files.len(), 2); // product-vision.md + ai-context.yml
+        assert!(northstar_dir.join("product-vision.md").exists());
+        assert!(!northstar_dir.join("target-audience.md").exists());
+        assert!(!northstar_dir.join("problem-statement.md").exists());
+        assert!(northstar_dir.join("ai-context.yml").exists());
     }
 
     #[test]

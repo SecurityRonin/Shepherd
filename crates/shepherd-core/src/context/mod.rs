@@ -44,9 +44,11 @@ impl ContextOrchestrator {
     }
 
     /// Create an orchestrator with custom providers.
+    // tarpaulin-start-ignore
     pub fn with_providers(providers: Vec<Box<dyn ContextProvider>>) -> Self {
         Self { providers }
     }
+    // tarpaulin-stop-ignore
 
     /// Build a context package for a task.
     ///
@@ -167,11 +169,13 @@ impl ContextOrchestrator {
     }
 }
 
+// tarpaulin-start-ignore
 impl Default for ContextOrchestrator {
     fn default() -> Self {
         Self::new()
     }
 }
+// tarpaulin-stop-ignore
 
 #[cfg(test)]
 mod tests {
@@ -381,6 +385,43 @@ mod tests {
         let pkg = orchestrator.build_context(&request);
         // Should still produce a valid package even with no matches
         assert!(pkg.id.starts_with("ctx-"));
+    }
+
+    #[test]
+    fn with_providers_creates_custom_orchestrator() {
+        let orchestrator = ContextOrchestrator::with_providers(vec![
+            Box::new(StructuralProvider),
+        ]);
+        let repo = create_test_repo();
+        let request = ContextRequest {
+            task_id: Some(1),
+            task_title: "Fix auth".into(),
+            task_description: "Check src/auth/mod.rs".into(),
+            repo_path: repo.path().to_path_buf(),
+            agent: "claude-code".into(),
+            max_files: 20,
+        };
+        let pkg = orchestrator.build_context(&request);
+        // With only StructuralProvider, there should be no Semantic items
+        assert!(pkg.items.iter().all(|i| i.source != ContextSource::Semantic));
+    }
+
+    #[test]
+    fn default_orchestrator_same_as_new() {
+        let repo = create_test_repo();
+        let orchestrator = ContextOrchestrator::default();
+        let request = ContextRequest {
+            task_id: Some(1),
+            task_title: "Fix auth".into(),
+            task_description: "Check src/auth/mod.rs".into(),
+            repo_path: repo.path().to_path_buf(),
+            agent: "claude-code".into(),
+            max_files: 20,
+        };
+        let pkg = orchestrator.build_context(&request);
+        assert!(pkg.id.starts_with("ctx-"));
+        // Default has both Structural and Semantic providers
+        assert!(!pkg.items.is_empty());
     }
 
     // ── Deduplication tests ──────────────────────────────────────

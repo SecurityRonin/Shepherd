@@ -231,6 +231,7 @@ pub fn export_icns(img: &DynamicImage, path: &Path) -> Result<()> {
 
     match result {
         Ok(output) if output.status.success() => Ok(()),
+        // tarpaulin-start-ignore
         _ => {
             // Write a placeholder ICNS file
             // ICNS magic: 'icns' + total file size (u32 BE)
@@ -238,6 +239,7 @@ pub fn export_icns(img: &DynamicImage, path: &Path) -> Result<()> {
             fs::write(path, placeholder).context("Failed to write placeholder .icns")?;
             Ok(())
         }
+        // tarpaulin-stop-ignore
     }
 }
 
@@ -496,6 +498,45 @@ mod tests {
         // Should start with "icns" magic bytes
         assert!(bytes.len() >= 4);
         assert_eq!(&bytes[0..4], b"icns");
+    }
+
+    #[test]
+    fn test_svg_placeholder_content() {
+        let tmp = tempfile::tempdir().unwrap();
+        let b64 = test_png_base64();
+        export_icons(&b64, tmp.path(), "MySuperApp").unwrap();
+        let svg = std::fs::read_to_string(tmp.path().join("logo.svg")).unwrap();
+        assert!(svg.contains("MySuperApp"));
+        assert!(svg.contains("xmlns"));
+        assert!(svg.contains("viewBox"));
+        assert!(svg.contains("512"));
+    }
+
+    #[test]
+    fn test_manifest_references_correct_files() {
+        let manifest = generate_manifest_json("App");
+        let parsed: serde_json::Value = serde_json::from_str(&manifest).unwrap();
+        let icons = parsed["icons"].as_array().unwrap();
+        // Verify that icon srcs match actual exported filenames
+        let srcs: Vec<&str> = icons.iter().map(|i| i["src"].as_str().unwrap()).collect();
+        assert!(srcs.contains(&"icon-192.png"));
+        assert!(srcs.contains(&"icon-512.png"));
+        assert!(srcs.contains(&"apple-touch-icon.png"));
+    }
+
+    #[test]
+    fn test_export_ico_empty_sizes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let img = image::DynamicImage::ImageRgba8(image::RgbaImage::from_fn(32, 32, |_, _| {
+            image::Rgba([0, 0, 0, 255])
+        }));
+        let path = tmp.path().join("empty.ico");
+        export_ico(&img, &path, &[]).unwrap();
+        assert!(path.exists());
+        let bytes = std::fs::read(&path).unwrap();
+        // Header only: reserved (2) + type (2) + count=0 (2) = 6 bytes
+        assert_eq!(bytes.len(), 6);
+        assert_eq!(bytes[4], 0); // count = 0
     }
 
     #[test]

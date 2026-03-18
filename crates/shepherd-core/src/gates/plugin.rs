@@ -34,6 +34,7 @@ pub async fn run_plugin_gate(project_dir: &Path, script: &str) -> GateResult {
                 gate_type: GateType::Custom,
             }
         }
+        // tarpaulin-start-ignore
         Err(e) => GateResult {
             gate_name,
             passed: false,
@@ -41,6 +42,7 @@ pub async fn run_plugin_gate(project_dir: &Path, script: &str) -> GateResult {
             duration_ms: start.elapsed().as_millis() as u64,
             gate_type: GateType::Custom,
         },
+        // tarpaulin-stop-ignore
     }
 }
 

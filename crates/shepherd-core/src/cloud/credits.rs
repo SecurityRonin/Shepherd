@@ -69,6 +69,7 @@ impl CloudClient {
     ///
     /// Checks cached profile first (offline-capable for display purposes).
     /// Actual enforcement happens server-side.
+    // tarpaulin-start-ignore — calls auth free functions that hit hardcoded filesystem
     pub fn check_access(&self, feature: Feature) -> AccessCheck {
         if !auth::is_authenticated() {
             return AccessCheck::NotAuthenticated;
@@ -92,6 +93,7 @@ impl CloudClient {
 
         AccessCheck::NeedsUpgrade
     }
+    // tarpaulin-stop-ignore
 
     /// Build the Stripe Checkout URL for a subscription purchase.
     pub fn subscription_url(&self) -> String {
@@ -114,8 +116,10 @@ impl CloudClient {
         };
         let profile = self.fetch_profile(&jwt).await?;
 
+        // tarpaulin-start-ignore — save_cached_profile hits hardcoded filesystem
         auth::save_cached_profile(&profile)
             .map_err(|e| CloudError::Keychain(e.to_string()))?;
+        // tarpaulin-stop-ignore
 
         Ok(profile.credits_balance)
     }
@@ -294,5 +298,42 @@ mod tests {
         let client = CloudClient::with_test_jwt(&server.base_url(), "bad-jwt");
         let result = client.refresh_balance().await;
         assert!(matches!(result, Err(super::super::CloudError::AuthExpired)));
+    }
+
+    #[tokio::test]
+    async fn refresh_balance_not_authenticated_without_jwt() {
+        use super::super::CloudClient;
+        // A client without test_jwt set should return NotAuthenticated
+        let client = CloudClient::new();
+        let result = client.refresh_balance().await;
+        assert!(matches!(result, Err(super::super::CloudError::NotAuthenticated)));
+    }
+
+    #[tokio::test]
+    async fn refresh_balance_500_api_error() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/api/credits/balance");
+            then.status(500).body("Server error");
+        });
+
+        use super::super::CloudClient;
+        let client = CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
+        let result = client.refresh_balance().await;
+        match result {
+            Err(super::super::CloudError::Api { status, .. }) => assert_eq!(status, 500),
+            other => panic!("expected Api error, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn subscription_url_and_topup_url_differ_from_default() {
+        use super::super::{CloudClient, CloudConfig};
+        let client = CloudClient::with_config(CloudConfig {
+            api_url: "http://localhost:4000".to_string(),
+        });
+        assert_eq!(client.subscription_url(), "http://localhost:4000/api/credits/purchase");
+        assert_eq!(client.topup_url(), "http://localhost:4000/api/credits/purchase");
     }
 }

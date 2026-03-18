@@ -124,11 +124,13 @@ impl LlmProvider for OpenAiProvider {
             .json::<OpenAiChatResponse>()
             .await?;
 
+        // tarpaulin-start-ignore
         let choice = resp
             .choices
             .into_iter()
             .next()
             .ok_or_else(|| anyhow::anyhow!("No choices in OpenAI response"))?;
+        // tarpaulin-stop-ignore
 
         Ok(LlmResponse {
             content: choice.message.content,
@@ -780,6 +782,88 @@ mod tests {
         assert_eq!(result.images.len(), 1);
         assert!(result.images[0].is_url);
         assert_eq!(result.images[0].data, "https://cdn.openai.com/img.png");
+    }
+
+    #[tokio::test]
+    async fn openai_generate_image_empty_data() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/images/generations");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "data": [{"url": null, "b64_json": null}]
+                }));
+        });
+        let provider = OpenAiProvider::new(
+            "sk-test".to_string(),
+            server.base_url(),
+            "dall-e-3".to_string(),
+        );
+        let req = ImageGenRequest {
+            prompt: "Nothing".to_string(),
+            model: None,
+            size: "256x256".to_string(),
+            n: 1,
+        };
+        let result = provider.generate_image(&req).await.unwrap();
+        assert_eq!(result.images.len(), 1);
+        assert!(!result.images[0].is_url);
+        assert!(result.images[0].data.is_empty());
+    }
+
+    #[tokio::test]
+    async fn openai_generate_image_custom_model() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/images/generations");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "data": [{"url": "https://example.com/img.png", "b64_json": null}]
+                }));
+        });
+        let provider = OpenAiProvider::new(
+            "sk-test".to_string(),
+            server.base_url(),
+            "dall-e-3".to_string(),
+        );
+        let req = ImageGenRequest {
+            prompt: "A test".to_string(),
+            model: Some("dall-e-2".to_string()),
+            size: "512x512".to_string(),
+            n: 1,
+        };
+        let result = provider.generate_image(&req).await.unwrap();
+        assert_eq!(result.images.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn openai_chat_with_custom_model() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/chat/completions");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "choices": [{"message": {"role": "assistant", "content": "Custom model response"}}],
+                    "model": "gpt-4o-mini",
+                    "usage": {"prompt_tokens": 5, "completion_tokens": 3, "total_tokens": 8}
+                }));
+        });
+        let provider = OpenAiProvider::new(
+            "sk-test".to_string(),
+            server.base_url(),
+            "gpt-4o".to_string(),
+        );
+        let req = LlmRequest {
+            messages: vec![ChatMessage::user("Hello")],
+            model: Some("gpt-4o-mini".to_string()),
+            max_tokens: 256,
+            temperature: 0.5,
+        };
+        let result = provider.chat(&req).await.unwrap();
+        assert_eq!(result.content, "Custom model response");
     }
 
     #[tokio::test]

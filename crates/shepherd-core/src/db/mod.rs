@@ -133,6 +133,47 @@ mod tests {
     }
 
     #[test]
+    fn test_open_file_based_db() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("test.db");
+        let conn = open(&db_path).unwrap();
+        // Verify tables are created
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='tasks'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_migrate_idempotent() {
+        let conn = open_memory().unwrap();
+        // Running migrate again should not fail
+        migrate(&conn).unwrap();
+        // Verify tables still exist
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='tasks'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_foreign_keys_enabled() {
+        let conn = open_memory().unwrap();
+        let fk: i64 = conn
+            .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(fk, 1);
+    }
+
+    #[test]
     fn test_tasks_table_has_iterm2_session_id_column() {
         let conn = open_memory().unwrap();
         conn.execute(

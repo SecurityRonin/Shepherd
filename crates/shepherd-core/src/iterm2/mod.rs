@@ -237,6 +237,47 @@ mod tests {
         assert!(mgr.get_task_id_for_iterm2("nonexistent-session").await.is_none());
     }
 
+    #[test]
+    fn test_encode_cwd_relative_path() {
+        let encoded = encode_cwd_for_projects("relative/path");
+        assert_eq!(encoded, "relative-path");
+    }
+
+    #[test]
+    fn test_encode_cwd_single_dir() {
+        let encoded = encode_cwd_for_projects("project");
+        assert_eq!(encoded, "project");
+    }
+
+    #[test]
+    fn test_encode_cwd_root() {
+        let encoded = encode_cwd_for_projects("/");
+        assert_eq!(encoded, "-");
+    }
+
+    #[test]
+    fn test_list_claude_sessions_sorted_by_mtime() {
+        let dir = tempfile::tempdir().unwrap();
+        // Create files with different mtimes
+        std::fs::write(dir.path().join("older.jsonl"), "{}").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        std::fs::write(dir.path().join("newer.jsonl"), "{}").unwrap();
+        let sessions = list_claude_sessions(dir.path().to_str().unwrap());
+        assert_eq!(sessions.len(), 2);
+        // Newest first
+        assert_eq!(sessions[0], "newer");
+        assert_eq!(sessions[1], "older");
+    }
+
+    #[test]
+    fn test_claude_project_dir_relative_path() {
+        let dir = claude_project_dir("myproject");
+        let s = dir.to_str().unwrap();
+        assert!(s.contains(".claude"));
+        assert!(s.contains("projects"));
+        assert!(s.ends_with("myproject"));
+    }
+
     #[tokio::test]
     async fn test_manager_adopted_map_after_insert() {
         let mgr = Iterm2Manager::new(PathBuf::from("/tmp/test.json"));

@@ -171,6 +171,66 @@ mod tests {
     }
 
     #[test]
+    fn test_next_id_increments() {
+        let id1 = next_id();
+        let id2 = next_id();
+        assert!(id2 > id1, "next_id should increment: {id1} vs {id2}");
+    }
+
+    #[test]
+    fn test_next_id_is_positive() {
+        let id = next_id();
+        assert!(id > 0);
+    }
+
+    #[test]
+    fn test_variable_request_encode_decode() {
+        let req = iterm2::ClientOriginatedMessage {
+            id: Some(100),
+            submessage: Some(
+                iterm2::client_originated_message::Submessage::VariableRequest(
+                    iterm2::VariableRequest {
+                        get: vec!["jobName".to_string()],
+                        scope: Some(iterm2::variable_request::Scope::SessionId("sess-1".to_string())),
+                        set: vec![],
+                    },
+                ),
+            ),
+        };
+        let encoded = ProstMessage::encode_to_vec(&req);
+        let decoded: iterm2::ClientOriginatedMessage =
+            ProstMessage::decode(encoded.as_slice()).unwrap();
+        assert_eq!(decoded.id, Some(100));
+        match decoded.submessage {
+            Some(iterm2::client_originated_message::Submessage::VariableRequest(vr)) => {
+                assert_eq!(vr.get, vec!["jobName".to_string()]);
+            }
+            _ => panic!("Expected VariableRequest"),
+        }
+    }
+
+    #[test]
+    fn test_notification_request_encode_decode() {
+        let req = iterm2::ClientOriginatedMessage {
+            id: Some(200),
+            submessage: Some(
+                iterm2::client_originated_message::Submessage::NotificationRequest(
+                    iterm2::NotificationRequest {
+                        session: Some("sess-2".to_string()),
+                        subscribe: Some(true),
+                        notification_type: Some(iterm2::NotificationType::NotifyOnScreenUpdate as i32),
+                        arguments: None,
+                    },
+                ),
+            ),
+        };
+        let encoded = ProstMessage::encode_to_vec(&req);
+        let decoded: iterm2::ClientOriginatedMessage =
+            ProstMessage::decode(encoded.as_slice()).unwrap();
+        assert_eq!(decoded.id, Some(200));
+    }
+
+    #[test]
     fn test_encode_decode_roundtrip() {
         let req = iterm2::ClientOriginatedMessage {
             id: Some(42),

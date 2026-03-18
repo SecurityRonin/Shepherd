@@ -89,6 +89,8 @@ fn default_true() -> bool { true }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CloudFeaturesConfig {
     #[serde(default = "default_true")]
+    pub cloud_generation_enabled: bool,
+    #[serde(default = "default_true")]
     pub sync_enabled: bool,
     #[serde(default)]
     pub sync_machine_id: Option<String>,
@@ -101,6 +103,7 @@ pub struct CloudFeaturesConfig {
 impl Default for CloudFeaturesConfig {
     fn default() -> Self {
         Self {
+            cloud_generation_enabled: true,
             sync_enabled: true,
             sync_machine_id: None,
             observability_push_enabled: true,
@@ -130,6 +133,7 @@ mod tests {
     #[test]
     fn cloud_features_config_defaults() {
         let config = CloudFeaturesConfig::default();
+        assert!(config.cloud_generation_enabled);
         assert!(config.sync_enabled);
         assert!(config.sync_machine_id.is_none());
         assert!(config.observability_push_enabled);
@@ -139,6 +143,7 @@ mod tests {
     #[test]
     fn cloud_features_config_serde_roundtrip() {
         let config = CloudFeaturesConfig {
+            cloud_generation_enabled: true,
             sync_enabled: false,
             sync_machine_id: Some("mbp-2024".to_string()),
             observability_push_enabled: true,
@@ -176,5 +181,10 @@ mod tests {
         assert!(config.cloud.observability_push_enabled);
         assert!(config.cloud.notifications_enabled);
         assert!(config.cloud.sync_machine_id.is_none());
+    }
+
+    #[test]
+    fn default_true_returns_true() {
+        assert!(default_true());
     }
 }

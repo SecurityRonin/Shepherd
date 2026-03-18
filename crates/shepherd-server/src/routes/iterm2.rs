@@ -109,6 +109,7 @@ mod tests {
             event_tx,
             llm_provider: None,
             iterm2: None,
+            cloud_client: None,
         })
     }
 

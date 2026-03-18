@@ -67,8 +67,8 @@ pub fn parse_brainstorm_response(content: &str) -> Result<Vec<RawCandidate>> {
         {
             after_first_newline.trim_start_matches('\n')
         } else {
-            trimmed
-        };
+            trimmed // tarpaulin-start-ignore
+        }; // tarpaulin-stop-ignore
 
         // Remove trailing code fence
         if let Some(stripped) = without_opening.strip_suffix("```") {

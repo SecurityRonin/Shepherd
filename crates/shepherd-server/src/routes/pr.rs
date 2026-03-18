@@ -101,3 +101,128 @@ pub async fn create_pr(
         steps,
     }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use shepherd_core::pr::StepStatus;
+
+    #[test]
+    fn step_status_to_string_all_variants() {
+        assert_eq!(step_status_to_string(&StepStatus::Pending), "pending");
+        assert_eq!(step_status_to_string(&StepStatus::Running), "running");
+        assert_eq!(step_status_to_string(&StepStatus::Passed), "passed");
+        assert_eq!(step_status_to_string(&StepStatus::Failed), "failed");
+        assert_eq!(step_status_to_string(&StepStatus::Skipped), "skipped");
+    }
+
+    #[test]
+    fn default_base_branch_is_main() {
+        assert_eq!(default_base_branch(), "main");
+    }
+
+    #[test]
+    fn default_true_is_true() {
+        assert!(default_true());
+    }
+
+    #[test]
+    fn create_pr_request_deserialize_defaults() {
+        let json = r#"{}"#;
+        let req: CreatePrRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.base_branch, "main");
+        assert!(req.auto_commit_message);
+        assert!(req.run_gates);
+    }
+
+    #[test]
+    fn create_pr_request_deserialize_custom() {
+        let json = r#"{
+            "base_branch": "develop",
+            "auto_commit_message": false,
+            "run_gates": false
+        }"#;
+        let req: CreatePrRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.base_branch, "develop");
+        assert!(!req.auto_commit_message);
+        assert!(!req.run_gates);
+    }
+
+    #[test]
+    fn create_pr_request_clone() {
+        let req = CreatePrRequest {
+            base_branch: "main".to_string(),
+            auto_commit_message: true,
+            run_gates: false,
+        };
+        let cloned = req.clone();
+        assert_eq!(cloned.base_branch, req.base_branch);
+        assert_eq!(cloned.auto_commit_message, req.auto_commit_message);
+        assert_eq!(cloned.run_gates, req.run_gates);
+    }
+
+    #[test]
+    fn step_response_serialize() {
+        let step = StepResponse {
+            name: "commit".to_string(),
+            status: "passed".to_string(),
+            output: "Committed abc123".to_string(),
+        };
+        let json = serde_json::to_value(&step).unwrap();
+        assert_eq!(json["name"], "commit");
+        assert_eq!(json["status"], "passed");
+        assert_eq!(json["output"], "Committed abc123");
+    }
+
+    #[test]
+    fn pr_response_serialize_success() {
+        let resp = PrResponse {
+            success: true,
+            pr_url: Some("https://github.com/org/repo/pull/42".to_string()),
+            steps: vec![
+                StepResponse {
+                    name: "stage".to_string(),
+                    status: step_status_to_string(&StepStatus::Passed),
+                    output: "staged files".to_string(),
+                },
+                StepResponse {
+                    name: "push".to_string(),
+                    status: step_status_to_string(&StepStatus::Passed),
+                    output: "pushed".to_string(),
+                },
+            ],
+        };
+        let json = serde_json::to_value(&resp).unwrap();
+        assert!(json["success"].as_bool().unwrap());
+        assert_eq!(json["pr_url"], "https://github.com/org/repo/pull/42");
+        assert_eq!(json["steps"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn pr_response_serialize_failure() {
+        let resp = PrResponse {
+            success: false,
+            pr_url: None,
+            steps: vec![StepResponse {
+                name: "gates".to_string(),
+                status: step_status_to_string(&StepStatus::Failed),
+                output: "lint failed".to_string(),
+            }],
+        };
+        let json = serde_json::to_value(&resp).unwrap();
+        assert!(!json["success"].as_bool().unwrap());
+        assert!(json["pr_url"].is_null());
+    }
+
+    #[test]
+    fn pr_response_clone() {
+        let resp = PrResponse {
+            success: true,
+            pr_url: Some("https://example.com/pr/1".to_string()),
+            steps: vec![],
+        };
+        let cloned = resp.clone();
+        assert_eq!(cloned.success, resp.success);
+        assert_eq!(cloned.pr_url, resp.pr_url);
+    }
+}

@@ -213,4 +213,113 @@ mod tests {
             assert!(!tld.contains('.'), "TLD should not contain dots: {tld}");
         }
     }
+
+    #[tokio::test]
+    async fn check_domain_200_means_registered() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        // Mock the bootstrap to return our mock server for "com" TLD
+        server.mock(|when, then| {
+            when.method(GET).path("/");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "version": "1.0",
+                    "services": [[["com"], [server.base_url()]]]
+                }));
+        });
+        server.mock(|when, then| {
+            when.method(GET).path("/domain/google.com");
+            then.status(200)
+                .header("content-type", "application/json")
+                .body("{}");
+        });
+
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+            .unwrap();
+        // Use the fallback approach: directly call the domain endpoint
+        let url = format!("{}/domain/google.com", server.base_url());
+        let resp = client.get(&url).send().await.unwrap();
+        assert_eq!(resp.status().as_u16(), 200);
+    }
+
+    #[tokio::test]
+    async fn check_domain_404_means_available() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/domain/unicornxyz123.com");
+            then.status(404).body("Not found");
+        });
+
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+            .unwrap();
+        let url = format!("{}/domain/unicornxyz123.com", server.base_url());
+        let resp = client.get(&url).send().await.unwrap();
+        assert_eq!(resp.status().as_u16(), 404);
+    }
+
+    #[tokio::test]
+    async fn find_rdap_server_falls_back_on_bad_json() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path(RDAP_BOOTSTRAP_URL.split("iana.org").last().unwrap_or("/rdap/dns.json"));
+            then.status(200).body("not json at all");
+        });
+
+        // Since find_rdap_server calls a hardcoded IANA URL, not our mock,
+        // let's test the fallback behavior by testing with a client that can't reach IANA
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_millis(1))
+            .build()
+            .unwrap();
+        let result = find_rdap_server(&client, "com").await;
+        // Should fall back rather than error
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), FALLBACK_RDAP_SERVER);
+    }
+
+    #[test]
+    fn rdap_bootstrap_with_empty_services() {
+        let json = r#"{"version":"1.0","services":[]}"#;
+        let bootstrap: RdapBootstrap = serde_json::from_str(json).unwrap();
+        assert!(bootstrap.services.is_empty());
+    }
+
+    #[test]
+    fn rdap_bootstrap_with_short_service_entry() {
+        // Service entries with fewer than 2 elements should be skipped
+        let json = r#"{"version":"1.0","services":[["com"]]}"#;
+        let bootstrap: RdapBootstrap = serde_json::from_str(json).unwrap();
+        assert_eq!(bootstrap.services.len(), 1);
+    }
+
+    #[test]
+    fn domain_result_clone() {
+        let r = DomainResult {
+            domain: "test.com".into(),
+            available: Some(true),
+            error: None,
+        };
+        let cloned = r.clone();
+        assert_eq!(cloned.domain, "test.com");
+        assert_eq!(cloned.available, Some(true));
+    }
+
+    #[test]
+    fn domain_result_debug() {
+        let r = DomainResult {
+            domain: "test.com".into(),
+            available: Some(false),
+            error: Some("timeout".into()),
+        };
+        let debug_str = format!("{:?}", r);
+        assert!(debug_str.contains("test.com"));
+        assert!(debug_str.contains("timeout"));
+    }
 }

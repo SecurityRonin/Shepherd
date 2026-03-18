@@ -461,6 +461,107 @@ mod tests {
         assert_eq!(candidates[0].agent_name, "gemini-cli");
     }
 
+    #[test]
+    fn test_collect_session_ids_empty_windows() {
+        let ids = collect_session_ids(&[]);
+        assert!(ids.is_empty());
+    }
+
+    #[test]
+    fn test_collect_session_ids_nested_nodes() {
+        // Create a nested split tree: window -> tab -> root node -> child node -> session
+        let inner_session = iterm2::split_tree_node::SplitTreeLink {
+            child: Some(split_tree_node::split_tree_link::Child::Session(
+                iterm2::SessionSummary {
+                    unique_identifier: Some("nested-sess".to_string()),
+                    ..Default::default()
+                },
+            )),
+        };
+        let inner_node = iterm2::SplitTreeNode {
+            links: vec![inner_session],
+            ..Default::default()
+        };
+        let outer_link = iterm2::split_tree_node::SplitTreeLink {
+            child: Some(split_tree_node::split_tree_link::Child::Node(inner_node)),
+        };
+        let root = iterm2::SplitTreeNode {
+            links: vec![outer_link],
+            ..Default::default()
+        };
+        let tab = list_sessions_response::Tab { root: Some(root), ..Default::default() };
+        let window = list_sessions_response::Window { tabs: vec![tab], ..Default::default() };
+        let ids = collect_session_ids(&[window]);
+        assert_eq!(ids, vec!["nested-sess"]);
+    }
+
+    #[test]
+    fn test_collect_session_ids_no_identifier() {
+        // Session with no unique_identifier should be skipped
+        let link = iterm2::split_tree_node::SplitTreeLink {
+            child: Some(split_tree_node::split_tree_link::Child::Session(
+                iterm2::SessionSummary {
+                    unique_identifier: None,
+                    ..Default::default()
+                },
+            )),
+        };
+        let root = iterm2::SplitTreeNode { links: vec![link], ..Default::default() };
+        let tab = list_sessions_response::Tab { root: Some(root), ..Default::default() };
+        let window = list_sessions_response::Window { tabs: vec![tab], ..Default::default() };
+        let ids = collect_session_ids(&[window]);
+        assert!(ids.is_empty());
+    }
+
+    #[test]
+    fn test_collect_session_ids_none_child() {
+        // Link with no child should be skipped
+        let link = iterm2::split_tree_node::SplitTreeLink { child: None };
+        let root = iterm2::SplitTreeNode { links: vec![link], ..Default::default() };
+        let tab = list_sessions_response::Tab { root: Some(root), ..Default::default() };
+        let window = list_sessions_response::Window { tabs: vec![tab], ..Default::default() };
+        let ids = collect_session_ids(&[window]);
+        assert!(ids.is_empty());
+    }
+
+    #[test]
+    fn test_collect_session_ids_multiple_windows_and_tabs() {
+        let link1 = iterm2::split_tree_node::SplitTreeLink {
+            child: Some(split_tree_node::split_tree_link::Child::Session(
+                iterm2::SessionSummary {
+                    unique_identifier: Some("w1-t1".to_string()),
+                    ..Default::default()
+                },
+            )),
+        };
+        let link2 = iterm2::split_tree_node::SplitTreeLink {
+            child: Some(split_tree_node::split_tree_link::Child::Session(
+                iterm2::SessionSummary {
+                    unique_identifier: Some("w2-t1".to_string()),
+                    ..Default::default()
+                },
+            )),
+        };
+        let root1 = iterm2::SplitTreeNode { links: vec![link1], ..Default::default() };
+        let root2 = iterm2::SplitTreeNode { links: vec![link2], ..Default::default() };
+        let tab1 = list_sessions_response::Tab { root: Some(root1), ..Default::default() };
+        let tab2 = list_sessions_response::Tab { root: Some(root2), ..Default::default() };
+        let window1 = list_sessions_response::Window { tabs: vec![tab1], ..Default::default() };
+        let window2 = list_sessions_response::Window { tabs: vec![tab2], ..Default::default() };
+        let ids = collect_session_ids(&[window1, window2]);
+        assert_eq!(ids.len(), 2);
+        assert!(ids.contains(&"w1-t1".to_string()));
+        assert!(ids.contains(&"w2-t1".to_string()));
+    }
+
+    #[test]
+    fn test_collect_session_ids_tab_without_root() {
+        let tab = list_sessions_response::Tab { root: None, ..Default::default() };
+        let window = list_sessions_response::Window { tabs: vec![tab], ..Default::default() };
+        let ids = collect_session_ids(&[window]);
+        assert!(ids.is_empty());
+    }
+
     #[tokio::test]
     async fn test_scan_finds_opencode_session() {
         make_agent_mock!(MockOpencode, "sess-opencode", "opencode", "/src/app");

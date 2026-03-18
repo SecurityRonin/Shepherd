@@ -3287,6 +3287,7 @@ dependencies = [
  "anyhow",
  "axum",
  "futures",
+ "http-body-util",
  "portpicker",
  "reqwest",
  "rusqlite",

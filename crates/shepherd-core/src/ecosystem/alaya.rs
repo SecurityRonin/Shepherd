@@ -307,4 +307,132 @@ mod tests {
         assert!(content["mcpServers"]["alaya"].is_object());
         assert_eq!(content["numStartups"], 1);
     }
+
+    #[test]
+    fn test_detect_for_non_claude_code_agent_returns_not_installed() {
+        let home = setup_home();
+        let result = detect_for_agent("vim", home.path(), None);
+        assert!(!result.installed);
+    }
+
+    #[test]
+    fn test_detect_for_claude_code_with_invalid_json() {
+        let home = setup_home();
+        std::fs::write(home.path().join(".claude.json"), "not valid json {{").unwrap();
+        let result = detect_for_agent("claude-code", home.path(), None);
+        assert!(!result.installed);
+    }
+
+    #[test]
+    fn test_detect_for_claude_code_with_no_mcp_servers_key() {
+        let home = setup_home();
+        std::fs::write(home.path().join(".claude.json"), r#"{"numStartups": 5}"#).unwrap();
+        let result = detect_for_agent("claude-code", home.path(), None);
+        assert!(!result.installed);
+    }
+
+    #[test]
+    fn test_ensure_installed_creates_config_file_if_missing() {
+        let home = setup_home();
+        // No .claude.json exists
+        assert!(!home.path().join(".claude.json").exists());
+        // ensure_installed should handle this (creates from scratch)
+        // But it expects to read, so it will produce an empty object
+        // Actually looking at the code, if config_path doesn't exist it starts with {}
+        let modified = ensure_installed(home.path()).unwrap();
+        assert!(modified);
+        let content: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(home.path().join(".claude.json")).unwrap(),
+        ).unwrap();
+        assert!(content["mcpServers"]["alaya"].is_object());
+    }
+
+    #[test]
+    fn test_detection_result_from_plugin_detection_result() {
+        let pdr = PluginDetectionResult {
+            installed: true,
+            scope: InstallScope::Project,
+            path: Some(PathBuf::from("/tmp/test")),
+        };
+        let dr: DetectionResult = pdr.into();
+        assert!(dr.installed);
+        assert_eq!(dr.scope, InstallScope::Project);
+        assert_eq!(dr.path, Some(PathBuf::from("/tmp/test")));
+    }
+
+    #[test]
+    fn test_detection_result_debug_and_clone() {
+        let dr = DetectionResult {
+            installed: false,
+            scope: InstallScope::User,
+            path: None,
+        };
+        let cloned = dr.clone();
+        assert_eq!(cloned.installed, false);
+        let _ = format!("{:?}", dr);
+    }
+
+    #[test]
+    fn test_plugin_feature_key() {
+        let p = plugin();
+        assert_eq!(p.feature_key, "alaya");
+    }
+
+    #[test]
+    fn test_plugin_install_targets() {
+        let p = plugin();
+        assert!(!p.install_targets.is_empty());
+        let (agent, is_default, path) = p.install_targets[0];
+        assert_eq!(agent, "claude-code");
+        assert!(is_default);
+        assert!(path.contains(".claude.json"));
+    }
+
+    #[test]
+    fn test_detect_project_scope_no_alaya_in_mcp_json() {
+        let home = setup_home();
+        let project = setup_home();
+        std::fs::write(
+            project.path().join(".mcp.json"),
+            r#"{"mcpServers":{"other-plugin":{"type":"stdio","command":"other"}}}"#,
+        ).unwrap();
+        let result = detect_for_agent("claude-code", home.path(), Some(project.path()));
+        assert!(!result.installed);
+    }
+
+    #[test]
+    fn test_mcp_entry_json_contains_alaya() {
+        let json = mcp_entry_json();
+        assert!(json.contains("alaya"));
+        assert!(json.contains("mcpServers"));
+    }
+
+    #[test]
+    fn test_ensure_installed_uses_local_binary_when_present() {
+        let home = setup_home();
+        // Create the local binary path structure
+        let bin_dir = home.path().join("src/alaya/target/release");
+        std::fs::create_dir_all(&bin_dir).unwrap();
+        std::fs::write(bin_dir.join("alaya-mcp"), "fake binary").unwrap();
+
+        // Create an empty config so ensure_installed has something to work with
+        std::fs::write(home.path().join(".claude.json"), "{}").unwrap();
+
+        let modified = ensure_installed(home.path()).unwrap();
+        assert!(modified);
+
+        // Read back and verify the local binary path was used
+        let content: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(home.path().join(".claude.json")).unwrap(),
+        ).unwrap();
+        let alaya = &content["mcpServers"]["alaya"];
+        assert!(alaya.is_object());
+        let command = alaya["command"].as_str().unwrap();
+        assert!(
+            command.contains("src/alaya/target/release/alaya-mcp"),
+            "Expected local binary path in command, got: {command}"
+        );
+        // Should NOT be npx
+        assert_ne!(command, "npx");
+    }
 }

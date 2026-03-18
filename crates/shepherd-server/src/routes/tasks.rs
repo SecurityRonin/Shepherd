@@ -62,3 +62,58 @@ pub async fn delete_task(
     let _ = state.event_tx.send(ServerEvent::TaskDeleted { id });
     Ok(Json(serde_json::json!({ "deleted": id })))
 }
+
+#[cfg(test)]
+mod tests {
+    use shepherd_core::db::models::CreateTask;
+
+    #[test]
+    fn create_task_deserialize_minimal() {
+        let json = r#"{
+            "title": "Fix login bug",
+            "agent_id": "claude-code"
+        }"#;
+        let task: CreateTask = serde_json::from_str(json).unwrap();
+        assert_eq!(task.title, "Fix login bug");
+        assert_eq!(task.agent_id, "claude-code");
+        assert!(task.prompt.is_none());
+        assert!(task.repo_path.is_none());
+        assert!(task.isolation_mode.is_none());
+        assert!(task.iterm2_session_id.is_none());
+    }
+
+    #[test]
+    fn create_task_deserialize_full() {
+        let json = r#"{
+            "title": "Add feature",
+            "prompt": "Implement the new login flow",
+            "agent_id": "claude-code",
+            "repo_path": "/tmp/repo",
+            "isolation_mode": "worktree",
+            "iterm2_session_id": "sess-123"
+        }"#;
+        let task: CreateTask = serde_json::from_str(json).unwrap();
+        assert_eq!(task.title, "Add feature");
+        assert_eq!(task.prompt, Some("Implement the new login flow".to_string()));
+        assert_eq!(task.repo_path, Some("/tmp/repo".to_string()));
+        assert_eq!(task.isolation_mode, Some("worktree".to_string()));
+        assert_eq!(task.iterm2_session_id, Some("sess-123".to_string()));
+    }
+
+    #[test]
+    fn create_task_serialize_roundtrip() {
+        let task = CreateTask {
+            title: "Test task".to_string(),
+            prompt: Some("Do something".to_string()),
+            agent_id: "agent-1".to_string(),
+            repo_path: None,
+            isolation_mode: None,
+            iterm2_session_id: None,
+        };
+        let json_str = serde_json::to_string(&task).unwrap();
+        let parsed: CreateTask = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(parsed.title, task.title);
+        assert_eq!(parsed.prompt, task.prompt);
+        assert_eq!(parsed.agent_id, task.agent_id);
+    }
+}

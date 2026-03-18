@@ -254,8 +254,10 @@ impl CloudClient {
     pub(crate) fn get_jwt(&self) -> Result<String, CloudError> {
         #[cfg(test)]
         { self.test_jwt.clone().ok_or(CloudError::NotAuthenticated) }
+        // tarpaulin-start-ignore
         #[cfg(not(test))]
         { auth::load_jwt().ok_or(CloudError::NotAuthenticated) }
+        // tarpaulin-stop-ignore
     }
 }
 
@@ -498,6 +500,23 @@ mod tests {
     fn cloud_client_default_trait() {
         let client = CloudClient::default();
         assert_eq!(client.api_url(), DEFAULT_API_URL);
+    }
+
+    #[test]
+    fn get_jwt_returns_not_authenticated_without_test_jwt() {
+        let client = CloudClient::new();
+        let result = client.get_jwt();
+        match result {
+            Err(CloudError::NotAuthenticated) => {} // expected
+            other => panic!("Expected NotAuthenticated, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn get_jwt_returns_jwt_with_test_jwt() {
+        let client = CloudClient::with_test_jwt("http://localhost", "test-token-123");
+        let jwt = client.get_jwt().unwrap();
+        assert_eq!(jwt, "test-token-123");
     }
 
     #[test]

@@ -306,6 +306,86 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn git_remove_worktree_in_nonexistent_dir() {
+        let result = git_remove_worktree(std::path::Path::new("/nonexistent/dir")).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn gh_create_pr_in_nonexistent_dir() {
+        let result = gh_create_pr(
+            std::path::Path::new("/nonexistent/dir"),
+            "title",
+            "body",
+            "main",
+        ).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn git_commit_in_temp_repo() {
+        let tmp = tempfile::tempdir().unwrap();
+        tokio::process::Command::new("git")
+            .args(["init"])
+            .current_dir(tmp.path())
+            .output()
+            .await
+            .unwrap();
+        tokio::process::Command::new("git")
+            .args(["config", "user.email", "test@test.com"])
+            .current_dir(tmp.path())
+            .output()
+            .await
+            .unwrap();
+        tokio::process::Command::new("git")
+            .args(["config", "user.name", "Test"])
+            .current_dir(tmp.path())
+            .output()
+            .await
+            .unwrap();
+
+        std::fs::write(tmp.path().join("file.txt"), "content").unwrap();
+        git_stage_all(tmp.path()).await.unwrap();
+
+        let result = git_commit(tmp.path(), "test commit").await;
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert!(output.contains("test commit"));
+    }
+
+    #[tokio::test]
+    async fn git_push_no_remote() {
+        let tmp = tempfile::tempdir().unwrap();
+        tokio::process::Command::new("git")
+            .args(["init"])
+            .current_dir(tmp.path())
+            .output()
+            .await
+            .unwrap();
+        tokio::process::Command::new("git")
+            .args(["config", "user.email", "t@t.com"])
+            .current_dir(tmp.path())
+            .output()
+            .await
+            .unwrap();
+        tokio::process::Command::new("git")
+            .args(["config", "user.name", "T"])
+            .current_dir(tmp.path())
+            .output()
+            .await
+            .unwrap();
+        std::fs::write(tmp.path().join("f.txt"), "x").unwrap();
+        git_stage_all(tmp.path()).await.unwrap();
+        git_commit(tmp.path(), "init").await.unwrap();
+
+        // Push should fail - no remote configured
+        let result = git_push(tmp.path(), "main").await;
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("failed"), "Expected push failure: {err}");
+    }
+
+    #[tokio::test]
     async fn git_diff_staged_in_temp_repo() {
         let tmp = tempfile::tempdir().unwrap();
         tokio::process::Command::new("git")

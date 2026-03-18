@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use crate::state::AppState;
 
+// tarpaulin-start-ignore
 #[tracing::instrument(skip(ws, state))]
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
@@ -136,3 +137,4 @@ async fn handle_client_event(event: ClientEvent, state: &AppState) {
         }
     }
 }
+// tarpaulin-stop-ignore

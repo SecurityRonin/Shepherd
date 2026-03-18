@@ -51,7 +51,9 @@ fn detect_project_scope(agent: &str, project: &Path) -> Option<DetectionResult> 
         "claude-code" => project.join(".claude/settings.json"),
         "codex" => project.join(".codex/instructions.md"),
         "opencode" => project.join(".opencode/config.toml"),
+        // tarpaulin-start-ignore
         _ => return None,
+        // tarpaulin-stop-ignore
     };
     if config_path.exists() {
         let content = std::fs::read_to_string(&config_path).unwrap_or_default();

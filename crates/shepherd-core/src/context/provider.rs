@@ -617,4 +617,276 @@ mod tests {
             assert!(item.relevance_score <= 1.0, "Score {} exceeds 1.0", item.relevance_score);
         }
     }
+
+    // ── is_source_file tests ──────────────────────────────────────
+
+    #[test]
+    fn is_source_file_recognizes_common_extensions() {
+        assert!(StructuralProvider::is_source_file("main.rs"));
+        assert!(StructuralProvider::is_source_file("index.ts"));
+        assert!(StructuralProvider::is_source_file("app.tsx"));
+        assert!(StructuralProvider::is_source_file("script.js"));
+        assert!(StructuralProvider::is_source_file("component.jsx"));
+        assert!(StructuralProvider::is_source_file("app.py"));
+        assert!(StructuralProvider::is_source_file("main.go"));
+        assert!(StructuralProvider::is_source_file("App.java"));
+        assert!(StructuralProvider::is_source_file("Cargo.toml"));
+        assert!(StructuralProvider::is_source_file("config.yaml"));
+        assert!(StructuralProvider::is_source_file("config.yml"));
+        assert!(StructuralProvider::is_source_file("data.json"));
+        assert!(StructuralProvider::is_source_file("query.sql"));
+        assert!(StructuralProvider::is_source_file("index.html"));
+        assert!(StructuralProvider::is_source_file("styles.css"));
+        assert!(StructuralProvider::is_source_file("App.vue"));
+        assert!(StructuralProvider::is_source_file("App.svelte"));
+        assert!(StructuralProvider::is_source_file("app.rb"));
+        assert!(StructuralProvider::is_source_file("main.c"));
+        assert!(StructuralProvider::is_source_file("main.cpp"));
+        assert!(StructuralProvider::is_source_file("header.h"));
+        assert!(StructuralProvider::is_source_file("App.swift"));
+        assert!(StructuralProvider::is_source_file("Main.kt"));
+        assert!(StructuralProvider::is_source_file("setup.sh"));
+    }
+
+    #[test]
+    fn is_source_file_rejects_non_source_extensions() {
+        assert!(!StructuralProvider::is_source_file("image.png"));
+        assert!(!StructuralProvider::is_source_file("doc.pdf"));
+        assert!(!StructuralProvider::is_source_file("archive.tar.gz"));
+        assert!(!StructuralProvider::is_source_file("readme.md"));
+        assert!(!StructuralProvider::is_source_file("binary.exe"));
+        assert!(!StructuralProvider::is_source_file("noext"));
+    }
+
+    // ── extract_imports edge cases ────────────────────────────────
+
+    #[test]
+    fn extract_imports_ignores_non_crate_rust_use() {
+        let content = "use std::collections::HashMap;\nuse serde::Deserialize;\n";
+        let imports = StructuralProvider::extract_imports(content);
+        // std and serde are external, not crate:: imports
+        assert!(imports.is_empty());
+    }
+
+    #[test]
+    fn extract_imports_handles_mod_with_braces() {
+        // "mod tests {" — the parser strips "mod " and trims, yielding "tests {"
+        // It doesn't start with '{' so it's included. This tests the actual behavior.
+        let content = "mod tests {\n    fn test_foo() {}\n}\n";
+        let imports = StructuralProvider::extract_imports(content);
+        assert!(imports.contains(&"tests {".to_string()));
+
+        // But a line like "mod { ..." would start with '{' and be skipped
+        let content2 = "mod { something };\n";
+        let imports2 = StructuralProvider::extract_imports(content2);
+        assert!(imports2.is_empty());
+    }
+
+    #[test]
+    fn extract_imports_empty_content() {
+        let imports = StructuralProvider::extract_imports("");
+        assert!(imports.is_empty());
+    }
+
+    #[test]
+    fn extract_imports_mixed_languages() {
+        let content = "use crate::foo;\nimport { bar } from './baz';\nfrom qux import quux;\n";
+        let imports = StructuralProvider::extract_imports(content);
+        assert!(imports.contains(&"foo".to_string()));
+        assert!(imports.contains(&"./baz".to_string()));
+        assert!(imports.contains(&"qux".to_string()));
+    }
+
+    // ── collect_source_files depth limit ──────────────────────────
+
+    #[test]
+    fn collect_source_files_respects_depth_limit() {
+        let tmp = tempfile::tempdir().unwrap();
+        let deep = tmp.path().join("a/b/c/d/e");
+        std::fs::create_dir_all(&deep).unwrap();
+        std::fs::write(deep.join("deep.rs"), "fn deep() {}").unwrap();
+        std::fs::write(tmp.path().join("shallow.rs"), "fn shallow() {}").unwrap();
+
+        let files_shallow = StructuralProvider::collect_source_files(tmp.path(), 1);
+        // Shallow file should be found, deep one may not depending on depth
+        assert!(files_shallow.iter().any(|f| f.to_string_lossy().contains("shallow")));
+
+        let files_deep = StructuralProvider::collect_source_files(tmp.path(), 10);
+        assert!(files_deep.iter().any(|f| f.to_string_lossy().contains("deep")));
+    }
+
+    // ── StructuralProvider trait methods ──────────────────────────
+
+    #[test]
+    fn structural_provider_name_and_source_type() {
+        let provider = StructuralProvider;
+        assert_eq!(provider.name(), "structural");
+        assert_eq!(provider.source_type(), ContextSource::Structural);
+    }
+
+    #[test]
+    fn semantic_provider_name_and_source_type() {
+        let provider = SemanticProvider;
+        assert_eq!(provider.name(), "semantic");
+        assert_eq!(provider.source_type(), ContextSource::Semantic);
+    }
+
+    // ── SemanticProvider MCP queries ──────────────────────────────
+
+    #[test]
+    fn semantic_mcp_queries_limited_to_three_keywords() {
+        let provider = SemanticProvider;
+        let intent = TaskIntent {
+            file_paths: vec![],
+            symbols: vec![],
+            keywords: vec![
+                "a".into(), "b".into(), "c".into(), "d".into(), "e".into(),
+            ],
+        };
+        let queries = provider.suggest_mcp_queries(&intent);
+        // 1 combined query + at most 3 individual keyword queries = 4
+        assert!(queries.len() <= 4);
+    }
+
+    #[test]
+    fn semantic_empty_keywords_no_mcp_queries() {
+        let provider = SemanticProvider;
+        let intent = TaskIntent {
+            file_paths: vec![],
+            symbols: vec![],
+            keywords: vec![],
+        };
+        let queries = provider.suggest_mcp_queries(&intent);
+        assert!(queries.is_empty());
+    }
+
+    #[test]
+    fn structural_no_symbols_no_mcp_queries() {
+        let provider = StructuralProvider;
+        let intent = TaskIntent {
+            file_paths: vec![],
+            symbols: vec![],
+            keywords: vec![],
+        };
+        let queries = provider.suggest_mcp_queries(&intent);
+        assert!(queries.is_empty());
+    }
+
+    // ── Structural provider skips more directories ────────────────
+
+    #[test]
+    fn collect_source_files_nonexistent_path_returns_empty() {
+        let files = StructuralProvider::collect_source_files(
+            std::path::Path::new("/nonexistent/path/that/does/not/exist"),
+            8,
+        );
+        assert!(files.is_empty());
+    }
+
+    #[test]
+    fn structural_continues_on_unreadable_file_in_import_analysis() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+
+        // Create a source file that will be referenced
+        std::fs::write(
+            src.join("readable.rs"),
+            "use crate::secret;\nfn main() {}",
+        )
+        .unwrap();
+        // Create a file that will become unreadable
+        std::fs::write(src.join("secret.rs"), "fn secret() {}").unwrap();
+
+        // Make it unreadable so read_to_string fails
+        std::fs::set_permissions(
+            src.join("secret.rs"),
+            std::fs::Permissions::from_mode(0o000),
+        )
+        .unwrap();
+
+        let provider = StructuralProvider;
+        let intent = TaskIntent {
+            // Reference the unreadable file so it enters referenced_files
+            file_paths: vec!["secret.rs".into()],
+            symbols: vec![],
+            keywords: vec![],
+        };
+
+        // Should not panic — Err(_) => continue handles the unreadable file
+        let items = provider.find_context(&intent, tmp.path());
+        // The file appears from step 1 (direct reference match) but step 2
+        // (import analysis via read_to_string) gracefully skips it
+        assert!(items
+            .iter()
+            .any(|i| i.file_path.to_string_lossy().contains("secret")));
+
+        // Restore permissions for cleanup
+        std::fs::set_permissions(
+            src.join("secret.rs"),
+            std::fs::Permissions::from_mode(0o644),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn structural_continues_on_unreadable_file_in_symbol_search() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+
+        // A readable file (won't be in file_paths, so not pre-added to items)
+        std::fs::write(src.join("visible.rs"), "fn visible() {}").unwrap();
+        // A file that will become unreadable (also not in file_paths)
+        std::fs::write(src.join("hidden.rs"), "struct SearchTarget;").unwrap();
+
+        // Make it unreadable
+        std::fs::set_permissions(
+            src.join("hidden.rs"),
+            std::fs::Permissions::from_mode(0o000),
+        )
+        .unwrap();
+
+        let provider = StructuralProvider;
+        let intent = TaskIntent {
+            file_paths: vec![],
+            // Search for a symbol that would be in the unreadable file
+            symbols: vec!["SearchTarget".into()],
+            keywords: vec![],
+        };
+
+        // Should not panic — Err(_) => continue handles the unreadable file
+        let items = provider.find_context(&intent, tmp.path());
+        // The unreadable file should NOT appear in results (couldn't be read to search)
+        assert!(!items
+            .iter()
+            .any(|i| i.file_path.to_string_lossy().contains("hidden")));
+
+        // Restore permissions for cleanup
+        std::fs::set_permissions(
+            src.join("hidden.rs"),
+            std::fs::Permissions::from_mode(0o644),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn structural_skips_target_and_dist_dirs() {
+        let repo = create_test_repo();
+        for dir_name in &["target", "dist", "build", "__pycache__", "vendor"] {
+            let dir = repo.path().join(dir_name);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("file.rs"), "fn test() {}").unwrap();
+        }
+
+        let files = StructuralProvider::collect_source_files(repo.path(), 8);
+        for dir_name in &["target", "dist", "build", "__pycache__", "vendor"] {
+            assert!(
+                !files.iter().any(|f| f.to_string_lossy().contains(dir_name)),
+                "Should skip {dir_name} directory"
+            );
+        }
+    }
 }
