@@ -102,9 +102,40 @@ fn migrate(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+pub fn update_task_status(conn: &Connection, task_id: i64, status: models::TaskStatus) -> Result<()> {
+    conn.execute(
+        "UPDATE tasks SET status = ?1, updated_at = datetime('now') WHERE id = ?2",
+        rusqlite::params![status.as_str(), task_id],
+    )?;
+    Ok(())
+}
+
+pub fn get_queued_tasks(conn: &Connection) -> Result<Vec<models::Task>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, title, prompt, agent_id, repo_path, branch, isolation_mode, status, created_at, updated_at, iterm2_session_id FROM tasks WHERE status = 'queued' ORDER BY created_at ASC"
+    )?;
+    let tasks = stmt.query_map([], |row| {
+        Ok(models::Task {
+            id: row.get(0)?,
+            title: row.get(1)?,
+            prompt: row.get(2)?,
+            agent_id: row.get(3)?,
+            repo_path: row.get(4)?,
+            branch: row.get(5)?,
+            isolation_mode: row.get(6)?,
+            status: models::TaskStatus::parse_status(&row.get::<_, String>(7)?).unwrap_or(models::TaskStatus::Queued),
+            created_at: row.get(8)?,
+            updated_at: row.get(9)?,
+            iterm2_session_id: row.get(10)?,
+        })
+    })?.collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(tasks)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::models::TaskStatus;
 
     #[test]
     fn test_open_memory_creates_tables() {
@@ -189,5 +220,40 @@ mod tests {
             )
             .unwrap();
         assert_eq!(val.as_deref(), Some("abc-123"));
+    }
+
+    #[test]
+    fn test_update_task_status() {
+        let conn = open_memory().unwrap();
+        conn.execute(
+            "INSERT INTO tasks (title, prompt, agent_id, repo_path, branch, isolation_mode, status) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params!["Test", "Do thing", "claude-code", "/tmp", "main", "worktree", "queued"],
+        ).unwrap();
+        update_task_status(&conn, 1, TaskStatus::Dispatching).unwrap();
+        let status: String = conn
+            .query_row(
+                "SELECT status FROM tasks WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(status, "dispatching");
+    }
+
+    #[test]
+    fn test_get_queued_tasks() {
+        let conn = open_memory().unwrap();
+        conn.execute(
+            "INSERT INTO tasks (title, prompt, agent_id, repo_path, branch, isolation_mode, status) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params!["Queued", "", "claude-code", "/tmp", "main", "worktree", "queued"],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO tasks (title, prompt, agent_id, repo_path, branch, isolation_mode, status) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params!["Running", "", "aider", "/tmp", "main", "worktree", "running"],
+        ).unwrap();
+        let queued = get_queued_tasks(&conn).unwrap();
+        assert_eq!(queued.len(), 1);
+        assert_eq!(queued[0].title, "Queued");
+        assert_eq!(queued[0].status, TaskStatus::Queued);
     }
 }
