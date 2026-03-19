@@ -11,6 +11,7 @@ use anyhow::Result;
 use monitor::{Detection, SessionMonitor};
 use rusqlite::Connection;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{broadcast, Mutex};
 
@@ -55,7 +56,15 @@ impl TaskDispatcher {
         let mut dispatched = Vec::new();
         for task in queued {
             match self.dispatch_task(&task).await {
-                Ok(()) => dispatched.push(task.id),
+                Ok(true) => dispatched.push(task.id),
+                Ok(false) => {
+                    // Skipped due to lock conflict — stays queued for next poll
+                    tracing::info!(
+                        "Task {} skipped: repo {} locked by another task",
+                        task.id,
+                        task.repo_path
+                    );
+                }
                 Err(e) => {
                     tracing::error!("Failed to dispatch task {}: {}", task.id, e);
                     let conn = self.db.lock().await;
@@ -67,14 +76,25 @@ impl TaskDispatcher {
     }
 
     /// Dispatch a single task to its agent.
-    async fn dispatch_task(&self, task: &Task) -> Result<()> {
+    /// Returns Ok(true) if dispatched, Ok(false) if skipped due to lock conflict.
+    async fn dispatch_task(&self, task: &Task) -> Result<bool> {
         // 1. Resolve adapter
         let adapter = self
             .adapters
             .get(&task.agent_id)
             .ok_or_else(|| anyhow::anyhow!("No adapter found for agent: {}", task.agent_id))?;
 
-        // 2. Update status to Dispatching
+        // 2. Acquire repo-level lock
+        {
+            let mut lm = self.lock_manager.lock().await;
+            let repo_path = PathBuf::from(&task.repo_path);
+            match lm.try_acquire(task.id, &task.agent_id, &[repo_path]) {
+                crate::coordination::LockResult::Acquired => {}
+                crate::coordination::LockResult::Conflict(_) => return Ok(false),
+            }
+        }
+
+        // 3. Update status to Dispatching
         {
             let conn = self.db.lock().await;
             db::update_task_status(&conn, task.id, TaskStatus::Dispatching)?;
@@ -122,7 +142,13 @@ impl TaskDispatcher {
             iterm2_session_id: task.iterm2_session_id.clone(),
         }));
 
-        Ok(())
+        Ok(true)
+    }
+
+    /// Release file locks held by a task.
+    async fn release_locks(&self, task_id: i64) {
+        let mut lm = self.lock_manager.lock().await;
+        lm.release(task_id);
     }
 
     /// Handle PTY output for a task — run through SessionMonitor.
@@ -166,11 +192,13 @@ impl TaskDispatcher {
             }
             Detection::Error(_) => {
                 drop(monitors);
+                self.release_locks(task_id).await;
                 let conn = self.db.lock().await;
                 let _ = db::update_task_status(&conn, task_id, TaskStatus::Error);
             }
             Detection::Idle => {
                 drop(monitors);
+                self.release_locks(task_id).await;
                 let conn = self.db.lock().await;
                 let _ = db::update_task_status(&conn, task_id, TaskStatus::Done);
             }
@@ -210,9 +238,10 @@ impl TaskDispatcher {
         Ok(())
     }
 
-    /// Remove monitor for a completed/failed task.
+    /// Remove monitor and release locks for a completed/failed task.
     pub async fn cleanup_task(&self, task_id: i64) {
         self.monitors.lock().await.remove(&task_id);
+        self.release_locks(task_id).await;
     }
 }
 
@@ -1003,16 +1032,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn dispatch_multiple_queued_tasks() {
+    async fn dispatch_multiple_queued_tasks_different_repos() {
         let (tx, _rx) = broadcast::channel(256);
         let conn = crate::db::open_memory().unwrap();
+        // Two tasks in DIFFERENT repos — both should dispatch
         conn.execute(
             "INSERT INTO tasks (title, agent_id, status, repo_path, prompt, branch, isolation_mode) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            rusqlite::params!["Task 1", "test-echo", "queued", "/tmp", "first", "main", "none"],
+            rusqlite::params!["Task 1", "test-echo", "queued", "/tmp/repo-a", "first", "main", "none"],
         ).unwrap();
         conn.execute(
             "INSERT INTO tasks (title, agent_id, status, repo_path, prompt, branch, isolation_mode) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            rusqlite::params!["Task 2", "test-echo", "queued", "/tmp", "second", "main", "none"],
+            rusqlite::params!["Task 2", "test-echo", "queued", "/tmp/repo-b", "second", "main", "none"],
         ).unwrap();
 
         let mut adapters = AdapterRegistry::new();
@@ -1031,5 +1061,212 @@ mod tests {
 
         let dispatched = dispatcher.poll_and_dispatch().await.unwrap();
         assert_eq!(dispatched.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn dispatch_skips_conflicting_same_repo_task() {
+        // Two queued tasks in the SAME repo — only the first should dispatch,
+        // the second should be skipped (left queued) due to repo lock conflict.
+        let (tx, _rx) = broadcast::channel(256);
+        let conn = crate::db::open_memory().unwrap();
+        conn.execute(
+            "INSERT INTO tasks (title, agent_id, status, repo_path, prompt, branch, isolation_mode) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params!["Task 1", "test-echo", "queued", "/tmp/same-repo", "first", "main", "none"],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO tasks (title, agent_id, status, repo_path, prompt, branch, isolation_mode) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params!["Task 2", "test-echo", "queued", "/tmp/same-repo", "second", "main", "none"],
+        ).unwrap();
+
+        let mut adapters = AdapterRegistry::new();
+        adapters.register("test-echo".into(), echo_adapter());
+
+        let db = Arc::new(Mutex::new(conn));
+        let adapters = Arc::new(adapters);
+        let pty = Arc::new(PtyManager::new(4, SandboxProfile::disabled()));
+        let yolo = Arc::new(YoloEngine::new(RuleSet {
+            deny: vec![],
+            allow: vec![],
+        }));
+        let locks = Arc::new(Mutex::new(LockManager::new()));
+
+        let dispatcher = TaskDispatcher::new(db.clone(), adapters, pty, yolo, locks, tx);
+
+        let dispatched = dispatcher.poll_and_dispatch().await.unwrap();
+        // Only first task dispatched; second stayed queued due to repo lock
+        assert_eq!(dispatched.len(), 1);
+        assert_eq!(dispatched[0], 1);
+
+        // Second task should still be queued
+        let conn = db.lock().await;
+        let status: String = conn
+            .query_row("SELECT status FROM tasks WHERE id = 2", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(status, "queued");
+    }
+
+    #[tokio::test]
+    async fn dispatch_acquires_and_cleanup_releases_lock() {
+        let (tx, _rx) = broadcast::channel(256);
+        let conn = crate::db::open_memory().unwrap();
+        conn.execute(
+            "INSERT INTO tasks (title, agent_id, status, repo_path, prompt, branch, isolation_mode) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params!["Task 1", "test-echo", "queued", "/tmp/locked-repo", "hello", "main", "none"],
+        ).unwrap();
+
+        let mut adapters = AdapterRegistry::new();
+        adapters.register("test-echo".into(), echo_adapter());
+
+        let db = Arc::new(Mutex::new(conn));
+        let adapters = Arc::new(adapters);
+        let pty = Arc::new(PtyManager::new(4, SandboxProfile::disabled()));
+        let yolo = Arc::new(YoloEngine::new(RuleSet {
+            deny: vec![],
+            allow: vec![],
+        }));
+        let locks = Arc::new(Mutex::new(LockManager::new()));
+
+        let dispatcher = TaskDispatcher::new(db.clone(), adapters, pty, yolo, locks.clone(), tx);
+
+        let dispatched = dispatcher.poll_and_dispatch().await.unwrap();
+        assert_eq!(dispatched.len(), 1);
+
+        // Lock should be held
+        {
+            let lm = locks.lock().await;
+            assert!(lm
+                .is_locked(&std::path::PathBuf::from("/tmp/locked-repo"))
+                .is_some());
+        }
+
+        // Cleanup releases the lock
+        dispatcher.cleanup_task(1).await;
+
+        {
+            let lm = locks.lock().await;
+            assert!(lm
+                .is_locked(&std::path::PathBuf::from("/tmp/locked-repo"))
+                .is_none());
+        }
+    }
+
+    #[tokio::test]
+    async fn error_detection_releases_lock() {
+        let (tx, _rx) = broadcast::channel(16);
+        let conn = crate::db::open_memory().unwrap();
+        conn.execute(
+            "INSERT INTO tasks (id, title, prompt, agent_id, repo_path, branch, isolation_mode, status) VALUES (1, 'Test', '', 'claude-code', '/tmp/err-repo', 'main', 'none', 'running')",
+            [],
+        ).unwrap();
+        let db = Arc::new(Mutex::new(conn));
+        let adapters = Arc::new(AdapterRegistry::new());
+        let pty = Arc::new(PtyManager::new(4, SandboxProfile::disabled()));
+        let yolo = Arc::new(YoloEngine::new(RuleSet {
+            deny: vec![],
+            allow: vec![],
+        }));
+        let locks = Arc::new(Mutex::new(LockManager::new()));
+
+        // Pre-acquire lock as if dispatch_task had run
+        {
+            let mut lm = locks.lock().await;
+            lm.try_acquire(
+                1,
+                "claude-code",
+                &[std::path::PathBuf::from("/tmp/err-repo")],
+            );
+        }
+
+        let dispatcher = TaskDispatcher::new(db.clone(), adapters, pty, yolo, locks.clone(), tx);
+
+        let status = crate::adapters::protocol::StatusSection {
+            working_patterns: vec![],
+            idle_patterns: vec![],
+            input_patterns: vec![],
+            error_patterns: vec![r"FATAL".into()],
+        };
+        let perms = crate::adapters::protocol::PermissionsSection {
+            approve: "y\n".into(),
+            approve_all: "Y\n".into(),
+            deny: "n\n".into(),
+            extraction_patterns: vec![],
+        };
+        dispatcher
+            .monitors
+            .lock()
+            .await
+            .insert(1, SessionMonitor::new(&status, &perms));
+
+        // Trigger error detection
+        let result = dispatcher
+            .handle_pty_output(1, "FATAL: crash")
+            .await
+            .unwrap();
+        assert!(matches!(result, Some(Detection::Error(_))));
+
+        // Lock should be released
+        let lm = locks.lock().await;
+        assert!(lm
+            .is_locked(&std::path::PathBuf::from("/tmp/err-repo"))
+            .is_none());
+    }
+
+    #[tokio::test]
+    async fn idle_detection_releases_lock() {
+        let (tx, _rx) = broadcast::channel(16);
+        let conn = crate::db::open_memory().unwrap();
+        conn.execute(
+            "INSERT INTO tasks (id, title, prompt, agent_id, repo_path, branch, isolation_mode, status) VALUES (1, 'Test', '', 'claude-code', '/tmp/done-repo', 'main', 'none', 'running')",
+            [],
+        ).unwrap();
+        let db = Arc::new(Mutex::new(conn));
+        let adapters = Arc::new(AdapterRegistry::new());
+        let pty = Arc::new(PtyManager::new(4, SandboxProfile::disabled()));
+        let yolo = Arc::new(YoloEngine::new(RuleSet {
+            deny: vec![],
+            allow: vec![],
+        }));
+        let locks = Arc::new(Mutex::new(LockManager::new()));
+
+        // Pre-acquire lock
+        {
+            let mut lm = locks.lock().await;
+            lm.try_acquire(
+                1,
+                "claude-code",
+                &[std::path::PathBuf::from("/tmp/done-repo")],
+            );
+        }
+
+        let dispatcher = TaskDispatcher::new(db.clone(), adapters, pty, yolo, locks.clone(), tx);
+
+        let status = crate::adapters::protocol::StatusSection {
+            working_patterns: vec![],
+            idle_patterns: vec![r"\$\s*$".into()],
+            input_patterns: vec![],
+            error_patterns: vec![],
+        };
+        let perms = crate::adapters::protocol::PermissionsSection {
+            approve: "y\n".into(),
+            approve_all: "Y\n".into(),
+            deny: "n\n".into(),
+            extraction_patterns: vec![],
+        };
+        dispatcher
+            .monitors
+            .lock()
+            .await
+            .insert(1, SessionMonitor::new(&status, &perms));
+
+        let result = dispatcher.handle_pty_output(1, "$ ").await.unwrap();
+        assert_eq!(result, Some(Detection::Idle));
+
+        // Lock should be released
+        let lm = locks.lock().await;
+        assert!(lm
+            .is_locked(&std::path::PathBuf::from("/tmp/done-repo"))
+            .is_none());
     }
 }
