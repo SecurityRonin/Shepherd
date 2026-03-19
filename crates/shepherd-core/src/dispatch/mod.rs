@@ -9,6 +9,7 @@ use crate::coordination::LockManager;
 use crate::db;
 use crate::db::models::{Task, TaskStatus};
 use crate::events::{PermissionEvent, ServerEvent, TaskEvent};
+use crate::gates::{self, GateConfig};
 use crate::pty::PtyManager;
 use crate::yolo::{Decision, YoloEngine};
 use anyhow::Result;
@@ -55,6 +56,7 @@ pub struct TaskDispatcher {
     event_tx: broadcast::Sender<ServerEvent>,
     monitors: Arc<Mutex<HashMap<i64, SessionMonitor>>>,
     context: Arc<ContextOrchestrator>,
+    gate_config: GateConfig,
     max_agents: usize,
 }
 
@@ -76,6 +78,7 @@ impl TaskDispatcher {
             event_tx,
             monitors: Arc::new(Mutex::new(HashMap::new())),
             context: Arc::new(ContextOrchestrator::new()),
+            gate_config: GateConfig::default(),
             max_agents: usize::MAX,
         }
     }
@@ -83,6 +86,12 @@ impl TaskDispatcher {
     /// Set the maximum number of concurrent agent sessions.
     pub fn with_max_agents(mut self, max: usize) -> Self {
         self.max_agents = max;
+        self
+    }
+
+    /// Set the quality gate configuration.
+    pub fn with_gate_config(mut self, config: GateConfig) -> Self {
+        self.gate_config = config;
         self
     }
 
@@ -200,6 +209,38 @@ impl TaskDispatcher {
         Ok(true)
     }
 
+    /// Run quality gates after task completion.
+    /// Returns true if all gates passed (or no gates ran), false otherwise.
+    async fn run_post_completion_gates(&self, task_id: i64, repo_path: &str) -> bool {
+        let results = match gates::run_gates(&PathBuf::from(repo_path), &self.gate_config).await {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::error!("Failed to run gates for task {}: {}", task_id, e);
+                return true; // Don't block on gate infrastructure failures
+            }
+        };
+
+        // Persist each gate result and emit events
+        for result in &results {
+            // Persist to DB
+            {
+                let conn = self.db.lock().await;
+                let _ = conn.execute(
+                    "INSERT INTO gate_results (task_id, gate_name, passed, output) VALUES (?1, ?2, ?3, ?4)",
+                    rusqlite::params![task_id, result.gate_name, result.passed as i32, result.output],
+                );
+            }
+            // Emit event
+            let _ = self.event_tx.send(ServerEvent::GateResult {
+                task_id,
+                gate: result.gate_name.clone(),
+                passed: result.passed,
+            });
+        }
+
+        gates::all_gates_passed(&results)
+    }
+
     /// Release file locks held by a task.
     async fn release_locks(&self, task_id: i64) {
         let mut lm = self.lock_manager.lock().await;
@@ -252,10 +293,28 @@ impl TaskDispatcher {
                 let _ = db::update_task_status(&conn, task_id, TaskStatus::Error);
             }
             Detection::Idle => {
+                // Get repo_path before releasing monitors
+                let repo_path = {
+                    let conn = self.db.lock().await;
+                    conn.query_row(
+                        "SELECT repo_path FROM tasks WHERE id = ?1",
+                        rusqlite::params![task_id],
+                        |row| row.get::<_, String>(0),
+                    )
+                    .unwrap_or_default()
+                };
                 drop(monitors);
                 self.release_locks(task_id).await;
+
+                // Run quality gates — if all pass: Done, otherwise: Review
+                let all_passed = self.run_post_completion_gates(task_id, &repo_path).await;
+                let status = if all_passed {
+                    TaskStatus::Done
+                } else {
+                    TaskStatus::Review
+                };
                 let conn = self.db.lock().await;
-                let _ = db::update_task_status(&conn, task_id, TaskStatus::Done);
+                let _ = db::update_task_status(&conn, task_id, status);
             }
             _ => {
                 drop(monitors);
@@ -1569,5 +1628,223 @@ mod tests {
         // Should produce a valid payload even with empty repo
         assert_eq!(payload.strategy, InjectionStrategy::ClaudeMd);
         assert!(payload.content.contains("Shepherd Context"));
+    }
+
+    // ── Quality gates tests ──────────────────────────────────────
+
+    #[tokio::test]
+    async fn idle_runs_gates_and_sets_done_when_all_pass() {
+        let (tx, mut rx) = broadcast::channel(64);
+        let conn = crate::db::open_memory().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let repo_path = tmp.path().to_string_lossy().to_string();
+
+        conn.execute(
+            "INSERT INTO tasks (id, title, prompt, agent_id, repo_path, branch, isolation_mode, status) VALUES (1, 'Test', '', 'claude-code', ?1, 'main', 'none', 'running')",
+            rusqlite::params![repo_path],
+        ).unwrap();
+
+        let db = Arc::new(Mutex::new(conn));
+        let adapters = Arc::new(AdapterRegistry::new());
+        let pty = Arc::new(PtyManager::new(4, SandboxProfile::disabled()));
+        let yolo = Arc::new(YoloEngine::new(RuleSet {
+            deny: vec![],
+            allow: vec![],
+        }));
+        let locks = Arc::new(Mutex::new(LockManager::new()));
+
+        // Disable all gates — empty project → no gates run → all_gates_passed = true
+        let gate_config = GateConfig {
+            lint: false,
+            format_check: false,
+            type_check: false,
+            test: false,
+            custom_gates: vec![],
+            timeout_seconds: 5,
+        };
+
+        let dispatcher = TaskDispatcher::new(db.clone(), adapters, pty, yolo, locks, tx)
+            .with_gate_config(gate_config);
+
+        let status = crate::adapters::protocol::StatusSection {
+            working_patterns: vec![],
+            idle_patterns: vec![r"\$\s*$".into()],
+            input_patterns: vec![],
+            error_patterns: vec![],
+        };
+        let perms = crate::adapters::protocol::PermissionsSection {
+            approve: "y\n".into(),
+            approve_all: "Y\n".into(),
+            deny: "n\n".into(),
+            extraction_patterns: vec![],
+        };
+        dispatcher
+            .monitors
+            .lock()
+            .await
+            .insert(1, SessionMonitor::new(&status, &perms));
+
+        let result = dispatcher.handle_pty_output(1, "$ ").await.unwrap();
+        assert_eq!(result, Some(Detection::Idle));
+
+        // Status should be Done (all gates passed / no gates ran)
+        let conn = db.lock().await;
+        let task_status: String = conn
+            .query_row("SELECT status FROM tasks WHERE id = 1", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(task_status, "done");
+    }
+
+    #[tokio::test]
+    async fn idle_runs_gates_and_sets_review_when_gate_fails() {
+        let (tx, _rx) = broadcast::channel(64);
+        let conn = crate::db::open_memory().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let repo_path = tmp.path().to_string_lossy().to_string();
+
+        // Create a Cargo.toml so project is detected as Rust, triggering lint gate
+        std::fs::write(tmp.path().join("Cargo.toml"), "[package]\nname = \"fake\"").unwrap();
+
+        conn.execute(
+            "INSERT INTO tasks (id, title, prompt, agent_id, repo_path, branch, isolation_mode, status) VALUES (1, 'Test', '', 'claude-code', ?1, 'main', 'none', 'running')",
+            rusqlite::params![repo_path],
+        ).unwrap();
+
+        let db = Arc::new(Mutex::new(conn));
+        let adapters = Arc::new(AdapterRegistry::new());
+        let pty = Arc::new(PtyManager::new(4, SandboxProfile::disabled()));
+        let yolo = Arc::new(YoloEngine::new(RuleSet {
+            deny: vec![],
+            allow: vec![],
+        }));
+        let locks = Arc::new(Mutex::new(LockManager::new()));
+
+        // Enable only test gate — will fail on a fake Cargo.toml project
+        let gate_config = GateConfig {
+            lint: false,
+            format_check: false,
+            type_check: false,
+            test: true,
+            custom_gates: vec![],
+            timeout_seconds: 10,
+        };
+
+        let dispatcher = TaskDispatcher::new(db.clone(), adapters, pty, yolo, locks, tx)
+            .with_gate_config(gate_config);
+
+        let status = crate::adapters::protocol::StatusSection {
+            working_patterns: vec![],
+            idle_patterns: vec![r"\$\s*$".into()],
+            input_patterns: vec![],
+            error_patterns: vec![],
+        };
+        let perms = crate::adapters::protocol::PermissionsSection {
+            approve: "y\n".into(),
+            approve_all: "Y\n".into(),
+            deny: "n\n".into(),
+            extraction_patterns: vec![],
+        };
+        dispatcher
+            .monitors
+            .lock()
+            .await
+            .insert(1, SessionMonitor::new(&status, &perms));
+
+        let result = dispatcher.handle_pty_output(1, "$ ").await.unwrap();
+        assert_eq!(result, Some(Detection::Idle));
+
+        // Status should be Review (test gate failed on fake project)
+        let conn = db.lock().await;
+        let task_status: String = conn
+            .query_row("SELECT status FROM tasks WHERE id = 1", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(task_status, "review");
+
+        // Gate results should be persisted
+        let gate_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM gate_results WHERE task_id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(gate_count > 0);
+    }
+
+    #[tokio::test]
+    async fn gate_results_emit_events() {
+        let (tx, mut rx) = broadcast::channel(64);
+        let conn = crate::db::open_memory().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let repo_path = tmp.path().to_string_lossy().to_string();
+
+        // Create a custom gate script that passes
+        let gate_script = tmp.path().join("gate.sh");
+        std::fs::write(&gate_script, "#!/bin/sh\necho ok\nexit 0\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&gate_script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+
+        conn.execute(
+            "INSERT INTO tasks (id, title, prompt, agent_id, repo_path, branch, isolation_mode, status) VALUES (1, 'Test', '', 'claude-code', ?1, 'main', 'none', 'running')",
+            rusqlite::params![repo_path],
+        ).unwrap();
+
+        let db = Arc::new(Mutex::new(conn));
+        let adapters = Arc::new(AdapterRegistry::new());
+        let pty = Arc::new(PtyManager::new(4, SandboxProfile::disabled()));
+        let yolo = Arc::new(YoloEngine::new(RuleSet {
+            deny: vec![],
+            allow: vec![],
+        }));
+        let locks = Arc::new(Mutex::new(LockManager::new()));
+
+        let gate_config = GateConfig {
+            lint: false,
+            format_check: false,
+            type_check: false,
+            test: false,
+            custom_gates: vec![gate_script.to_string_lossy().to_string()],
+            timeout_seconds: 10,
+        };
+
+        let dispatcher = TaskDispatcher::new(db.clone(), adapters, pty, yolo, locks, tx)
+            .with_gate_config(gate_config);
+
+        let status = crate::adapters::protocol::StatusSection {
+            working_patterns: vec![],
+            idle_patterns: vec![r"\$\s*$".into()],
+            input_patterns: vec![],
+            error_patterns: vec![],
+        };
+        let perms = crate::adapters::protocol::PermissionsSection {
+            approve: "y\n".into(),
+            approve_all: "Y\n".into(),
+            deny: "n\n".into(),
+            extraction_patterns: vec![],
+        };
+        dispatcher
+            .monitors
+            .lock()
+            .await
+            .insert(1, SessionMonitor::new(&status, &perms));
+
+        dispatcher.handle_pty_output(1, "$ ").await.unwrap();
+
+        // Should have received a GateResult event
+        let mut found_gate_event = false;
+        while let Ok(event) = rx.try_recv() {
+            if matches!(event, ServerEvent::GateResult { .. }) {
+                found_gate_event = true;
+                break;
+            }
+        }
+        assert!(found_gate_event, "Should have emitted a GateResult event");
     }
 }
