@@ -17,6 +17,9 @@ approve = "y\n"
 approve_all = "y\n"
 deny = "n\n"
 
+[[permissions.extraction_patterns]]
+regex = '(?P<tool_name>\w+)[\s:]+(?P<tool_args>.+)'
+
 [capabilities]
 supports_hooks = false
 supports_prompt_arg = true

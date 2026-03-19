@@ -246,6 +246,7 @@ mod tests {
                 approve: "y\n".into(),
                 approve_all: "Y\n".into(),
                 deny: "n\n".into(),
+                extraction_patterns: vec![],
             },
             capabilities: CapabilitiesSection::default(),
         }
@@ -332,6 +333,7 @@ mod tests {
             approve: "y\n".into(),
             approve_all: "Y\n".into(),
             deny: "n\n".into(),
+            extraction_patterns: vec![],
         };
         dispatcher
             .monitors
@@ -413,6 +415,7 @@ mod tests {
             approve: "y\n".into(),
             approve_all: "Y\n".into(),
             deny: "n\n".into(),
+            extraction_patterns: vec![],
         };
         dispatcher
             .monitors
@@ -457,6 +460,7 @@ mod tests {
             approve: "y\n".into(),
             approve_all: "Y\n".into(),
             deny: "n\n".into(),
+            extraction_patterns: vec![],
         };
         dispatcher
             .monitors
@@ -506,6 +510,7 @@ mod tests {
             approve: "y\n".into(),
             approve_all: "Y\n".into(),
             deny: "n\n".into(),
+            extraction_patterns: vec![],
         };
         dispatcher
             .monitors
@@ -593,6 +598,7 @@ mod tests {
             approve: "y\n".into(),
             approve_all: "Y\n".into(),
             deny: "n\n".into(),
+            extraction_patterns: vec![],
         };
         dispatcher
             .monitors
@@ -662,6 +668,7 @@ mod tests {
             approve: "y\n".into(),
             approve_all: "Y\n".into(),
             deny: "n\n".into(),
+            extraction_patterns: vec![],
         };
         dispatcher
             .monitors
@@ -704,6 +711,7 @@ mod tests {
             approve: "y\n".into(),
             approve_all: "Y\n".into(),
             deny: "n\n".into(),
+            extraction_patterns: vec![],
         };
         dispatcher
             .monitors
@@ -855,6 +863,7 @@ mod tests {
             approve: "y\n".into(),
             approve_all: "Y\n".into(),
             deny: "n\n".into(),
+            extraction_patterns: vec![],
         };
         dispatcher
             .monitors
@@ -906,6 +915,7 @@ mod tests {
             approve: "y\n".into(),
             approve_all: "Y\n".into(),
             deny: "n\n".into(),
+            extraction_patterns: vec![],
         };
         dispatcher
             .monitors

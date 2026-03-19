@@ -21,6 +21,12 @@ approve = "y\n"
 approve_all = "Y\n"
 deny = "n\n"
 
+[[permissions.extraction_patterns]]
+regex = '(?P<tool_name>Bash|Write|Read|Edit|MultiEdit|TodoWrite)\((?P<tool_args>[^)]+)\)'
+
+[[permissions.extraction_patterns]]
+regex = '(?P<tool_name>\w+):\s+(?P<tool_args>.+)'
+
 [capabilities]
 supports_hooks = true
 supports_prompt_arg = true

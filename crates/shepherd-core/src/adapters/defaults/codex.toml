@@ -17,6 +17,9 @@ approve = "y\n"
 approve_all = "Y\n"
 deny = "n\n"
 
+[[permissions.extraction_patterns]]
+regex = '(?P<tool_name>shell|write|read|patch)[\s:]+(?P<tool_args>.+)'
+
 [capabilities]
 supports_hooks = false
 supports_prompt_arg = true

@@ -28,6 +28,7 @@ pub struct SessionMonitor {
     idle_patterns: Vec<Regex>,
     input_patterns: Vec<Regex>,
     error_patterns: Vec<Regex>,
+    extraction_patterns: Vec<Regex>,
     approve_seq: String,
     deny_seq: String,
 }
@@ -37,11 +38,17 @@ impl SessionMonitor {
         let compile = |patterns: &[String]| -> Vec<Regex> {
             patterns.iter().filter_map(|p| Regex::new(p).ok()).collect()
         };
+        let extraction_patterns = permissions
+            .extraction_patterns
+            .iter()
+            .filter_map(|p| Regex::new(&p.regex).ok())
+            .collect();
         Self {
             working_patterns: compile(&status.working_patterns),
             idle_patterns: compile(&status.idle_patterns),
             input_patterns: compile(&status.input_patterns),
             error_patterns: compile(&status.error_patterns),
+            extraction_patterns,
             approve_seq: permissions.approve.clone(),
             deny_seq: permissions.deny.clone(),
         }
@@ -57,8 +64,7 @@ impl SessionMonitor {
         }
         for re in &self.input_patterns {
             if re.is_match(output) {
-                let tool_name = self.extract_tool_name(output).unwrap_or_default();
-                let tool_args = self.extract_tool_args(output).unwrap_or_default();
+                let (tool_name, tool_args) = self.extract_tool_info(output);
                 return Detection::PermissionRequest {
                     tool_name,
                     tool_args,
@@ -88,18 +94,32 @@ impl SessionMonitor {
         &self.deny_seq
     }
 
-    fn extract_tool_name(&self, output: &str) -> Option<String> {
-        if output.contains("bash") || output.contains("command") {
-            Some("bash".to_string())
-        } else if output.contains("write") || output.contains("file") {
-            Some("file_write".to_string())
-        } else {
-            Some("unknown".to_string())
+    /// Try extraction_patterns first (named capture groups), fall back to heuristic.
+    fn extract_tool_info(&self, output: &str) -> (String, String) {
+        for re in &self.extraction_patterns {
+            if let Some(caps) = re.captures(output) {
+                let tool_name = caps
+                    .name("tool_name")
+                    .map(|m| m.as_str().to_string())
+                    .unwrap_or_default();
+                let tool_args = caps
+                    .name("tool_args")
+                    .map(|m| m.as_str().to_string())
+                    .unwrap_or_default();
+                if !tool_name.is_empty() {
+                    return (tool_name, tool_args);
+                }
+            }
         }
-    }
-
-    fn extract_tool_args(&self, output: &str) -> Option<String> {
-        Some(output.trim().to_string())
+        // Fallback: legacy heuristic for adapters without extraction_patterns
+        let tool_name = if output.contains("bash") || output.contains("command") {
+            "bash".to_string()
+        } else if output.contains("write") || output.contains("file") {
+            "file_write".to_string()
+        } else {
+            "unknown".to_string()
+        };
+        (tool_name, output.trim().to_string())
     }
 }
 
@@ -122,6 +142,7 @@ mod tests {
             approve: "y\n".into(),
             approve_all: "!\n".into(),
             deny: "n\n".into(),
+            extraction_patterns: vec![],
         }
     }
 
@@ -196,6 +217,111 @@ mod tests {
         match monitor.analyze("Allow network access to example.com?") {
             Detection::PermissionRequest { tool_name, .. } => {
                 assert_eq!(tool_name, "unknown");
+            }
+            other => panic!("Expected PermissionRequest, got {:?}", other),
+        }
+    }
+
+    // ── Extraction pattern tests ─────────────────────────────────
+
+    fn permissions_with_patterns() -> PermissionsSection {
+        PermissionsSection {
+            approve: "y\n".into(),
+            approve_all: "!\n".into(),
+            deny: "n\n".into(),
+            extraction_patterns: vec![
+                crate::adapters::protocol::ExtractionPattern {
+                    regex: r"(?P<tool_name>Bash|Write|Read|Edit)\((?P<tool_args>[^)]+)\)".into(),
+                },
+                crate::adapters::protocol::ExtractionPattern {
+                    regex: r"(?P<tool_name>\w+):\s+(?P<tool_args>.+)".into(),
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn extracts_tool_name_and_args_via_pattern() {
+        let monitor = SessionMonitor::new(&claude_code_status(), &permissions_with_patterns());
+        match monitor.analyze("Allow Bash(cargo test --release)?") {
+            Detection::PermissionRequest {
+                tool_name,
+                tool_args,
+            } => {
+                assert_eq!(tool_name, "Bash");
+                assert_eq!(tool_args, "cargo test --release");
+            }
+            other => panic!("Expected PermissionRequest, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn extracts_write_tool_via_pattern() {
+        let monitor = SessionMonitor::new(&claude_code_status(), &permissions_with_patterns());
+        match monitor.analyze("Allow Write(src/main.rs)?") {
+            Detection::PermissionRequest {
+                tool_name,
+                tool_args,
+            } => {
+                assert_eq!(tool_name, "Write");
+                assert_eq!(tool_args, "src/main.rs");
+            }
+            other => panic!("Expected PermissionRequest, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn falls_back_to_second_pattern() {
+        let monitor = SessionMonitor::new(&claude_code_status(), &permissions_with_patterns());
+        match monitor.analyze("Allow execute: npm install lodash") {
+            Detection::PermissionRequest {
+                tool_name,
+                tool_args,
+            } => {
+                assert_eq!(tool_name, "execute");
+                assert_eq!(tool_args, "npm install lodash");
+            }
+            other => panic!("Expected PermissionRequest, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn no_extraction_patterns_uses_fallback() {
+        // With empty extraction_patterns, should still work (fallback to legacy logic)
+        let perms = PermissionsSection {
+            approve: "y\n".into(),
+            approve_all: "!\n".into(),
+            deny: "n\n".into(),
+            extraction_patterns: vec![],
+        };
+        let monitor = SessionMonitor::new(&claude_code_status(), &perms);
+        match monitor.analyze("Allow bash command: cargo test?") {
+            Detection::PermissionRequest { tool_name, .. } => {
+                assert_eq!(tool_name, "bash");
+            }
+            other => panic!("Expected PermissionRequest, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn extraction_pattern_with_only_tool_name() {
+        let perms = PermissionsSection {
+            approve: "y\n".into(),
+            approve_all: "!\n".into(),
+            deny: "n\n".into(),
+            extraction_patterns: vec![crate::adapters::protocol::ExtractionPattern {
+                regex: r"Allow (?P<tool_name>\w+)".into(),
+            }],
+        };
+        let monitor = SessionMonitor::new(&claude_code_status(), &perms);
+        match monitor.analyze("Allow Bash(cargo test)?") {
+            Detection::PermissionRequest {
+                tool_name,
+                tool_args,
+            } => {
+                assert_eq!(tool_name, "Bash");
+                // tool_args should be empty when no capture group for it
+                assert!(tool_args.is_empty());
             }
             other => panic!("Expected PermissionRequest, got {:?}", other),
         }

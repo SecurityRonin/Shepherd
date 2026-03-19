@@ -59,6 +59,17 @@ pub struct PermissionsSection {
     pub approve_all: String,
     #[serde(default = "default_deny")]
     pub deny: String,
+    /// Regex patterns with named capture groups `tool_name` and `tool_args`
+    /// for structured extraction from PTY output when a permission request is detected.
+    #[serde(default)]
+    pub extraction_patterns: Vec<ExtractionPattern>,
+}
+
+/// A regex pattern that extracts tool name and arguments from agent PTY output.
+/// Must contain named capture groups `(?P<tool_name>...)` and optionally `(?P<tool_args>...)`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExtractionPattern {
+    pub regex: String,
 }
 
 fn default_approve() -> String {
@@ -228,6 +239,70 @@ command = "agent"
         assert!(!caps.supports_resume);
         assert!(!caps.supports_mcp);
         assert!(!caps.supports_worktree);
+    }
+
+    #[test]
+    fn test_extraction_patterns_deserialize() {
+        let toml_str = r#"
+[agent]
+name = "claude-code"
+command = "claude"
+
+[status]
+
+[permissions]
+approve = "y\n"
+approve_all = "Y\n"
+deny = "n\n"
+
+[[permissions.extraction_patterns]]
+regex = '(?P<tool_name>Bash|Write|Read|Edit)\((?P<tool_args>[^)]+)\)'
+
+[[permissions.extraction_patterns]]
+regex = '(?P<tool_name>\w+):\s*(?P<tool_args>.+)'
+"#;
+        let config: AdapterConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.permissions.extraction_patterns.len(), 2);
+        assert!(config.permissions.extraction_patterns[0]
+            .regex
+            .contains("tool_name"));
+        assert!(config.permissions.extraction_patterns[1]
+            .regex
+            .contains("tool_args"));
+    }
+
+    #[test]
+    fn test_extraction_patterns_default_empty() {
+        let toml_str = r#"
+[agent]
+name = "test"
+command = "test"
+
+[status]
+
+[permissions]
+"#;
+        let config: AdapterConfig = toml::from_str(toml_str).unwrap();
+        assert!(config.permissions.extraction_patterns.is_empty());
+    }
+
+    #[test]
+    fn test_extraction_patterns_roundtrip() {
+        let perms = PermissionsSection {
+            approve: "y\n".into(),
+            approve_all: "Y\n".into(),
+            deny: "n\n".into(),
+            extraction_patterns: vec![ExtractionPattern {
+                regex: r"(?P<tool_name>\w+)\((?P<tool_args>[^)]+)\)".into(),
+            }],
+        };
+        let serialized = toml::to_string(&perms).unwrap();
+        let parsed: PermissionsSection = toml::from_str(&serialized).unwrap();
+        assert_eq!(parsed.extraction_patterns.len(), 1);
+        assert_eq!(
+            parsed.extraction_patterns[0].regex,
+            perms.extraction_patterns[0].regex
+        );
     }
 
     #[test]
