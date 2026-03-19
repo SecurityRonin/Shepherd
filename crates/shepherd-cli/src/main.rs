@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{generate, Shell};
 use reqwest::Client;
@@ -93,11 +93,74 @@ enum Commands {
     },
 }
 
+/// Ensure a server is running. Returns the base URL to use.
+async fn ensure_server(server_url: &str) -> Result<String> {
+    let client = Client::new();
+
+    // 1. Try the configured URL directly
+    if let Ok(resp) = client.get(&format!("{server_url}/api/health")).send().await {
+        if resp.status().is_success() {
+            return Ok(server_url.to_string());
+        }
+    }
+
+    // 2. Check server.json for an existing daemon
+    if let Some(info) = shepherd_server::startup::ServerInfo::read() {
+        let url = format!("http://127.0.0.1:{}", info.port);
+        if let Ok(resp) = client.get(&format!("{url}/api/health")).send().await {
+            if resp.status().is_success() {
+                return Ok(url);
+            }
+        }
+        // Stale server.json — clean it up
+        shepherd_server::startup::ServerInfo::remove();
+    }
+
+    // 3. Spawn server daemon
+    eprintln!("Starting shepherd server daemon...");
+    let exe = std::env::current_exe()?;
+    let server_binary = exe
+        .parent()
+        .map(|p| p.join("shepherd-server"))
+        .unwrap_or_else(|| "shepherd-server".into());
+
+    std::process::Command::new(&server_binary)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .context("Failed to start shepherd-server daemon. Is it installed?")?;
+
+    // 4. Wait for server to become ready (poll up to 5 seconds)
+    for _ in 0..50 {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        if let Ok(resp) = client.get(&format!("{server_url}/api/health")).send().await {
+            if resp.status().is_success() {
+                eprintln!("Server started successfully.");
+                return Ok(server_url.to_string());
+            }
+        }
+    }
+
+    anyhow::bail!("Server failed to start within 5 seconds")
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
     let client = Client::new();
-    let base_url = &cli.server;
+
+    // Commands that don't need a server
+    let needs_server = !matches!(
+        cli.command,
+        Some(Commands::Init) | Some(Commands::Completions { .. }) | None
+    );
+
+    let base_url = if needs_server {
+        ensure_server(&cli.server).await?
+    } else {
+        cli.server.clone()
+    };
+    let base_url = &base_url;
 
     match cli.command {
         Some(Commands::Status) => {

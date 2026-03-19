@@ -6,7 +6,9 @@ use shepherd_core::adapters::AdapterRegistry;
 use shepherd_core::cloud::CloudClient;
 use shepherd_core::config;
 use shepherd_core::config::types::ShepherdConfig;
+use shepherd_core::coordination::LockManager;
 use shepherd_core::db;
+use shepherd_core::dispatch::TaskDispatcher;
 use shepherd_core::events::ServerEvent;
 use shepherd_core::iterm2::{auth::default_auth_path, Iterm2Manager};
 use shepherd_core::pty::{sandbox::SandboxProfile, PtyManager};
@@ -108,6 +110,11 @@ pub async fn start_server(
     };
     let pty = PtyManager::new(max_agents, sandbox);
 
+    // ---- Arc-wrap shared components ----
+    let adapters = Arc::new(adapters);
+    let yolo = Arc::new(yolo);
+    let pty = Arc::new(pty);
+
     // ---- event bus ----
     let (event_tx, _) = broadcast::channel(256);
 
@@ -137,12 +144,13 @@ pub async fn start_server(
     };
 
     // ---- shared state ----
+    let db = Arc::new(Mutex::new(conn));
     let state = Arc::new(AppState {
-        db: Arc::new(Mutex::new(conn)),
+        db: db.clone(),
         config: cfg,
-        adapters,
-        yolo,
-        pty,
+        adapters: adapters.clone(),
+        yolo: yolo.clone(),
+        pty: pty.clone(),
         event_tx: event_tx.clone(),
         llm_provider: None,
         iterm2: Some(iterm2.clone()),
@@ -153,6 +161,39 @@ pub async fn start_server(
     if let Some(ref mgr) = state.iterm2 {
         mgr.clone().spawn(state.db.clone(), state.event_tx.clone());
     }
+
+    // ---- TaskDispatcher polling loop ----
+    let dispatcher = Arc::new(TaskDispatcher::new(
+        db,
+        adapters,
+        pty.clone(),
+        yolo,
+        Arc::new(Mutex::new(LockManager::new())),
+        event_tx.clone(),
+    ));
+
+    // Poll for queued tasks every 2 seconds
+    let dispatcher_poll = dispatcher.clone();
+    tokio::spawn(async move {
+        loop {
+            if let Err(e) = dispatcher_poll.poll_and_dispatch().await {
+                tracing::error!("Dispatch loop error: {}", e);
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        }
+    });
+
+    // Forward PTY output through dispatcher for session monitoring
+    let dispatcher_monitor = dispatcher.clone();
+    let mut pty_monitor_rx = pty.subscribe_output();
+    tokio::spawn(async move {
+        while let Ok(output) = pty_monitor_rx.recv().await {
+            let text = String::from_utf8_lossy(&output.data);
+            let _ = dispatcher_monitor
+                .handle_pty_output(output.task_id, &text)
+                .await;
+        }
+    });
 
     // ---- HTTP server ----
     let app = build_router(state.clone());

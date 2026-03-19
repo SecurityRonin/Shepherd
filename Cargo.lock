@@ -3247,6 +3247,7 @@ dependencies = [
  "reqwest",
  "serde_json",
  "shepherd-core",
+ "shepherd-server",
  "tokio",
 ]
 

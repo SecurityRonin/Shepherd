@@ -18,14 +18,14 @@ mod tests {
         Arc::new(crate::state::AppState {
             db: Arc::new(Mutex::new(conn)),
             config: shepherd_core::config::types::ShepherdConfig::default(),
-            adapters: shepherd_core::adapters::AdapterRegistry::new(),
-            yolo: shepherd_core::yolo::YoloEngine::new(
+            adapters: Arc::new(shepherd_core::adapters::AdapterRegistry::new()),
+            yolo: Arc::new(shepherd_core::yolo::YoloEngine::new(
                 shepherd_core::yolo::rules::RuleSet { deny: vec![], allow: vec![] },
-            ),
-            pty: shepherd_core::pty::PtyManager::new(
+            )),
+            pty: Arc::new(shepherd_core::pty::PtyManager::new(
                 4,
                 shepherd_core::pty::sandbox::SandboxProfile::disabled(),
-            ),
+            )),
             event_tx,
             llm_provider: None,
             iterm2: None,

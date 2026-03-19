@@ -97,15 +97,15 @@ mod tests {
         Arc::new(AppState {
             db: Arc::new(tokio::sync::Mutex::new(conn)),
             config: shepherd_core::config::load_config(None).unwrap(),
-            adapters: shepherd_core::adapters::AdapterRegistry::new(),
-            yolo: shepherd_core::yolo::YoloEngine::load(
+            adapters: Arc::new(shepherd_core::adapters::AdapterRegistry::new()),
+            yolo: Arc::new(shepherd_core::yolo::YoloEngine::load(
                 std::path::Path::new("/tmp/__nonexistent_shepherd_rules.yaml"),
             )
-            .unwrap(),
-            pty: shepherd_core::pty::PtyManager::new(
+            .unwrap()),
+            pty: Arc::new(shepherd_core::pty::PtyManager::new(
                 1,
                 shepherd_core::pty::sandbox::SandboxProfile::default(),
-            ),
+            )),
             event_tx,
             llm_provider: None,
             iterm2: None,
