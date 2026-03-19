@@ -187,14 +187,17 @@ pub async fn start_server(
     }
 
     // ---- TaskDispatcher polling loop ----
-    let dispatcher = Arc::new(TaskDispatcher::new(
-        db,
-        adapters,
-        pty.clone(),
-        yolo,
-        Arc::new(Mutex::new(LockManager::new())),
-        event_tx.clone(),
-    ));
+    let dispatcher = Arc::new(
+        TaskDispatcher::new(
+            db,
+            adapters,
+            pty.clone(),
+            yolo,
+            Arc::new(Mutex::new(LockManager::new())),
+            event_tx.clone(),
+        )
+        .with_max_agents(max_agents),
+    );
 
     // Poll for queued tasks every 2 seconds
     let dispatcher_poll = dispatcher.clone();

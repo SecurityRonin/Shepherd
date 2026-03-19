@@ -24,6 +24,7 @@ pub struct TaskDispatcher {
     lock_manager: Arc<Mutex<LockManager>>,
     event_tx: broadcast::Sender<ServerEvent>,
     monitors: Arc<Mutex<HashMap<i64, SessionMonitor>>>,
+    max_agents: usize,
 }
 
 impl TaskDispatcher {
@@ -43,20 +44,37 @@ impl TaskDispatcher {
             lock_manager,
             event_tx,
             monitors: Arc::new(Mutex::new(HashMap::new())),
+            max_agents: usize::MAX,
         }
     }
 
+    /// Set the maximum number of concurrent agent sessions.
+    pub fn with_max_agents(mut self, max: usize) -> Self {
+        self.max_agents = max;
+        self
+    }
+
     /// Poll for queued tasks and dispatch them. Called periodically.
+    /// Respects `max_agents` — stops dispatching when at capacity.
     pub async fn poll_and_dispatch(&self) -> Result<Vec<i64>> {
         let queued = {
             let conn = self.db.lock().await;
             db::get_queued_tasks(&conn)?
         };
 
+        let active_count = self.monitors.lock().await.len();
+        let mut remaining_slots = self.max_agents.saturating_sub(active_count);
+
         let mut dispatched = Vec::new();
         for task in queued {
+            if remaining_slots == 0 {
+                break;
+            }
             match self.dispatch_task(&task).await {
-                Ok(true) => dispatched.push(task.id),
+                Ok(true) => {
+                    dispatched.push(task.id);
+                    remaining_slots -= 1;
+                }
                 Ok(false) => {
                     // Skipped due to lock conflict — stays queued for next poll
                     tracing::info!(
@@ -1268,5 +1286,130 @@ mod tests {
         assert!(lm
             .is_locked(&std::path::PathBuf::from("/tmp/done-repo"))
             .is_none());
+    }
+
+    // ── Concurrency limiting tests ───────────────────────────────
+
+    #[tokio::test]
+    async fn max_agents_limits_concurrent_dispatches() {
+        let (tx, _rx) = broadcast::channel(256);
+        let conn = crate::db::open_memory().unwrap();
+        // Insert 3 queued tasks in different repos (no lock conflicts)
+        for i in 1..=3 {
+            conn.execute(
+                "INSERT INTO tasks (title, agent_id, status, repo_path, prompt, branch, isolation_mode) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                rusqlite::params![format!("Task {i}"), "test-echo", "queued", format!("/tmp/repo-{i}"), "hello", "main", "none"],
+            ).unwrap();
+        }
+
+        let mut adapters = AdapterRegistry::new();
+        adapters.register("test-echo".into(), echo_adapter());
+
+        let db = Arc::new(Mutex::new(conn));
+        let pty = Arc::new(PtyManager::new(4, SandboxProfile::disabled()));
+        let yolo = Arc::new(YoloEngine::new(RuleSet {
+            deny: vec![],
+            allow: vec![],
+        }));
+        let locks = Arc::new(Mutex::new(LockManager::new()));
+
+        let dispatcher = TaskDispatcher::new(db.clone(), Arc::new(adapters), pty, yolo, locks, tx)
+            .with_max_agents(2);
+
+        let dispatched = dispatcher.poll_and_dispatch().await.unwrap();
+        // Only 2 should dispatch despite 3 being queued
+        assert_eq!(dispatched.len(), 2);
+
+        // Third task should still be queued
+        let conn = db.lock().await;
+        let status: String = conn
+            .query_row("SELECT status FROM tasks WHERE id = 3", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(status, "queued");
+    }
+
+    #[tokio::test]
+    async fn max_agents_accounts_for_already_active_sessions() {
+        let (tx, _rx) = broadcast::channel(256);
+        let conn = crate::db::open_memory().unwrap();
+        conn.execute(
+            "INSERT INTO tasks (title, agent_id, status, repo_path, prompt, branch, isolation_mode) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params!["New task", "test-echo", "queued", "/tmp/repo-new", "hello", "main", "none"],
+        ).unwrap();
+
+        let mut adapters = AdapterRegistry::new();
+        adapters.register("test-echo".into(), echo_adapter());
+
+        let db = Arc::new(Mutex::new(conn));
+        let pty = Arc::new(PtyManager::new(4, SandboxProfile::disabled()));
+        let yolo = Arc::new(YoloEngine::new(RuleSet {
+            deny: vec![],
+            allow: vec![],
+        }));
+        let locks = Arc::new(Mutex::new(LockManager::new()));
+
+        let dispatcher = TaskDispatcher::new(db.clone(), Arc::new(adapters), pty, yolo, locks, tx)
+            .with_max_agents(1);
+
+        // Simulate an already-active session by inserting a monitor
+        let status = crate::adapters::protocol::StatusSection {
+            working_patterns: vec![],
+            idle_patterns: vec![],
+            input_patterns: vec![],
+            error_patterns: vec![],
+        };
+        let perms = crate::adapters::protocol::PermissionsSection {
+            approve: "y\n".into(),
+            approve_all: "Y\n".into(),
+            deny: "n\n".into(),
+            extraction_patterns: vec![],
+        };
+        dispatcher
+            .monitors
+            .lock()
+            .await
+            .insert(99, SessionMonitor::new(&status, &perms));
+
+        // max_agents=1, 1 already active → 0 should dispatch
+        let dispatched = dispatcher.poll_and_dispatch().await.unwrap();
+        assert_eq!(dispatched.len(), 0);
+
+        // Task should still be queued
+        let conn = db.lock().await;
+        let status_str: String = conn
+            .query_row("SELECT status FROM tasks WHERE id = 1", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(status_str, "queued");
+    }
+
+    #[tokio::test]
+    async fn max_agents_zero_dispatches_nothing() {
+        let (tx, _rx) = broadcast::channel(256);
+        let conn = crate::db::open_memory().unwrap();
+        conn.execute(
+            "INSERT INTO tasks (title, agent_id, status, repo_path, prompt, branch, isolation_mode) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params!["Task", "test-echo", "queued", "/tmp/repo", "hello", "main", "none"],
+        ).unwrap();
+
+        let mut adapters = AdapterRegistry::new();
+        adapters.register("test-echo".into(), echo_adapter());
+
+        let db = Arc::new(Mutex::new(conn));
+        let pty = Arc::new(PtyManager::new(4, SandboxProfile::disabled()));
+        let yolo = Arc::new(YoloEngine::new(RuleSet {
+            deny: vec![],
+            allow: vec![],
+        }));
+        let locks = Arc::new(Mutex::new(LockManager::new()));
+
+        let dispatcher =
+            TaskDispatcher::new(db, Arc::new(adapters), pty, yolo, locks, tx).with_max_agents(0);
+
+        let dispatched = dispatcher.poll_and_dispatch().await.unwrap();
+        assert_eq!(dispatched.len(), 0);
     }
 }
