@@ -492,6 +492,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn poll_and_dispatch_with_queued_task_fails_on_missing_adapter() {
+        let (tx, _rx) = broadcast::channel(16);
+        let conn = crate::db::open_memory().unwrap();
+        // Insert a queued task with an agent_id that has no registered adapter
+        conn.execute(
+            "INSERT INTO tasks (id, title, prompt, agent_id, repo_path, branch, isolation_mode, status) VALUES (1, 'Test task', 'do something', 'nonexistent-agent', '/tmp/test', 'main', 'none', 'queued')",
+            [],
+        ).unwrap();
+        let db = Arc::new(Mutex::new(conn));
+        let adapters = Arc::new(AdapterRegistry::new());
+        let pty = Arc::new(PtyManager::new(4, SandboxProfile::disabled()));
+        let yolo = Arc::new(YoloEngine::new(RuleSet {
+            deny: vec![],
+            allow: vec![],
+        }));
+        let lock_manager = Arc::new(Mutex::new(LockManager::new()));
+
+        let dispatcher = TaskDispatcher::new(db.clone(), adapters, pty, yolo, lock_manager, tx);
+        // poll_and_dispatch will find the queued task, try to dispatch it, fail on adapter lookup,
+        // and set its status to error. The returned vec should be empty (no successful dispatches).
+        let result = dispatcher.poll_and_dispatch().await.unwrap();
+        assert!(result.is_empty());
+
+        // Verify the task status was set to error
+        let conn = db.lock().await;
+        let status_str: String = conn
+            .query_row("SELECT status FROM tasks WHERE id = 1", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(status_str, "error");
+    }
+
+    #[tokio::test]
     async fn handle_pty_output_permission_request_emits_event_for_ask() {
         let (tx, mut rx) = broadcast::channel(16);
         let conn = crate::db::open_memory().unwrap();

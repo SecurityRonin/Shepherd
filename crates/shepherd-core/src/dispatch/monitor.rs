@@ -181,4 +181,26 @@ mod tests {
         assert_eq!(monitor.approve_sequence(), "y\n");
         assert_eq!(monitor.deny_sequence(), "n\n");
     }
+
+    #[test]
+    fn detects_file_write_permission() {
+        let monitor = SessionMonitor::new(&claude_code_status(), &claude_code_permissions());
+        match monitor.analyze("Do you want to write to config.toml?") {
+            Detection::PermissionRequest { tool_name, .. } => {
+                assert_eq!(tool_name, "file_write");
+            }
+            other => panic!("Expected PermissionRequest, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn detects_unknown_tool_permission() {
+        let monitor = SessionMonitor::new(&claude_code_status(), &claude_code_permissions());
+        match monitor.analyze("Allow network access to example.com?") {
+            Detection::PermissionRequest { tool_name, .. } => {
+                assert_eq!(tool_name, "unknown");
+            }
+            other => panic!("Expected PermissionRequest, got {:?}", other),
+        }
+    }
 }
