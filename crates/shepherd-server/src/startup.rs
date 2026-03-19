@@ -35,23 +35,31 @@ impl ServerInfo {
         config::shepherd_dir().join("server.json")
     }
 
-    /// Persist this info to the lockfile.
-    pub fn write(&self) -> Result<()> {
-        let path = Self::path();
+    /// Write this info to a specific path.
+    pub fn write_to(&self, path: &std::path::Path) -> Result<()> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
         let json = serde_json::to_string_pretty(self)?;
-        std::fs::write(&path, json)?;
+        std::fs::write(path, json)?;
         Ok(())
+    }
+
+    /// Read from a specific path.
+    pub fn read_from(path: &std::path::Path) -> Option<Self> {
+        let content = std::fs::read_to_string(path).ok()?;
+        serde_json::from_str(&content).ok()
+    }
+
+    /// Persist this info to the lockfile.
+    pub fn write(&self) -> Result<()> {
+        self.write_to(&Self::path())
     }
 
     /// Read the current lockfile, returning `None` if it doesn't exist or is
     /// malformed.
     pub fn read() -> Option<Self> {
-        let path = Self::path();
-        let content = std::fs::read_to_string(&path).ok()?;
-        serde_json::from_str(&content).ok()
+        Self::read_from(&Self::path())
     }
 
     /// Remove the lockfile (best-effort).
@@ -252,23 +260,44 @@ mod tests {
     }
 
     #[test]
-    fn server_info_write_and_read_to_tempdir() {
+    fn server_info_write_to_and_read_from() {
         let tmp = tempfile::tempdir().unwrap();
-        let path = tmp.path().join("server.json");
+        let path = tmp.path().join("sub/server.json");
         let info = ServerInfo {
             pid: 999,
             port: 8080,
             started_at: "2026-03-19T12:00:00Z".into(),
         };
-        // Write to the temp path (not the global one)
-        let json = serde_json::to_string_pretty(&info).unwrap();
-        std::fs::write(&path, &json).unwrap();
-        // Read back and verify
-        let content = std::fs::read_to_string(&path).unwrap();
-        let parsed: ServerInfo = serde_json::from_str(&content).unwrap();
+        // Use the actual write_to method (creates parent dirs)
+        info.write_to(&path).unwrap();
+        // Use the actual read_from method
+        let parsed = ServerInfo::read_from(&path).unwrap();
         assert_eq!(parsed.pid, 999);
         assert_eq!(parsed.port, 8080);
         assert_eq!(parsed.started_at, "2026-03-19T12:00:00Z");
+    }
+
+    #[test]
+    fn server_info_write_to_overwrites_existing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("server.json");
+        let info1 = ServerInfo {
+            pid: 1,
+            port: 1000,
+            started_at: "2026-01-01T00:00:00Z".into(),
+        };
+        info1.write_to(&path).unwrap();
+
+        let info2 = ServerInfo {
+            pid: 2,
+            port: 2000,
+            started_at: "2026-02-01T00:00:00Z".into(),
+        };
+        info2.write_to(&path).unwrap();
+
+        let parsed = ServerInfo::read_from(&path).unwrap();
+        assert_eq!(parsed.pid, 2);
+        assert_eq!(parsed.port, 2000);
     }
 
     #[test]
@@ -288,16 +317,68 @@ mod tests {
     }
 
     #[test]
-    fn server_info_read_returns_none_for_missing_file() {
-        // ServerInfo::read() uses the global path which may or may not exist,
-        // but we can test that malformed JSON returns None by writing garbage.
+    fn server_info_read_from_missing_returns_none() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("nonexistent.json");
+        assert!(ServerInfo::read_from(&path).is_none());
+    }
+
+    #[test]
+    fn server_info_read_from_malformed_returns_none() {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("server.json");
-        std::fs::write(&path, "not json").unwrap();
-        let content = std::fs::read_to_string(&path).ok();
-        assert!(content.is_some());
-        let parsed: Option<ServerInfo> =
-            content.and_then(|c| serde_json::from_str(&c).ok());
-        assert!(parsed.is_none());
+        std::fs::write(&path, "not json at all {{{}}}").unwrap();
+        assert!(ServerInfo::read_from(&path).is_none());
+    }
+
+    #[test]
+    fn server_info_read_from_partial_json_returns_none() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("server.json");
+        // Missing required field 'started_at'
+        std::fs::write(&path, r#"{"pid":1,"port":80}"#).unwrap();
+        assert!(ServerInfo::read_from(&path).is_none());
+    }
+
+    #[test]
+    fn server_info_write_to_creates_nested_dirs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("a/b/c/server.json");
+        let info = ServerInfo {
+            pid: 1,
+            port: 3000,
+            started_at: "2026-03-19T00:00:00Z".into(),
+        };
+        info.write_to(&path).unwrap();
+        assert!(path.exists());
+        let parsed = ServerInfo::read_from(&path).unwrap();
+        assert_eq!(parsed.port, 3000);
+    }
+
+    #[test]
+    fn server_info_remove_is_best_effort() {
+        // Calling remove() when the file doesn't exist should not panic
+        // We can't easily test this without touching the global path,
+        // but we can verify it doesn't panic by calling it.
+        // (This at least covers the remove() method body.)
+        ServerInfo::remove();
+    }
+
+    #[test]
+    fn server_info_write_and_read_global_path() {
+        // Exercise write() and read() through the global path delegates.
+        // These call write_to(path()) and read_from(path()) internally.
+        let info = ServerInfo {
+            pid: std::process::id(),
+            port: 9999,
+            started_at: "2026-03-19T00:00:00Z".into(),
+        };
+        info.write().unwrap();
+        let parsed = ServerInfo::read().unwrap();
+        assert_eq!(parsed.pid, std::process::id());
+        assert_eq!(parsed.port, 9999);
+        // Clean up
+        ServerInfo::remove();
+        assert!(ServerInfo::read().is_none());
     }
 }

@@ -586,4 +586,120 @@ mod tests {
             .unwrap();
         assert_eq!(status_str, "input");
     }
+
+    #[tokio::test]
+    async fn handle_pty_output_permission_request_auto_approves_via_yolo() {
+        use crate::yolo::rules::Rule;
+
+        let (tx, _rx) = broadcast::channel(16);
+        let conn = crate::db::open_memory().unwrap();
+        conn.execute(
+            "INSERT INTO tasks (id, title, prompt, agent_id, repo_path, branch, isolation_mode, status) VALUES (1, 'Test', '', 'claude-code', '/tmp', 'main', 'none', 'running')",
+            [],
+        ).unwrap();
+        let db = Arc::new(Mutex::new(conn));
+        let adapters = Arc::new(AdapterRegistry::new());
+        let pty = Arc::new(PtyManager::new(4, SandboxProfile::disabled()));
+        // Allow rule that matches "bash" tool
+        let yolo = Arc::new(YoloEngine::new(RuleSet {
+            deny: vec![],
+            allow: vec![Rule {
+                tool: Some("bash".into()),
+                pattern: None,
+                path: None,
+            }],
+        }));
+        let lock_manager = Arc::new(Mutex::new(LockManager::new()));
+
+        let dispatcher = TaskDispatcher::new(db, adapters, pty, yolo, lock_manager, tx);
+
+        let status = crate::adapters::protocol::StatusSection {
+            working_patterns: vec![],
+            idle_patterns: vec![],
+            input_patterns: vec![r"Allow".into()],
+            error_patterns: vec![],
+        };
+        let perms = crate::adapters::protocol::PermissionsSection {
+            approve: "y\n".into(),
+            approve_all: "Y\n".into(),
+            deny: "n\n".into(),
+        };
+        dispatcher
+            .monitors
+            .lock()
+            .await
+            .insert(1, SessionMonitor::new(&status, &perms));
+
+        // "Allow bash command" triggers input_patterns, tool_name extracts "bash",
+        // and the yolo rule allows "bash" → auto-approve path
+        let result = dispatcher
+            .handle_pty_output(1, "Allow bash command: cargo test?")
+            .await
+            .unwrap();
+        assert!(matches!(
+            result,
+            Some(Detection::PermissionRequest { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn handle_pty_output_with_monitor_detection_none() {
+        let (tx, _rx) = broadcast::channel(16);
+        let conn = Connection::open_in_memory().unwrap();
+        let db = Arc::new(Mutex::new(conn));
+        let adapters = Arc::new(AdapterRegistry::new());
+        let pty = Arc::new(PtyManager::new(4, SandboxProfile::disabled()));
+        let yolo = Arc::new(YoloEngine::new(RuleSet {
+            deny: vec![],
+            allow: vec![],
+        }));
+        let lock_manager = Arc::new(Mutex::new(LockManager::new()));
+
+        let dispatcher = TaskDispatcher::new(db, adapters, pty, yolo, lock_manager, tx);
+
+        // Monitor with no patterns → everything returns Detection::None
+        let status = crate::adapters::protocol::StatusSection {
+            working_patterns: vec![],
+            idle_patterns: vec![],
+            input_patterns: vec![],
+            error_patterns: vec![],
+        };
+        let perms = crate::adapters::protocol::PermissionsSection {
+            approve: "y\n".into(),
+            approve_all: "Y\n".into(),
+            deny: "n\n".into(),
+        };
+        dispatcher
+            .monitors
+            .lock()
+            .await
+            .insert(1, SessionMonitor::new(&status, &perms));
+
+        // This output matches no patterns → Detection::None → falls into the `_ =>` branch
+        let result = dispatcher
+            .handle_pty_output(1, "just some random output")
+            .await
+            .unwrap();
+        assert_eq!(result, Some(Detection::None));
+    }
+
+    #[tokio::test]
+    async fn cleanup_task_noop_for_nonexistent() {
+        let (tx, _rx) = broadcast::channel(16);
+        let conn = Connection::open_in_memory().unwrap();
+        let db = Arc::new(Mutex::new(conn));
+        let adapters = Arc::new(AdapterRegistry::new());
+        let pty = Arc::new(PtyManager::new(4, SandboxProfile::disabled()));
+        let yolo = Arc::new(YoloEngine::new(RuleSet {
+            deny: vec![],
+            allow: vec![],
+        }));
+        let lock_manager = Arc::new(Mutex::new(LockManager::new()));
+
+        let dispatcher = TaskDispatcher::new(db, adapters, pty, yolo, lock_manager, tx);
+
+        // Should not panic or error for a task_id that was never monitored
+        dispatcher.cleanup_task(999).await;
+        assert_eq!(dispatcher.monitors.lock().await.len(), 0);
+    }
 }
