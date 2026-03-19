@@ -40,3 +40,23 @@ async fn start_server_binds_responds_and_writes_lockfile() {
     handle.abort();
     ServerInfo::remove();
 }
+
+#[tokio::test]
+async fn start_server_with_cloud_disabled() {
+    let mut cfg = ShepherdConfig::default();
+    cfg.port = 0; // Let OS pick a free port
+    cfg.cloud.cloud_generation_enabled = false;
+
+    let (addr, state, handle) =
+        shepherd_server::startup::start_server(cfg).await.unwrap();
+
+    // Verify server started
+    assert_ne!(addr.port(), 0);
+
+    // Cloud client should be None when cloud_generation_enabled is false
+    assert!(state.cloud_client.is_none());
+
+    // Clean up
+    handle.abort();
+    ServerInfo::remove();
+}

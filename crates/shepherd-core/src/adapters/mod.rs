@@ -35,6 +35,11 @@ impl AdapterRegistry {
         Ok(())
     }
 
+    /// Register an adapter programmatically (useful for testing).
+    pub fn register(&mut self, id: String, config: AdapterConfig) {
+        self.adapters.insert(id, config);
+    }
+
     pub fn get(&self, id: &str) -> Option<&AdapterConfig> {
         self.adapters.get(id)
     }

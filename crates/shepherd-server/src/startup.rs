@@ -11,7 +11,7 @@ use shepherd_core::db;
 use shepherd_core::dispatch::TaskDispatcher;
 use shepherd_core::events::ServerEvent;
 use shepherd_core::iterm2::{auth::default_auth_path, Iterm2Manager};
-use shepherd_core::pty::{sandbox::SandboxProfile, PtyManager};
+use shepherd_core::pty::{sandbox::SandboxProfile, PtyManager, PtyOutput};
 use shepherd_core::yolo::YoloEngine;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -19,6 +19,26 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, Mutex};
 use tokio::task::JoinHandle;
+
+/// Convert PTY output to a TerminalOutput server event.
+/// Extracted from the spawned task for testability.
+pub(crate) fn pty_output_to_event(output: &PtyOutput) -> ServerEvent {
+    let data = String::from_utf8_lossy(&output.data).to_string();
+    ServerEvent::TerminalOutput {
+        task_id: output.task_id,
+        data,
+    }
+}
+
+/// Forward a PTY output chunk through the dispatcher for session monitoring.
+/// Extracted from the spawned task for testability.
+pub(crate) async fn forward_pty_to_dispatcher(
+    dispatcher: &TaskDispatcher,
+    output: &PtyOutput,
+) {
+    let text = String::from_utf8_lossy(&output.data);
+    let _ = dispatcher.handle_pty_output(output.task_id, &text).await;
+}
 
 /// Lockfile written to `~/.shepherd/server.json` while the server is running.
 /// Allows CLI tools and the Tauri front-end to discover the running server.
@@ -131,11 +151,8 @@ pub async fn start_server(
     let event_tx_clone = event_tx.clone();
     tokio::spawn(async move {
         while let Ok(output) = pty_rx.recv().await {
-            let data = String::from_utf8_lossy(&output.data).to_string();
-            let _ = event_tx_clone.send(ServerEvent::TerminalOutput {
-                task_id: output.task_id,
-                data,
-            });
+            let event = pty_output_to_event(&output);
+            let _ = event_tx_clone.send(event);
         }
     });
 
@@ -196,10 +213,7 @@ pub async fn start_server(
     let mut pty_monitor_rx = pty.subscribe_output();
     tokio::spawn(async move {
         while let Ok(output) = pty_monitor_rx.recv().await {
-            let text = String::from_utf8_lossy(&output.data);
-            let _ = dispatcher_monitor
-                .handle_pty_output(output.task_id, &text)
-                .await;
+            forward_pty_to_dispatcher(&dispatcher_monitor, &output).await;
         }
     });
 
@@ -244,6 +258,7 @@ pub async fn start_server(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use shepherd_core::yolo::rules::RuleSet;
 
     #[test]
     fn server_info_serde_roundtrip() {
@@ -380,5 +395,61 @@ mod tests {
         // Clean up
         ServerInfo::remove();
         assert!(ServerInfo::read().is_none());
+    }
+
+    #[test]
+    fn pty_output_to_event_converts_correctly() {
+        let output = PtyOutput {
+            task_id: 42,
+            data: b"hello world".to_vec(),
+        };
+        let event = super::pty_output_to_event(&output);
+        match event {
+            ServerEvent::TerminalOutput { task_id, data } => {
+                assert_eq!(task_id, 42);
+                assert_eq!(data, "hello world");
+            }
+            other => panic!("Expected TerminalOutput, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn pty_output_to_event_handles_invalid_utf8() {
+        let output = PtyOutput {
+            task_id: 7,
+            data: vec![0xFF, 0xFE, 0x48, 0x69], // Invalid UTF-8 prefix + "Hi"
+        };
+        let event = super::pty_output_to_event(&output);
+        match event {
+            ServerEvent::TerminalOutput { task_id, data } => {
+                assert_eq!(task_id, 7);
+                // String::from_utf8_lossy replaces invalid bytes with U+FFFD
+                assert!(data.contains("Hi"));
+            }
+            other => panic!("Expected TerminalOutput, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn forward_pty_to_dispatcher_handles_output() {
+        use shepherd_core::coordination::LockManager;
+        use shepherd_core::dispatch::TaskDispatcher;
+
+        let (tx, _rx) = broadcast::channel(16);
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        let db = Arc::new(Mutex::new(conn));
+        let adapters = Arc::new(AdapterRegistry::default());
+        let pty = Arc::new(PtyManager::new(4, SandboxProfile::disabled()));
+        let yolo = Arc::new(YoloEngine::new(RuleSet { deny: vec![], allow: vec![] }));
+        let lock_manager = Arc::new(Mutex::new(LockManager::new()));
+
+        let dispatcher = TaskDispatcher::new(db, adapters, pty, yolo, lock_manager, tx);
+
+        let output = PtyOutput {
+            task_id: 99,
+            data: b"some agent output".to_vec(),
+        };
+        // Should not panic — no monitor for task 99, returns None internally
+        super::forward_pty_to_dispatcher(&dispatcher, &output).await;
     }
 }

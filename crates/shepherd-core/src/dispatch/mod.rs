@@ -223,8 +223,37 @@ impl TaskDispatcher {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::adapters::protocol::*;
     use crate::pty::sandbox::SandboxProfile;
     use crate::yolo::rules::RuleSet;
+
+    /// Build an AdapterConfig that uses `echo` as the agent command.
+    /// `echo` is safe, exits immediately, and available on all platforms.
+    fn echo_adapter() -> crate::adapters::protocol::AdapterConfig {
+        AdapterConfig {
+            agent: AgentSection {
+                name: "echo".to_string(),
+                command: "echo".to_string(),
+                args: vec!["hello".to_string()],
+                args_interactive: vec![],
+                version_check: None,
+                icon: None,
+            },
+            hooks: None,
+            status: StatusSection {
+                working_patterns: vec![],
+                idle_patterns: vec![r"\$\s*$".into()],
+                input_patterns: vec![r"Allow|Permission".into()],
+                error_patterns: vec![r"Error:".into()],
+            },
+            permissions: PermissionsSection {
+                approve: "y\n".into(),
+                approve_all: "Y\n".into(),
+                deny: "n\n".into(),
+            },
+            capabilities: CapabilitiesSection::default(),
+        }
+    }
 
     #[test]
     fn task_dispatcher_constructs() {
@@ -701,5 +730,264 @@ mod tests {
         // Should not panic or error for a task_id that was never monitored
         dispatcher.cleanup_task(999).await;
         assert_eq!(dispatcher.monitors.lock().await.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn dispatch_task_with_adapter_spawns_and_sets_running() {
+        let (tx, mut rx) = broadcast::channel(256);
+        let conn = crate::db::open_memory().unwrap();
+        conn.execute(
+            "INSERT INTO tasks (title, agent_id, status, repo_path, prompt, branch, isolation_mode) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params!["Test task", "test-echo", "queued", "/tmp", "say hello", "main", "none"],
+        ).unwrap();
+
+        let mut adapters = AdapterRegistry::new();
+        adapters.register("test-echo".into(), echo_adapter());
+
+        let db = Arc::new(Mutex::new(conn));
+        let adapters = Arc::new(adapters);
+        let pty = Arc::new(PtyManager::new(4, SandboxProfile::disabled()));
+        let yolo = Arc::new(YoloEngine::new(RuleSet { deny: vec![], allow: vec![] }));
+        let locks = Arc::new(Mutex::new(LockManager::new()));
+
+        let dispatcher = TaskDispatcher::new(
+            db.clone(), adapters, pty, yolo, locks, tx,
+        );
+
+        let result = dispatcher.poll_and_dispatch().await;
+        assert!(result.is_ok());
+        let dispatched = result.unwrap();
+        // echo should spawn successfully
+        assert_eq!(dispatched.len(), 1);
+        assert_eq!(dispatched[0], 1);
+
+        // Check task status is now "running"
+        let conn = db.lock().await;
+        let status_str: String = conn
+            .query_row("SELECT status FROM tasks WHERE id = 1", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(status_str, "running");
+
+        // Should have emitted TaskUpdated events (dispatching + running)
+        let event1 = rx.try_recv().unwrap();
+        match event1 {
+            ServerEvent::TaskUpdated(t) => assert_eq!(t.status, "dispatching"),
+            other => panic!("Expected TaskUpdated(dispatching), got {:?}", other),
+        }
+        let event2 = rx.try_recv().unwrap();
+        match event2 {
+            ServerEvent::TaskUpdated(t) => assert_eq!(t.status, "running"),
+            other => panic!("Expected TaskUpdated(running), got {:?}", other),
+        }
+
+        // A monitor should have been registered for the task
+        assert!(dispatcher.monitors.lock().await.contains_key(&1));
+    }
+
+    #[tokio::test]
+    async fn dispatch_task_uses_title_when_prompt_empty() {
+        let (tx, _rx) = broadcast::channel(256);
+        let conn = crate::db::open_memory().unwrap();
+        // Empty prompt — should use title as the argument
+        conn.execute(
+            "INSERT INTO tasks (title, agent_id, status, repo_path, prompt, branch, isolation_mode) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params!["Title as prompt", "test-echo", "queued", "/tmp", "", "main", "none"],
+        ).unwrap();
+
+        let mut adapters = AdapterRegistry::new();
+        adapters.register("test-echo".into(), echo_adapter());
+
+        let db = Arc::new(Mutex::new(conn));
+        let adapters = Arc::new(adapters);
+        let pty = Arc::new(PtyManager::new(4, SandboxProfile::disabled()));
+        let yolo = Arc::new(YoloEngine::new(RuleSet { deny: vec![], allow: vec![] }));
+        let locks = Arc::new(Mutex::new(LockManager::new()));
+
+        let dispatcher = TaskDispatcher::new(db.clone(), adapters, pty, yolo, locks, tx);
+
+        let result = dispatcher.poll_and_dispatch().await.unwrap();
+        assert_eq!(result.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn approve_task_with_monitor_succeeds_no_pty_handle() {
+        // Test approve_task when a monitor exists but no PTY handle is registered.
+        // write_to returns Ok(()) when no handle is found (no-op), so the full
+        // code path through update_task_status executes.
+        let (tx, _rx) = broadcast::channel(16);
+        let conn = crate::db::open_memory().unwrap();
+        conn.execute(
+            "INSERT INTO tasks (id, title, prompt, agent_id, repo_path, branch, isolation_mode, status) VALUES (1, 'Test', '', 'claude-code', '/tmp', 'main', 'none', 'input')",
+            [],
+        ).unwrap();
+        let db = Arc::new(Mutex::new(conn));
+        let adapters = Arc::new(AdapterRegistry::new());
+        let pty = Arc::new(PtyManager::new(4, SandboxProfile::disabled()));
+        let yolo = Arc::new(YoloEngine::new(RuleSet { deny: vec![], allow: vec![] }));
+        let lock_manager = Arc::new(Mutex::new(LockManager::new()));
+
+        let dispatcher = TaskDispatcher::new(db.clone(), adapters, pty, yolo, lock_manager, tx);
+
+        // Manually insert a monitor for task 1 (no PTY handle exists)
+        let status = crate::adapters::protocol::StatusSection {
+            working_patterns: vec![],
+            idle_patterns: vec![],
+            input_patterns: vec![],
+            error_patterns: vec![],
+        };
+        let perms = crate::adapters::protocol::PermissionsSection {
+            approve: "y\n".into(),
+            approve_all: "Y\n".into(),
+            deny: "n\n".into(),
+        };
+        dispatcher
+            .monitors
+            .lock()
+            .await
+            .insert(1, SessionMonitor::new(&status, &perms));
+
+        // approve_task should succeed: monitor found, write_to is no-op, status updated
+        let result = dispatcher.approve_task(1).await;
+        assert!(result.is_ok());
+
+        // Verify status was updated to running
+        let conn = db.lock().await;
+        let status_str: String = conn
+            .query_row("SELECT status FROM tasks WHERE id = 1", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(status_str, "running");
+    }
+
+    #[tokio::test]
+    async fn deny_task_with_monitor_succeeds_no_pty_handle() {
+        // Same pattern: monitor exists but no PTY handle.
+        let (tx, _rx) = broadcast::channel(16);
+        let conn = crate::db::open_memory().unwrap();
+        conn.execute(
+            "INSERT INTO tasks (id, title, prompt, agent_id, repo_path, branch, isolation_mode, status) VALUES (1, 'Test', '', 'claude-code', '/tmp', 'main', 'none', 'input')",
+            [],
+        ).unwrap();
+        let db = Arc::new(Mutex::new(conn));
+        let adapters = Arc::new(AdapterRegistry::new());
+        let pty = Arc::new(PtyManager::new(4, SandboxProfile::disabled()));
+        let yolo = Arc::new(YoloEngine::new(RuleSet { deny: vec![], allow: vec![] }));
+        let lock_manager = Arc::new(Mutex::new(LockManager::new()));
+
+        let dispatcher = TaskDispatcher::new(db.clone(), adapters, pty, yolo, lock_manager, tx);
+
+        let status = crate::adapters::protocol::StatusSection {
+            working_patterns: vec![],
+            idle_patterns: vec![],
+            input_patterns: vec![],
+            error_patterns: vec![],
+        };
+        let perms = crate::adapters::protocol::PermissionsSection {
+            approve: "y\n".into(),
+            approve_all: "Y\n".into(),
+            deny: "n\n".into(),
+        };
+        dispatcher
+            .monitors
+            .lock()
+            .await
+            .insert(1, SessionMonitor::new(&status, &perms));
+
+        let result = dispatcher.deny_task(1).await;
+        assert!(result.is_ok());
+
+        // Verify status was updated to running
+        let conn = db.lock().await;
+        let status_str: String = conn
+            .query_row("SELECT status FROM tasks WHERE id = 1", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(status_str, "running");
+    }
+
+    #[tokio::test]
+    async fn approve_task_with_real_dispatch() {
+        // Also test through the dispatch path to exercise the full flow
+        let (tx, _rx) = broadcast::channel(256);
+        let conn = crate::db::open_memory().unwrap();
+        conn.execute(
+            "INSERT INTO tasks (title, agent_id, status, repo_path, prompt, branch, isolation_mode) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params!["Test", "test-echo", "queued", "/tmp", "hello", "main", "none"],
+        ).unwrap();
+
+        let mut adapters = AdapterRegistry::new();
+        adapters.register("test-echo".into(), echo_adapter());
+
+        let db = Arc::new(Mutex::new(conn));
+        let adapters = Arc::new(adapters);
+        let pty = Arc::new(PtyManager::new(4, SandboxProfile::disabled()));
+        let yolo = Arc::new(YoloEngine::new(RuleSet { deny: vec![], allow: vec![] }));
+        let locks = Arc::new(Mutex::new(LockManager::new()));
+
+        let dispatcher = TaskDispatcher::new(db.clone(), adapters, pty.clone(), yolo, locks, tx);
+
+        // Dispatch first to register a monitor
+        let dispatched = dispatcher.poll_and_dispatch().await.unwrap();
+        assert_eq!(dispatched.len(), 1);
+
+        // Give the echo process a moment
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        // Try to approve — may succeed or fail depending on whether echo already exited
+        let _ = dispatcher.approve_task(1).await;
+    }
+
+    #[tokio::test]
+    async fn deny_task_with_real_dispatch() {
+        let (tx, _rx) = broadcast::channel(256);
+        let conn = crate::db::open_memory().unwrap();
+        conn.execute(
+            "INSERT INTO tasks (title, agent_id, status, repo_path, prompt, branch, isolation_mode) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params!["Test", "test-echo", "queued", "/tmp", "hello", "main", "none"],
+        ).unwrap();
+
+        let mut adapters = AdapterRegistry::new();
+        adapters.register("test-echo".into(), echo_adapter());
+
+        let db = Arc::new(Mutex::new(conn));
+        let adapters = Arc::new(adapters);
+        let pty = Arc::new(PtyManager::new(4, SandboxProfile::disabled()));
+        let yolo = Arc::new(YoloEngine::new(RuleSet { deny: vec![], allow: vec![] }));
+        let locks = Arc::new(Mutex::new(LockManager::new()));
+
+        let dispatcher = TaskDispatcher::new(db.clone(), adapters, pty.clone(), yolo, locks, tx);
+
+        let dispatched = dispatcher.poll_and_dispatch().await.unwrap();
+        assert_eq!(dispatched.len(), 1);
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let _ = dispatcher.deny_task(1).await;
+    }
+
+    #[tokio::test]
+    async fn dispatch_multiple_queued_tasks() {
+        let (tx, _rx) = broadcast::channel(256);
+        let conn = crate::db::open_memory().unwrap();
+        conn.execute(
+            "INSERT INTO tasks (title, agent_id, status, repo_path, prompt, branch, isolation_mode) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params!["Task 1", "test-echo", "queued", "/tmp", "first", "main", "none"],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO tasks (title, agent_id, status, repo_path, prompt, branch, isolation_mode) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params!["Task 2", "test-echo", "queued", "/tmp", "second", "main", "none"],
+        ).unwrap();
+
+        let mut adapters = AdapterRegistry::new();
+        adapters.register("test-echo".into(), echo_adapter());
+
+        let db = Arc::new(Mutex::new(conn));
+        let adapters = Arc::new(adapters);
+        let pty = Arc::new(PtyManager::new(4, SandboxProfile::disabled()));
+        let yolo = Arc::new(YoloEngine::new(RuleSet { deny: vec![], allow: vec![] }));
+        let locks = Arc::new(Mutex::new(LockManager::new()));
+
+        let dispatcher = TaskDispatcher::new(db, adapters, pty, yolo, locks, tx);
+
+        let dispatched = dispatcher.poll_and_dispatch().await.unwrap();
+        assert_eq!(dispatched.len(), 2);
     }
 }
