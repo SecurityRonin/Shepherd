@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case")]
 pub enum TaskStatus {
     Queued,
+    Dispatching,
     Running,
     Input,
     Review,
@@ -15,6 +16,7 @@ impl TaskStatus {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Queued => "queued",
+            Self::Dispatching => "dispatching",
             Self::Running => "running",
             Self::Input => "input",
             Self::Review => "review",
@@ -26,6 +28,7 @@ impl TaskStatus {
     pub fn parse_status(s: &str) -> Option<Self> {
         match s {
             "queued" => Some(Self::Queued),
+            "dispatching" => Some(Self::Dispatching),
             "running" => Some(Self::Running),
             "input" => Some(Self::Input),
             "review" => Some(Self::Review),
@@ -108,6 +111,7 @@ mod tests {
     fn test_task_status_serde_roundtrip() {
         let statuses = vec![
             TaskStatus::Queued,
+            TaskStatus::Dispatching,
             TaskStatus::Running,
             TaskStatus::Input,
             TaskStatus::Review,
@@ -198,5 +202,15 @@ mod tests {
         let parsed: Permission = serde_json::from_str(&json).unwrap();
         assert!(parsed.rule_matched.is_none());
         assert!(parsed.decided_at.is_none());
+    }
+
+    #[test]
+    fn test_task_status_dispatching_variant() {
+        assert_eq!(TaskStatus::Dispatching.as_str(), "dispatching");
+        assert_eq!(TaskStatus::parse_status("dispatching"), Some(TaskStatus::Dispatching));
+        let json = serde_json::to_string(&TaskStatus::Dispatching).unwrap();
+        assert_eq!(json, r#""dispatching""#);
+        let parsed: TaskStatus = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, TaskStatus::Dispatching);
     }
 }
