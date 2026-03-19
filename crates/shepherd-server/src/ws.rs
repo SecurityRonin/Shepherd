@@ -83,37 +83,62 @@ async fn handle_client_event(event: ClientEvent, state: &AppState) {
         }
         ClientEvent::TaskApprove { task_id } => {
             tracing::info!("Approving task {task_id}");
-            let db = state.db.lock().await;
-            if let Ok(tasks) = shepherd_core::db::queries::list_tasks(&db) {
-                if let Some(task) = tasks.iter().find(|t| t.id == task_id) {
-                    let approve_str = state
-                        .adapters
-                        .get(&task.agent_id)
-                        .map(|a| a.permissions.approve.clone())
-                        .unwrap_or_else(|| "y\n".into());
-                    drop(db);
-                    let _ = state.pty.write_to(task_id, &approve_str).await;
-                }
+            let approve_str = {
+                let db = state.db.lock().await;
+                let approve = if let Ok(tasks) = shepherd_core::db::queries::list_tasks(&db) {
+                    if let Some(task) = tasks.iter().find(|t| t.id == task_id) {
+                        let _ = shepherd_core::db::queries::update_task_status(
+                            &db,
+                            task_id,
+                            &shepherd_core::db::models::TaskStatus::Running,
+                        );
+                        Some(
+                            state
+                                .adapters
+                                .get(&task.agent_id)
+                                .map(|a| a.permissions.approve.clone())
+                                .unwrap_or_else(|| "y\n".into()),
+                        )
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                approve
+            };
+            if let Some(approve_str) = approve_str {
+                let _ = state.pty.write_to(task_id, &approve_str).await;
             }
         }
         ClientEvent::TaskApproveAll => {
             tracing::info!("Approving all pending");
-            let db = state.db.lock().await;
-            if let Ok(tasks) = shepherd_core::db::queries::list_tasks(&db) {
-                let pending: Vec<_> = tasks
-                    .iter()
-                    .filter(|t| t.status.as_str() == "input")
-                    .cloned()
-                    .collect();
-                drop(db);
-                for task in pending {
-                    let approve_str = state
-                        .adapters
-                        .get(&task.agent_id)
-                        .map(|a| a.permissions.approve.clone())
-                        .unwrap_or_else(|| "y\n".into());
-                    let _ = state.pty.write_to(task.id, &approve_str).await;
+            let pending = {
+                let db = state.db.lock().await;
+                if let Ok(tasks) = shepherd_core::db::queries::list_tasks(&db) {
+                    let pending: Vec<_> = tasks
+                        .into_iter()
+                        .filter(|t| t.status.as_str() == "input")
+                        .collect();
+                    for task in &pending {
+                        let _ = shepherd_core::db::queries::update_task_status(
+                            &db,
+                            task.id,
+                            &shepherd_core::db::models::TaskStatus::Running,
+                        );
+                    }
+                    pending
+                } else {
+                    vec![]
                 }
+            };
+            for task in pending {
+                let approve_str = state
+                    .adapters
+                    .get(&task.agent_id)
+                    .map(|a| a.permissions.approve.clone())
+                    .unwrap_or_else(|| "y\n".into());
+                let _ = state.pty.write_to(task.id, &approve_str).await;
             }
         }
         ClientEvent::TaskCancel { task_id } => {

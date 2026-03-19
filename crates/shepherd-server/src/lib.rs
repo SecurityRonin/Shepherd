@@ -25,6 +25,9 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             "/api/northstar/phase",
             post(routes::northstar::execute_phase),
         )
+        .route("/api/tasks/:id/approve", post(routes::tasks::approve_task))
+        .route("/api/approve-all", post(routes::tasks::approve_all))
+        .route("/api/shutdown", post(routes::tasks::shutdown_server))
         .route("/api/tasks/:id/gates", post(routes::gates::run_task_gates))
         .route("/api/tasks/:id/pr", post(routes::pr::create_pr))
         .route(

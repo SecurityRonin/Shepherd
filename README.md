@@ -70,12 +70,7 @@ Shepherd finds them automatically. No config, no restart, no flags.
 
 Every iTerm2 pane running a known agent (Claude Code, Codex, AdaL, Aider, Gemini CLI, OpenCode, Goose, Plandex, gptme) appears on the Kanban board within seconds. Click any card to see the terminal, approve permissions, or review diffs.
 
-**Make adoption persistent across new windows** (30 seconds, one-time):
-
-1. Open iTerm2 → **Preferences → Profiles → General**
-2. Under **"Send text at start"**, add: `shepherd-bridge &`
-
-From then on, every new iTerm2 session automatically registers with Shepherd.
+Shepherd connects to iTerm2's native WebSocket API to discover sessions — no bridge scripts or manual setup required. It reads your iTerm2 auth cookie automatically.
 
 ---
 
@@ -218,7 +213,7 @@ iTerm2 window                    Shepherd Kanban
 
 **For all other agents**, tasks appear immediately in the board with a purple "iTerm2" badge and the detected agent name.
 
-Setup takes 30 seconds: add `shepherd-bridge.py` to your iTerm2 AutoLaunch profile (`Preferences → Profiles → General → Send text at start`). The bridge forwards your iTerm2 cookie and key to Shepherd's auth file so session scanning works without manual configuration.
+Shepherd connects to iTerm2 via its native WebSocket API (`~/.config/iterm2/socket.sock`), authenticating with the cookie and key stored in `~/Library/Application Support/iTerm2/`. No bridge scripts or manual config required.
 
 ### Quality gates that block bad PRs
 
@@ -248,13 +243,13 @@ Done reviewing a task? Click "Create PR":
 
 Zero git commands. Zero context switches.
 
-### Three isolation modes
+### Isolation modes
 
-| Mode | Speed | Safety | Use case |
-|------|-------|--------|----------|
-| Git Worktree | Fast | Good | Default. Most tasks. |
-| Docker Container | Medium | Strong | Untrusted code, experiments |
-| Local Workspace | Instant | None | Quick fixes on current branch |
+| Mode | Speed | Safety | Use case | Status |
+|------|-------|--------|----------|--------|
+| Git Worktree | Fast | Good | Default. Most tasks. | Available |
+| Local Workspace | Instant | None | Quick fixes on current branch | Available |
+| Docker Container | Medium | Strong | Untrusted code, experiments | Planned (v0.2) |
 
 ### Keyboard-first
 
@@ -425,7 +420,7 @@ Restart Shepherd. Your agent shows up in the New Task dropdown.
 
 | | Shepherd | Vibe Kanban | Clorch | Claude Squad | Emdash | JetBrains Air |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|
-| Multi-agent (6+ providers) | ✓ | ✓ | Claude only | 5 agents | 20+ agents | 4 agents |
+| Multi-agent (6+ providers) | ✓ (9 adapters) | ✓ | Claude only | 5 agents | 20+ agents | 4 agents |
 | Kanban board | ✓ | ✓ | ✗ | ✗ | ✓ | ✗ |
 | YOLO rules engine | ✓ | YOLO only | ✓ | ✗ | ✗ | 4-level |
 | Quality gates | ✓ | Plugin | ✗ | ✗ | ✗ | ✗ |
@@ -433,19 +428,17 @@ Restart Shepherd. Your agent shows up in the New Task dropdown.
 | CLI + GUI | ✓ | ✗ | CLI only | CLI only | ✗ | ✗ |
 | Shell completions | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | Kernel sandbox (nono.sh) | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
-| Diff review + comments | ✓ | ✓ | ✗ | ✗ | ✓ | ✓ |
 | Cross-platform | ✓ | ✓ | macOS | ✓ | ✓ | macOS |
 | Binary size | ~600KB | ~150MB | pip | Go binary | ~150MB | ~500MB |
 | Name gen + logo gen + [North Star](https://northstaradvisor.app/) PMF | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
-| New project wizard | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | Ecosystem auto-install | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | Open source | Apache 2.0 | Apache 2.0 | MIT | MIT | MIT | ✗ |
 
 ## Roadmap
 
-**v0.1.0** (current): Core engine with embedded Axum server, task dispatch loop, PTY agent execution, session monitoring, YOLO rules engine, Kanban board (React + Zustand + xterm.js), WebSocket real-time events, CLI with auto-server-spawn and shell completions, 9 agent adapters, iTerm2 session adoption, quality gates, name/logo generators, North Star PMF wizard, nono.sh sandbox, ecosystem auto-install. 1,400+ tests. 99.7% Rust code coverage. CI with fmt, clippy, cargo-deny, Vitest, and Playwright.
+**v0.1.0-alpha** (current): Core engine with embedded Axum server, task dispatch loop (polls every 2s), PTY agent execution via portable-pty, session monitoring with regex pattern detection, YOLO rules engine (YAML deny/allow), Kanban board (React + Zustand + xterm.js), WebSocket real-time events (14 event types), REST + WebSocket approve/deny, CLI with auto-server-spawn and shell completions, 9 agent adapters (TOML-defined), iTerm2 session adoption via WebSocket API, quality gates (auto-detect + custom scripts), PR pipeline (diff/commit/push/gh-pr-create), name/logo generators, North Star PMF wizard, nono.sh sandbox integration. 1,500+ tests. CI with fmt, clippy, cargo-deny, typos, Codecov, Vitest, and Playwright.
 
-**v0.2**: Full multi-agent coordination (concurrent dispatch, agent-to-agent handoff). One-click PR pipeline. Docker isolation mode. Homebrew tap + winget package.
+**v0.2**: Docker isolation mode. Homebrew tap + winget package. shepherd-bridge auto-registration script. Inline diff viewer with comments.
 
 **v1.0**: Best-of-N (run same task on multiple agents, compare outputs). Issue tracker integration (Linear, GitHub Issues, Jira). Event-driven automations. Cloud sync (Shepherd Pro).
 
@@ -463,7 +456,7 @@ cd Shepherd
 cargo fmt --all -- --check      # formatting
 cargo clippy --workspace        # lints
 cargo deny check                # license + advisory audit
-cargo test --workspace          # 1,350+ Rust tests
+cargo test --workspace          # 1,500+ Rust tests
 
 # Frontend
 npm install

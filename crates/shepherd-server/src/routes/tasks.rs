@@ -1,5 +1,6 @@
 use axum::{extract::Path, extract::State, http::StatusCode, Json};
 use serde_json::Value;
+use shepherd_core::db::models::TaskStatus;
 use shepherd_core::db::{models::CreateTask, queries};
 use shepherd_core::events::{ServerEvent, TaskEvent};
 use std::sync::Arc;
@@ -61,6 +62,110 @@ pub async fn delete_task(
     })?;
     let _ = state.event_tx.send(ServerEvent::TaskDeleted { id });
     Ok(Json(serde_json::json!({ "deleted": id })))
+}
+
+/// Approve a pending permission for a task — sends the approve keystroke to PTY
+/// and transitions task status from "input" back to "running".
+#[tracing::instrument(skip(state))]
+pub async fn approve_task(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let db = state.db.lock().await;
+    let task = queries::get_task(&db, id).map_err(|e| {
+        (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": format!("Task not found: {}", e) })),
+        )
+    })?;
+
+    let approve_str = state
+        .adapters
+        .get(&task.agent_id)
+        .map(|a| a.permissions.approve.clone())
+        .unwrap_or_else(|| "y\n".into());
+
+    queries::update_task_status(&db, id, &TaskStatus::Running).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+    })?;
+    drop(db);
+
+    let _ = state.pty.write_to(id, &approve_str).await;
+    let _ = state.event_tx.send(ServerEvent::TaskUpdated(TaskEvent {
+        id: task.id,
+        title: task.title,
+        agent_id: task.agent_id,
+        status: "running".into(),
+        branch: task.branch,
+        repo_path: task.repo_path,
+        iterm2_session_id: task.iterm2_session_id,
+    }));
+
+    Ok(Json(serde_json::json!({ "id": id, "status": "running" })))
+}
+
+/// Approve all tasks currently in "input" status.
+#[tracing::instrument(skip(state))]
+pub async fn approve_all(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    // Phase 1: Hold lock, update DB statuses, collect data for PTY writes
+    let pending = {
+        let db = state.db.lock().await;
+        let tasks = queries::list_tasks(&db).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+        })?;
+
+        let pending: Vec<_> = tasks
+            .into_iter()
+            .filter(|t| t.status == TaskStatus::Input)
+            .collect();
+
+        for task in &pending {
+            let _ = queries::update_task_status(&db, task.id, &TaskStatus::Running);
+        }
+        pending
+        // db lock dropped here
+    };
+
+    let count = pending.len();
+
+    // Phase 2: No lock held — send PTY writes and events
+    for task in &pending {
+        let approve_str = state
+            .adapters
+            .get(&task.agent_id)
+            .map(|a| a.permissions.approve.clone())
+            .unwrap_or_else(|| "y\n".into());
+        let _ = state.pty.write_to(task.id, &approve_str).await;
+        let _ = state.event_tx.send(ServerEvent::TaskUpdated(TaskEvent {
+            id: task.id,
+            title: task.title.clone(),
+            agent_id: task.agent_id.clone(),
+            status: "running".into(),
+            branch: task.branch.clone(),
+            repo_path: task.repo_path.clone(),
+            iterm2_session_id: task.iterm2_session_id.clone(),
+        }));
+    }
+
+    Ok(Json(serde_json::json!({ "approved": count })))
+}
+
+/// Graceful server shutdown — kills all agents and signals exit.
+#[tracing::instrument(skip(state))]
+pub async fn shutdown_server(State(state): State<Arc<AppState>>) -> Json<Value> {
+    state
+        .pty
+        .shutdown_all(std::time::Duration::from_secs(5))
+        .await;
+    Json(serde_json::json!({ "status": "shutting_down" }))
 }
 
 #[cfg(test)]

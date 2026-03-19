@@ -547,4 +547,146 @@ mod tests {
         assert_eq!(status, StatusCode::NOT_FOUND);
         assert!(body["error"].as_str().unwrap().contains("Task not found"));
     }
+
+    // -- Approve handler tests ------------------------------------------------
+
+    #[tokio::test]
+    async fn handler_approve_task_not_found() {
+        let state = test_state();
+        let app = crate::build_router(state);
+        let resp = app
+            .oneshot(json_post("/api/tasks/99999/approve", serde_json::json!({})))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn handler_approve_task_writes_to_pty_and_updates_status() {
+        let state = test_state();
+        // Create a task with status "input"
+        {
+            let db = state.db.lock().await;
+            db.execute(
+                "INSERT INTO tasks (id, title, prompt, agent_id, repo_path, branch, isolation_mode, status) VALUES (1, 'Test', '', 'claude-code', '/tmp', 'main', 'none', 'input')",
+                [],
+            ).unwrap();
+        }
+        let app = crate::build_router(state.clone());
+        let resp = app
+            .oneshot(json_post("/api/tasks/1/approve", serde_json::json!({})))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = body_json(resp).await;
+        assert_eq!(body["status"], "running");
+
+        // Verify DB status updated
+        let db = state.db.lock().await;
+        let status: String = db
+            .query_row("SELECT status FROM tasks WHERE id = 1", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(status, "running");
+    }
+
+    #[tokio::test]
+    async fn handler_approve_all_returns_count() {
+        let state = test_state();
+        // Create two tasks with status "input"
+        {
+            let db = state.db.lock().await;
+            db.execute(
+                "INSERT INTO tasks (id, title, prompt, agent_id, repo_path, branch, isolation_mode, status) VALUES (1, 'T1', '', 'claude-code', '/tmp', 'main', 'none', 'input')",
+                [],
+            ).unwrap();
+            db.execute(
+                "INSERT INTO tasks (id, title, prompt, agent_id, repo_path, branch, isolation_mode, status) VALUES (2, 'T2', '', 'claude-code', '/tmp', 'main', 'none', 'input')",
+                [],
+            ).unwrap();
+            // One running task that should NOT be approved
+            db.execute(
+                "INSERT INTO tasks (id, title, prompt, agent_id, repo_path, branch, isolation_mode, status) VALUES (3, 'T3', '', 'claude-code', '/tmp', 'main', 'none', 'running')",
+                [],
+            ).unwrap();
+        }
+        let app = crate::build_router(state.clone());
+        let resp = app
+            .oneshot(json_post("/api/approve-all", serde_json::json!({})))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = body_json(resp).await;
+        assert_eq!(body["approved"], 2);
+
+        // Verify both input tasks are now running
+        let db = state.db.lock().await;
+        let s1: String = db
+            .query_row("SELECT status FROM tasks WHERE id = 1", [], |r| r.get(0))
+            .unwrap();
+        let s2: String = db
+            .query_row("SELECT status FROM tasks WHERE id = 2", [], |r| r.get(0))
+            .unwrap();
+        let s3: String = db
+            .query_row("SELECT status FROM tasks WHERE id = 3", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(s1, "running");
+        assert_eq!(s2, "running");
+        assert_eq!(s3, "running"); // was already running
+    }
+
+    #[tokio::test]
+    async fn handler_approve_all_empty() {
+        let state = test_state();
+        let app = crate::build_router(state);
+        let resp = app
+            .oneshot(json_post("/api/approve-all", serde_json::json!({})))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = body_json(resp).await;
+        assert_eq!(body["approved"], 0);
+    }
+
+    // -- Shutdown handler tests -----------------------------------------------
+
+    #[tokio::test]
+    async fn handler_shutdown_returns_ok() {
+        let state = test_state();
+        let app = crate::build_router(state);
+        let resp = app
+            .oneshot(json_post("/api/shutdown", serde_json::json!({})))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = body_json(resp).await;
+        assert_eq!(body["status"], "shutting_down");
+    }
+
+    // -- Direct: Approve/Shutdown ---------------------------------------------
+
+    #[tokio::test]
+    async fn direct_approve_task_not_found() {
+        let state = test_state();
+        let result = crate::routes::tasks::approve_task(State(state), Path(99999i64)).await;
+        assert!(result.is_err());
+        let (status, _) = result.unwrap_err();
+        assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn direct_approve_all() {
+        let state = test_state();
+        let result = crate::routes::tasks::approve_all(State(state)).await;
+        let Json(body) = result.unwrap();
+        assert_eq!(body["approved"], 0);
+    }
+
+    #[tokio::test]
+    async fn direct_shutdown() {
+        let state = test_state();
+        let Json(body) = crate::routes::tasks::shutdown_server(State(state)).await;
+        assert_eq!(body["status"], "shutting_down");
+    }
 }
