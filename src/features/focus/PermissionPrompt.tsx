@@ -7,6 +7,7 @@ interface PermissionPromptProps {
 }
 
 export const PermissionPrompt: React.FC<PermissionPromptProps> = ({ taskId }) => {
+  const wsClient = useStore((s) => s.wsClient);
   const pendingPermissions = useStore((s) => s.pendingPermissions);
   const taskPermissions = pendingPermissions.filter((p) => p.task_id === taskId);
 
@@ -42,11 +43,15 @@ export const PermissionPrompt: React.FC<PermissionPromptProps> = ({ taskId }) =>
 
   const handleCustomSubmit = useCallback(() => {
     if (!customText.trim()) return;
-    // TODO: Wire to WebSocket when backend is ready
-    // ws.send({ type: "terminal_input", data: { task_id: taskId, data: customText } })
+    if (wsClient) {
+      wsClient.send({
+        type: "terminal_input",
+        data: { task_id: taskId, data: customText + "\n" },
+      });
+    }
     setCustomText("");
     setShowCustomInput(false);
-  }, [customText, taskId]);
+  }, [customText, taskId, wsClient]);
 
   if (!latestPermission) return null;
 

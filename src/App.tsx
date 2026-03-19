@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useEffect } from "react";
 import { Layout } from "./features/shared/Layout";
 import { KanbanBoard } from "./features/kanban/KanbanBoard";
 import { FocusView } from "./features/focus/FocusView";
@@ -44,6 +44,8 @@ const App: React.FC = () => {
         store.removePendingPermission(event.data.id);
         break;
       case "terminal_output":
+        store.dispatchTerminalOutput(event.data.task_id, event.data.data);
+        break;
       case "gate_result":
       case "notification":
         break;
@@ -57,6 +59,13 @@ const App: React.FC = () => {
   const wsRef = useWebSocket(handleServerEvent, handleStatusChange);
   useKeyboardShortcuts(wsRef);
   useNotifications();
+
+  // Sync the wsClient ref into the store whenever connection status changes.
+  // The wsRef.current is set before onStatusChange fires, so it's safe to read here.
+  const connectionStatus = useStore((s) => s.connectionStatus);
+  useEffect(() => {
+    useStore.getState().setWsClient(wsRef.current);
+  }, [connectionStatus, wsRef]);
 
   const renderView = () => {
     switch (viewMode) {

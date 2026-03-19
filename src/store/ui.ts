@@ -1,7 +1,10 @@
 import type { StateCreator } from "zustand";
-import type { ConnectionStatus } from "../lib/ws";
+import type { ConnectionStatus, WsClient } from "../lib/ws";
 
 export type ViewMode = "overview" | "focus" | "observability" | "replay" | "ecosystem" | "cloud";
+
+/** Callback that writes PTY output data to a terminal instance. */
+export type TerminalOutputHandler = (data: string) => void;
 
 export interface UiSlice {
   viewMode: ViewMode;
@@ -10,6 +13,10 @@ export interface UiSlice {
   isNewTaskDialogOpen: boolean;
   isCommandPaletteOpen: boolean;
   focusedPanel: "terminal" | "changes";
+  /** The active WebSocket client (set once the hook creates it). */
+  wsClient: WsClient | null;
+  /** Per-task terminal output handlers, keyed by taskId. */
+  terminalOutputHandlers: Map<number, TerminalOutputHandler>;
   setViewMode: (mode: ViewMode) => void;
   setFocusedTaskId: (id: number | null) => void;
   enterFocus: (taskId: number) => void;
@@ -19,6 +26,11 @@ export interface UiSlice {
   setNewTaskDialogOpen: (open: boolean) => void;
   setCommandPaletteOpen: (open: boolean) => void;
   setFocusedPanel: (panel: "terminal" | "changes") => void;
+  setWsClient: (client: WsClient | null) => void;
+  registerTerminalHandler: (taskId: number, handler: TerminalOutputHandler) => void;
+  unregisterTerminalHandler: (taskId: number) => void;
+  /** Dispatch terminal output to the registered handler for a given task. */
+  dispatchTerminalOutput: (taskId: number, data: string) => void;
 }
 
 export const createUiSlice: StateCreator<UiSlice, [], [], UiSlice> = (set, get) => ({
@@ -28,6 +40,8 @@ export const createUiSlice: StateCreator<UiSlice, [], [], UiSlice> = (set, get) 
   isNewTaskDialogOpen: false,
   isCommandPaletteOpen: false,
   focusedPanel: "terminal",
+  wsClient: null,
+  terminalOutputHandlers: new Map(),
   setViewMode: (mode) => set({ viewMode: mode }),
   setFocusedTaskId: (id) => set({ focusedTaskId: id }),
   enterFocus: (taskId) =>
@@ -45,4 +59,21 @@ export const createUiSlice: StateCreator<UiSlice, [], [], UiSlice> = (set, get) 
   setNewTaskDialogOpen: (open) => set({ isNewTaskDialogOpen: open }),
   setCommandPaletteOpen: (open) => set({ isCommandPaletteOpen: open }),
   setFocusedPanel: (panel) => set({ focusedPanel: panel }),
+  setWsClient: (client) => set({ wsClient: client }),
+  registerTerminalHandler: (taskId, handler) => {
+    const handlers = new Map(get().terminalOutputHandlers);
+    handlers.set(taskId, handler);
+    set({ terminalOutputHandlers: handlers });
+  },
+  unregisterTerminalHandler: (taskId) => {
+    const handlers = new Map(get().terminalOutputHandlers);
+    handlers.delete(taskId);
+    set({ terminalOutputHandlers: handlers });
+  },
+  dispatchTerminalOutput: (taskId, data) => {
+    const handler = get().terminalOutputHandlers.get(taskId);
+    if (handler) {
+      handler(data);
+    }
+  },
 });

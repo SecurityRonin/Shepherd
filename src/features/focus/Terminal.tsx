@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { useStore } from "../../store";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalProps {
@@ -11,6 +12,10 @@ export const Terminal: React.FC<TerminalProps> = ({ taskId }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+
+  const wsClient = useStore((s) => s.wsClient);
+  const registerTerminalHandler = useStore((s) => s.registerTerminalHandler);
+  const unregisterTerminalHandler = useStore((s) => s.unregisterTerminalHandler);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -63,11 +68,45 @@ export const Terminal: React.FC<TerminalProps> = ({ taskId }) => {
     terminalRef.current = term;
     fitAddonRef.current = fitAddon;
 
-    // TODO: Wire up WebSocket I/O when backend is ready
-    // - term.onData((data) => ws.send({ type: "terminal_input", data: { task_id: taskId, data } }))
-    // - Listen for "terminal_output" server events and write to term: term.write(data)
-    // - Send terminal_resize events on resize:
-    //   ws.send({ type: "terminal_resize", data: { task_id: taskId, cols: term.cols, rows: term.rows } })
+    // Register a handler so server terminal_output events get written to this terminal
+    registerTerminalHandler(taskId, (data: string) => {
+      term.write(data);
+    });
+
+    // --- WebSocket I/O (input & resize) ---
+    let dataDisposable: { dispose: () => void } | undefined;
+    let resizeDisposable: { dispose: () => void } | undefined;
+
+    if (wsClient) {
+      // Forward keystrokes to the backend PTY
+      dataDisposable = term.onData((data) => {
+        wsClient.send({
+          type: "terminal_input",
+          data: { task_id: taskId, data },
+        });
+      });
+
+      // Notify backend when the terminal is resized
+      resizeDisposable = term.onResize(({ cols, rows }) => {
+        wsClient.send({
+          type: "terminal_resize",
+          data: { task_id: taskId, cols, rows },
+        });
+      });
+
+      // Send initial size so the backend PTY is sized correctly from the start
+      requestAnimationFrame(() => {
+        try {
+          fitAddon.fit();
+          wsClient.send({
+            type: "terminal_resize",
+            data: { task_id: taskId, cols: term.cols, rows: term.rows },
+          });
+        } catch {
+          // Container may not be ready
+        }
+      });
+    }
 
     // ResizeObserver for auto-fit
     const resizeObserver = new ResizeObserver(() => {
@@ -80,12 +119,15 @@ export const Terminal: React.FC<TerminalProps> = ({ taskId }) => {
     resizeObserver.observe(containerRef.current);
 
     return () => {
+      unregisterTerminalHandler(taskId);
+      dataDisposable?.dispose();
+      resizeDisposable?.dispose();
       resizeObserver.disconnect();
       term.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
     };
-  }, [taskId]);
+  }, [taskId, wsClient, registerTerminalHandler, unregisterTerminalHandler]);
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
