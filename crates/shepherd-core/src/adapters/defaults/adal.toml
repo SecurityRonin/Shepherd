@@ -1,0 +1,25 @@
+[agent]
+name = "Adal"
+command = "adal"
+args = []
+args_interactive = []
+version_check = "adal --version"
+icon = "adal"
+
+[status]
+working_patterns = ["Reading ", "Writing ", "Generating ", "Running "]
+idle_patterns = ["> ", "adal> "]
+input_patterns = ["[y/n", "Allow?", "Approve"]
+error_patterns = ["Error:", "error:", "failed"]
+
+[permissions]
+approve = "y\n"
+approve_all = "y\n"
+deny = "n\n"
+
+[capabilities]
+supports_hooks = false
+supports_prompt_arg = false
+supports_resume = false
+supports_mcp = false
+supports_worktree = false

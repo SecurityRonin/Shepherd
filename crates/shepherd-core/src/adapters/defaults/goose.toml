@@ -1,0 +1,25 @@
+[agent]
+name = "Goose"
+command = "goose"
+args = ["session"]
+args_interactive = []
+version_check = "goose --version"
+icon = "goose"
+
+[status]
+working_patterns = ["Reading ", "Writing ", "Running ", "Thinking "]
+idle_patterns = ["> ", "goose> "]
+input_patterns = ["[y/n", "Allow?", "approve"]
+error_patterns = ["Error:", "error:", "failed"]
+
+[permissions]
+approve = "y\n"
+approve_all = "y\n"
+deny = "n\n"
+
+[capabilities]
+supports_hooks = false
+supports_prompt_arg = true
+supports_resume = false
+supports_mcp = false
+supports_worktree = false

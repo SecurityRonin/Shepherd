@@ -1,0 +1,25 @@
+[agent]
+name = "GPTMe"
+command = "gptme"
+args = []
+args_interactive = []
+version_check = "gptme --version"
+icon = "gptme"
+
+[status]
+working_patterns = ["Reading ", "Writing ", "Running ", "Executing "]
+idle_patterns = ["> ", "gptme> "]
+input_patterns = ["[y/n", "Allow?", "Execute?"]
+error_patterns = ["Error:", "error:", "failed"]
+
+[permissions]
+approve = "y\n"
+approve_all = "y\n"
+deny = "n\n"
+
+[capabilities]
+supports_hooks = false
+supports_prompt_arg = false
+supports_resume = false
+supports_mcp = false
+supports_worktree = false

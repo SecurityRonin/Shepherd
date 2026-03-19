@@ -102,6 +102,10 @@ pub async fn start_server(
     let conn = db::open(&db_path).context("opening database")?;
 
     // ---- adapters ----
+    // Install bundled default adapter configs (no-op if they already exist).
+    let user_adapters_dir = config::shepherd_dir().join("adapters");
+    shepherd_core::adapters::install_defaults(&user_adapters_dir).ok();
+
     let mut adapters = AdapterRegistry::new();
     if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
         let dev_adapters = std::path::Path::new(&manifest_dir).join("../../adapters");
@@ -113,9 +117,7 @@ pub async fn start_server(
         .map(|p| p.join("adapters"))
         .unwrap_or_default();
     adapters.load_dir(&exe_adapters).ok();
-    adapters
-        .load_dir(&config::shepherd_dir().join("adapters"))
-        .ok();
+    adapters.load_dir(&user_adapters_dir).ok();
     tracing::info!("Loaded {} adapters", adapters.len());
 
     // ---- YOLO rules ----

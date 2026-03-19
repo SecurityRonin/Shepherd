@@ -1,0 +1,25 @@
+[agent]
+name = "OpenCode"
+command = "opencode"
+args = []
+args_interactive = []
+version_check = "opencode --version"
+icon = "opencode"
+
+[status]
+working_patterns = ["Generating ", "Applying ", "Reading "]
+idle_patterns = ["> ", "opencode> "]
+input_patterns = ["[y/n", "Accept?", "approve"]
+error_patterns = ["Error:", "error:", "failed"]
+
+[permissions]
+approve = "y\n"
+approve_all = "y\n"
+deny = "n\n"
+
+[capabilities]
+supports_hooks = false
+supports_prompt_arg = true
+supports_resume = false
+supports_mcp = false
+supports_worktree = false

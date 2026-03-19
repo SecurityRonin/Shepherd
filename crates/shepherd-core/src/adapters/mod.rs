@@ -5,6 +5,37 @@ use protocol::AdapterConfig;
 use std::collections::HashMap;
 use std::path::Path;
 
+/// Default adapter configs, embedded at compile time.
+const DEFAULT_ADAPTERS: &[(&str, &str)] = &[
+    (
+        "claude-code.toml",
+        include_str!("defaults/claude-code.toml"),
+    ),
+    ("codex.toml", include_str!("defaults/codex.toml")),
+    ("aider.toml", include_str!("defaults/aider.toml")),
+    ("gemini-cli.toml", include_str!("defaults/gemini-cli.toml")),
+    ("adal.toml", include_str!("defaults/adal.toml")),
+    ("opencode.toml", include_str!("defaults/opencode.toml")),
+    ("goose.toml", include_str!("defaults/goose.toml")),
+    ("plandex.toml", include_str!("defaults/plandex.toml")),
+    ("gptme.toml", include_str!("defaults/gptme.toml")),
+];
+
+/// Install default adapter configs to the given directory if they don't already exist.
+/// Returns the number of configs installed.
+pub fn install_defaults(adapters_dir: &Path) -> Result<usize> {
+    std::fs::create_dir_all(adapters_dir)?;
+    let mut installed = 0;
+    for (filename, content) in DEFAULT_ADAPTERS {
+        let path = adapters_dir.join(filename);
+        if !path.exists() {
+            std::fs::write(&path, content)?;
+            installed += 1;
+        }
+    }
+    Ok(installed)
+}
+
 #[derive(Default)]
 pub struct AdapterRegistry {
     adapters: HashMap<String, AdapterConfig>,
@@ -166,5 +197,68 @@ deny = "n\n"
         let mut registry = AdapterRegistry::new();
         let result = registry.load_dir(dir.path());
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_install_defaults_creates_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let count = install_defaults(dir.path()).unwrap();
+        assert_eq!(count, 9);
+        assert!(dir.path().join("claude-code.toml").exists());
+        assert!(dir.path().join("codex.toml").exists());
+        assert!(dir.path().join("aider.toml").exists());
+        assert!(dir.path().join("gemini-cli.toml").exists());
+        assert!(dir.path().join("adal.toml").exists());
+        assert!(dir.path().join("opencode.toml").exists());
+        assert!(dir.path().join("goose.toml").exists());
+        assert!(dir.path().join("plandex.toml").exists());
+        assert!(dir.path().join("gptme.toml").exists());
+    }
+
+    #[test]
+    fn test_install_defaults_does_not_overwrite() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("claude-code.toml"), "custom").unwrap();
+        let count = install_defaults(dir.path()).unwrap();
+        assert_eq!(count, 8); // 8 new, 1 skipped
+        let content = fs::read_to_string(dir.path().join("claude-code.toml")).unwrap();
+        assert_eq!(content, "custom"); // Not overwritten
+    }
+
+    #[test]
+    fn test_install_defaults_creates_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let sub = dir.path().join("nested").join("adapters");
+        let count = install_defaults(&sub).unwrap();
+        assert_eq!(count, 9);
+        assert!(sub.exists());
+    }
+
+    #[test]
+    fn test_default_adapters_all_parse() {
+        let dir = tempfile::tempdir().unwrap();
+        install_defaults(dir.path()).unwrap();
+        let mut registry = AdapterRegistry::new();
+        registry.load_dir(dir.path()).unwrap();
+        assert_eq!(registry.len(), 9);
+        // Verify each one loaded with the correct ID (filename stem)
+        assert!(registry.get("claude-code").is_some());
+        assert!(registry.get("codex").is_some());
+        assert!(registry.get("aider").is_some());
+        assert!(registry.get("gemini-cli").is_some());
+        assert!(registry.get("adal").is_some());
+        assert!(registry.get("opencode").is_some());
+        assert!(registry.get("goose").is_some());
+        assert!(registry.get("plandex").is_some());
+        assert!(registry.get("gptme").is_some());
+    }
+
+    #[test]
+    fn test_install_defaults_idempotent() {
+        let dir = tempfile::tempdir().unwrap();
+        let count1 = install_defaults(dir.path()).unwrap();
+        assert_eq!(count1, 9);
+        let count2 = install_defaults(dir.path()).unwrap();
+        assert_eq!(count2, 0); // All already exist
     }
 }

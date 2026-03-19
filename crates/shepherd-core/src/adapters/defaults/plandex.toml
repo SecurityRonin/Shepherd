@@ -1,0 +1,25 @@
+[agent]
+name = "Plandex"
+command = "plandex"
+args = []
+args_interactive = []
+version_check = "plandex version"
+icon = "plandex"
+
+[status]
+working_patterns = ["Building ", "Planning ", "Applying ", "Reading "]
+idle_patterns = ["> ", "plandex> "]
+input_patterns = ["[y/n", "Confirm", "approve"]
+error_patterns = ["Error:", "error:", "failed"]
+
+[permissions]
+approve = "y\n"
+approve_all = "y\n"
+deny = "n\n"
+
+[capabilities]
+supports_hooks = false
+supports_prompt_arg = true
+supports_resume = false
+supports_mcp = false
+supports_worktree = false
