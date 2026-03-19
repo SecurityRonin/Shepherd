@@ -3,6 +3,10 @@ name = "shepherd-cli"
 version.workspace = true
 edition.workspace = true
 
+[lib]
+name = "shepherd_cli"
+path = "src/lib.rs"
+
 [[bin]]
 name = "shepherd"
 path = "src/main.rs"
