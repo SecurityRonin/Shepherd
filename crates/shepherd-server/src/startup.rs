@@ -32,10 +32,7 @@ pub(crate) fn pty_output_to_event(output: &PtyOutput) -> ServerEvent {
 
 /// Forward a PTY output chunk through the dispatcher for session monitoring.
 /// Extracted from the spawned task for testability.
-pub(crate) async fn forward_pty_to_dispatcher(
-    dispatcher: &TaskDispatcher,
-    output: &PtyOutput,
-) {
+pub(crate) async fn forward_pty_to_dispatcher(dispatcher: &TaskDispatcher, output: &PtyOutput) {
     let text = String::from_utf8_lossy(&output.data);
     let _ = dispatcher.handle_pty_output(output.task_id, &text).await;
 }
@@ -440,7 +437,10 @@ mod tests {
         let db = Arc::new(Mutex::new(conn));
         let adapters = Arc::new(AdapterRegistry::default());
         let pty = Arc::new(PtyManager::new(4, SandboxProfile::disabled()));
-        let yolo = Arc::new(YoloEngine::new(RuleSet { deny: vec![], allow: vec![] }));
+        let yolo = Arc::new(YoloEngine::new(RuleSet {
+            deny: vec![],
+            allow: vec![],
+        }));
         let lock_manager = Arc::new(Mutex::new(LockManager::new()));
 
         let dispatcher = TaskDispatcher::new(db, adapters, pty, yolo, lock_manager, tx);

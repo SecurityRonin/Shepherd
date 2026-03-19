@@ -143,9 +143,7 @@ pub fn prepare_injection(
 
 /// Generate CLAUDE.md context section marker for safe append/removal.
 pub fn claude_md_section(content: &str) -> String {
-    format!(
-        "\n<!-- shepherd-context-start -->\n{content}<!-- shepherd-context-end -->\n"
-    )
+    format!("\n<!-- shepherd-context-start -->\n{content}<!-- shepherd-context-end -->\n")
 }
 
 /// Remove previously injected Shepherd context from CLAUDE.md content.
@@ -228,14 +226,8 @@ mod tests {
 
     #[test]
     fn strategy_prompt_arg_agents() {
-        assert_eq!(
-            select_strategy("codex", true),
-            InjectionStrategy::PromptArg
-        );
-        assert_eq!(
-            select_strategy("aider", true),
-            InjectionStrategy::PromptArg
-        );
+        assert_eq!(select_strategy("codex", true), InjectionStrategy::PromptArg);
+        assert_eq!(select_strategy("aider", true), InjectionStrategy::PromptArg);
     }
 
     #[test]

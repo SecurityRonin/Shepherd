@@ -39,10 +39,7 @@ pub struct DismissedTrigger {
 }
 
 /// Run all detectors and return active suggestions
-pub fn check_triggers(
-    project_dir: &Path,
-    dismissed: &[String],
-) -> Vec<TriggerSuggestion> {
+pub fn check_triggers(project_dir: &Path, dismissed: &[String]) -> Vec<TriggerSuggestion> {
     let detectors: Vec<Box<dyn TriggerDetector>> = vec![
         Box::new(detectors::NameGenDetector),
         Box::new(detectors::LogoGenDetector),
@@ -62,8 +59,7 @@ pub fn check_triggers(
             // tarpaulin-start-ignore
             Err(e) => {
                 tracing::debug!("Trigger detector '{}' failed: {e}", detector.id());
-            }
-            // tarpaulin-stop-ignore
+            } // tarpaulin-stop-ignore
         }
     }
 
@@ -84,10 +80,7 @@ mod tests {
     #[test]
     fn test_check_triggers_respects_dismissed() {
         let tmp = tempfile::tempdir().unwrap();
-        std::fs::write(
-            tmp.path().join("package.json"),
-            r#"{"name": "untitled"}"#,
-        ).unwrap();
+        std::fs::write(tmp.path().join("package.json"), r#"{"name": "untitled"}"#).unwrap();
 
         let suggestions = check_triggers(tmp.path(), &[]);
         let has_namegen = suggestions.iter().any(|s| s.tool == "name_generator");
@@ -109,11 +102,7 @@ mod tests {
     #[test]
     fn test_check_triggers_all_dismissed() {
         let tmp = tempfile::tempdir().unwrap();
-        std::fs::write(
-            tmp.path().join("package.json"),
-            r#"{"name": "untitled"}"#,
-        )
-        .unwrap();
+        std::fs::write(tmp.path().join("package.json"), r#"{"name": "untitled"}"#).unwrap();
 
         let dismissed = vec![
             "namegen_untitled".to_string(),
@@ -128,11 +117,7 @@ mod tests {
     fn test_check_triggers_sorted_by_priority() {
         let tmp = tempfile::tempdir().unwrap();
         // Create a project that triggers both namegen (Medium) and northstar (Low)
-        std::fs::write(
-            tmp.path().join("package.json"),
-            r#"{"name": "untitled"}"#,
-        )
-        .unwrap();
+        std::fs::write(tmp.path().join("package.json"), r#"{"name": "untitled"}"#).unwrap();
 
         let suggestions = check_triggers(tmp.path(), &[]);
         if suggestions.len() >= 2 {
@@ -170,10 +155,7 @@ mod tests {
     #[test]
     fn test_check_triggers_with_nonexistent_dir() {
         // Using a nonexistent dir should not panic - detectors handle gracefully
-        let suggestions = check_triggers(
-            std::path::Path::new("/nonexistent/project"),
-            &[],
-        );
+        let suggestions = check_triggers(std::path::Path::new("/nonexistent/project"), &[]);
         // Some detectors may still fire (e.g. northstar checks for missing docs)
         // The important thing is no panic
         let _ = suggestions;

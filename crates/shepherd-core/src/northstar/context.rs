@@ -74,7 +74,10 @@ pub fn generate_ai_context(analysis: &NorthStarAnalysis) -> String {
 ///
 /// Creates `docs/northstar/` under the given base directory, writes all
 /// generated documents and the `ai-context.yml` file.
-pub fn write_northstar_output(analysis: &NorthStarAnalysis, base_dir: &Path) -> Result<Vec<String>> {
+pub fn write_northstar_output(
+    analysis: &NorthStarAnalysis,
+    base_dir: &Path,
+) -> Result<Vec<String>> {
     let northstar_dir = base_dir.join("docs").join("northstar");
     fs::create_dir_all(&northstar_dir)
         .with_context(|| format!("Failed to create {}", northstar_dir.display()))?;
@@ -330,13 +333,11 @@ mod tests {
         assert!(northstar_dir.join("ai-context.yml").exists());
 
         // Check content of a document
-        let vision_content =
-            fs::read_to_string(northstar_dir.join("product-vision.md")).unwrap();
+        let vision_content = fs::read_to_string(northstar_dir.join("product-vision.md")).unwrap();
         assert!(vision_content.contains("# Product Vision"));
 
         // Check ai-context.yml content
-        let context_content =
-            fs::read_to_string(northstar_dir.join("ai-context.yml")).unwrap();
+        let context_content = fs::read_to_string(northstar_dir.join("ai-context.yml")).unwrap();
         assert!(context_content.contains("product_name: \"TestApp\""));
     }
 }

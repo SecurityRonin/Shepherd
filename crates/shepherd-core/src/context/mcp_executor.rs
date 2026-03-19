@@ -94,10 +94,7 @@ pub fn default_server_configs() -> Vec<McpServerConfig> {
 }
 
 /// Execute MCP queries and merge results into a context package.
-pub fn execute_queries(
-    transport: &dyn McpTransport,
-    package: &ContextPackage,
-) -> Vec<McpResult> {
+pub fn execute_queries(transport: &dyn McpTransport, package: &ContextPackage) -> Vec<McpResult> {
     let mut results = Vec::new();
     let mut request_id = 1u64;
 
@@ -151,10 +148,7 @@ pub fn execute_queries(
 }
 
 /// Merge MCP results into an existing context package.
-pub fn merge_results(
-    package: &mut ContextPackage,
-    results: &[McpResult],
-) {
+pub fn merge_results(package: &mut ContextPackage, results: &[McpResult]) {
     for result in results {
         if !result.success {
             continue;
@@ -214,7 +208,9 @@ fn extract_files_from_response(response: &JsonRpcResponse) -> Vec<ContextItem> {
                         relevance_score: 0.85,
                         reason: format!(
                             "Symbol found via MCP: {}",
-                            sym.get("name").and_then(|n| n.as_str()).unwrap_or("unknown")
+                            sym.get("name")
+                                .and_then(|n| n.as_str())
+                                .unwrap_or("unknown")
                         ),
                     });
                 }
@@ -261,9 +257,27 @@ fn looks_like_file_path(s: &str) -> bool {
         let ext = s.rsplit('.').next().unwrap_or("");
         matches!(
             ext,
-            "rs" | "ts" | "tsx" | "js" | "jsx" | "py" | "go" | "java"
-                | "toml" | "yaml" | "yml" | "json" | "sql" | "html"
-                | "css" | "rb" | "c" | "cpp" | "h" | "swift" | "kt" | "sh"
+            "rs" | "ts"
+                | "tsx"
+                | "js"
+                | "jsx"
+                | "py"
+                | "go"
+                | "java"
+                | "toml"
+                | "yaml"
+                | "yml"
+                | "json"
+                | "sql"
+                | "html"
+                | "css"
+                | "rb"
+                | "c"
+                | "cpp"
+                | "h"
+                | "swift"
+                | "kt"
+                | "sh"
         )
     };
     has_extension && !s.contains(' ')
@@ -619,8 +633,12 @@ mod tests {
             error: None,
         };
         let files = extract_files_from_response(&response);
-        assert!(files.iter().any(|f| f.file_path == PathBuf::from("src/auth/service.rs")));
-        assert!(files.iter().any(|f| f.file_path == PathBuf::from("src/db/models.rs")));
+        assert!(files
+            .iter()
+            .any(|f| f.file_path == PathBuf::from("src/auth/service.rs")));
+        assert!(files
+            .iter()
+            .any(|f| f.file_path == PathBuf::from("src/db/models.rs")));
         assert!(files.iter().all(|f| f.source == ContextSource::Structural));
     }
 
@@ -666,9 +684,15 @@ mod tests {
         };
         let files = extract_files_from_response(&response);
         assert!(files.len() >= 3);
-        assert!(files.iter().any(|f| f.file_path == PathBuf::from("src/api.rs")));
-        assert!(files.iter().any(|f| f.file_path == PathBuf::from("src/handler.rs")));
-        assert!(files.iter().any(|f| f.file_path == PathBuf::from("src/search.rs")));
+        assert!(files
+            .iter()
+            .any(|f| f.file_path == PathBuf::from("src/api.rs")));
+        assert!(files
+            .iter()
+            .any(|f| f.file_path == PathBuf::from("src/handler.rs")));
+        assert!(files
+            .iter()
+            .any(|f| f.file_path == PathBuf::from("src/search.rs")));
     }
 
     #[test]
@@ -712,7 +736,9 @@ mod tests {
             fn call(&self, _server: &str, _request: &JsonRpcRequest) -> Result<JsonRpcResponse> {
                 anyhow::bail!("Connection refused")
             }
-            fn is_available(&self, _server: &str) -> bool { true }
+            fn is_available(&self, _server: &str) -> bool {
+                true
+            }
         }
 
         let pkg = ContextPackage {
@@ -728,7 +754,11 @@ mod tests {
         let results = execute_queries(&FailTransport, &pkg);
         assert_eq!(results.len(), 1);
         assert!(!results[0].success);
-        assert!(results[0].error.as_ref().unwrap().contains("Connection refused"));
+        assert!(results[0]
+            .error
+            .as_ref()
+            .unwrap()
+            .contains("Connection refused"));
     }
 
     #[test]
@@ -773,14 +803,12 @@ mod tests {
             McpResult {
                 query: pkg.mcp_queries[0].clone(),
                 success: true,
-                discovered_files: vec![
-                    ContextItem {
-                        source: ContextSource::Semantic,
-                        file_path: PathBuf::from("src/c.rs"),
-                        relevance_score: 0.9,
-                        reason: "search".into(),
-                    },
-                ],
+                discovered_files: vec![ContextItem {
+                    source: ContextSource::Semantic,
+                    file_path: PathBuf::from("src/c.rs"),
+                    relevance_score: 0.9,
+                    reason: "search".into(),
+                }],
                 raw_response: None,
                 error: None,
             },
@@ -827,17 +855,30 @@ mod tests {
     fn execute_multiple_queries_increments_ids() {
         let mut transport = MockTransport::new();
         transport.add_server("serena");
-        transport.add_response("serena", JsonRpcResponse {
-            jsonrpc: "2.0".into(),
-            id: 0,
-            result: Some(serde_json::json!({})),
-            error: None,
-        });
+        transport.add_response(
+            "serena",
+            JsonRpcResponse {
+                jsonrpc: "2.0".into(),
+                id: 0,
+                result: Some(serde_json::json!({})),
+                error: None,
+            },
+        );
 
         let pkg = ContextPackage {
             mcp_queries: vec![
-                McpQuery { server: "serena".into(), tool: "a".into(), params: serde_json::json!({}), reason: "r".into() },
-                McpQuery { server: "serena".into(), tool: "b".into(), params: serde_json::json!({}), reason: "r".into() },
+                McpQuery {
+                    server: "serena".into(),
+                    tool: "a".into(),
+                    params: serde_json::json!({}),
+                    reason: "r".into(),
+                },
+                McpQuery {
+                    server: "serena".into(),
+                    tool: "b".into(),
+                    params: serde_json::json!({}),
+                    reason: "r".into(),
+                },
             ],
             ..sample_package()
         };

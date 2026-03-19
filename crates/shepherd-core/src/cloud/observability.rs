@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use super::CloudClient;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct MetricsPushPayload {
@@ -58,10 +58,15 @@ pub struct DailyCost {
 }
 
 impl CloudClient {
-    pub async fn push_metrics(&self, payload: &MetricsPushPayload) -> Result<(), super::CloudError> {
+    pub async fn push_metrics(
+        &self,
+        payload: &MetricsPushPayload,
+    ) -> Result<(), super::CloudError> {
         let jwt = self.get_jwt()?;
         let url = format!("{}/api/observability/push", self.api_url());
-        let resp = self.http.post(&url)
+        let resp = self
+            .http
+            .post(&url)
             .bearer_auth(&jwt)
             .json(payload)
             .send()
@@ -71,15 +76,23 @@ impl CloudClient {
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
             let body = resp.text().await.unwrap_or_default();
-            return Err(super::CloudError::Api { status, message: body });
+            return Err(super::CloudError::Api {
+                status,
+                message: body,
+            });
         }
         Ok(())
     }
 
-    pub async fn cloud_spending_summary(&self, days: u32) -> Result<CloudSpendingSummary, super::CloudError> {
+    pub async fn cloud_spending_summary(
+        &self,
+        days: u32,
+    ) -> Result<CloudSpendingSummary, super::CloudError> {
         let jwt = self.get_jwt()?;
         let url = format!("{}/api/observability/summary?days={}", self.api_url(), days);
-        let resp = self.http.get(&url)
+        let resp = self
+            .http
+            .get(&url)
             .bearer_auth(&jwt)
             .send()
             .await
@@ -88,10 +101,14 @@ impl CloudClient {
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
             let body = resp.text().await.unwrap_or_default();
-            return Err(super::CloudError::Api { status, message: body });
+            return Err(super::CloudError::Api {
+                status,
+                message: body,
+            });
         }
 
-        resp.json().await
+        resp.json()
+            .await
             .map_err(|e| super::CloudError::Network(e.to_string()))
     }
 }

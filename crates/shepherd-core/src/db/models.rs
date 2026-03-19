@@ -92,7 +92,10 @@ mod tests {
     #[test]
     fn test_task_status_parse_status_all_valid() {
         assert_eq!(TaskStatus::parse_status("queued"), Some(TaskStatus::Queued));
-        assert_eq!(TaskStatus::parse_status("running"), Some(TaskStatus::Running));
+        assert_eq!(
+            TaskStatus::parse_status("running"),
+            Some(TaskStatus::Running)
+        );
         assert_eq!(TaskStatus::parse_status("input"), Some(TaskStatus::Input));
         assert_eq!(TaskStatus::parse_status("review"), Some(TaskStatus::Review));
         assert_eq!(TaskStatus::parse_status("error"), Some(TaskStatus::Error));
@@ -207,7 +210,10 @@ mod tests {
     #[test]
     fn test_task_status_dispatching_variant() {
         assert_eq!(TaskStatus::Dispatching.as_str(), "dispatching");
-        assert_eq!(TaskStatus::parse_status("dispatching"), Some(TaskStatus::Dispatching));
+        assert_eq!(
+            TaskStatus::parse_status("dispatching"),
+            Some(TaskStatus::Dispatching)
+        );
         let json = serde_json::to_string(&TaskStatus::Dispatching).unwrap();
         assert_eq!(json, r#""dispatching""#);
         let parsed: TaskStatus = serde_json::from_str(&json).unwrap();

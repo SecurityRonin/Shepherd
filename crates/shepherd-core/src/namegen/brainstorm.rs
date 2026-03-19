@@ -244,7 +244,9 @@ mod tests {
                     usage: TokenUsage { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
                 })
             }
-            fn name(&self) -> &str { "mock" }
+            fn name(&self) -> &str {
+                "mock"
+            }
         }
 
         let input = NameGenInput {
@@ -270,14 +272,24 @@ mod tests {
         impl crate::llm::LlmProvider for VibeCheckProvider {
             async fn chat(&self, request: &LlmRequest) -> anyhow::Result<LlmResponse> {
                 let user_msg = &request.messages[1].content;
-                assert!(user_msg.contains("fast, modern"), "Should include vibes: {user_msg}");
+                assert!(
+                    user_msg.contains("fast, modern"),
+                    "Should include vibes: {user_msg}"
+                );
                 Ok(LlmResponse {
-                    content: r#"[{"name":"viber","tagline":"Feel it","reasoning":"Vibes"}]"#.to_string(),
+                    content: r#"[{"name":"viber","tagline":"Feel it","reasoning":"Vibes"}]"#
+                        .to_string(),
                     model: "test".to_string(),
-                    usage: TokenUsage { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+                    usage: TokenUsage {
+                        prompt_tokens: 0,
+                        completion_tokens: 0,
+                        total_tokens: 0,
+                    },
                 })
             }
-            fn name(&self) -> &str { "mock" }
+            fn name(&self) -> &str {
+                "mock"
+            }
         }
 
         let input = NameGenInput {
@@ -300,15 +312,24 @@ mod tests {
             async fn chat(&self, request: &LlmRequest) -> anyhow::Result<LlmResponse> {
                 assert!(request.messages[1].content.contains("badname"));
                 Ok(LlmResponse {
-                    content: r#"["Offensive in language X", "Similar to failed product Y"]"#.to_string(),
+                    content: r#"["Offensive in language X", "Similar to failed product Y"]"#
+                        .to_string(),
                     model: "test".to_string(),
-                    usage: TokenUsage { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+                    usage: TokenUsage {
+                        prompt_tokens: 0,
+                        completion_tokens: 0,
+                        total_tokens: 0,
+                    },
                 })
             }
-            fn name(&self) -> &str { "mock" }
+            fn name(&self) -> &str {
+                "mock"
+            }
         }
 
-        let result = scan_negative_associations(&NegProvider, "badname").await.unwrap();
+        let result = scan_negative_associations(&NegProvider, "badname")
+            .await
+            .unwrap();
         assert_eq!(result.len(), 2);
         assert!(result[0].contains("Offensive"));
     }
@@ -325,13 +346,21 @@ mod tests {
                 Ok(LlmResponse {
                     content: "[]".to_string(),
                     model: "test".to_string(),
-                    usage: TokenUsage { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+                    usage: TokenUsage {
+                        prompt_tokens: 0,
+                        completion_tokens: 0,
+                        total_tokens: 0,
+                    },
                 })
             }
-            fn name(&self) -> &str { "mock" }
+            fn name(&self) -> &str {
+                "mock"
+            }
         }
 
-        let result = scan_negative_associations(&CleanProvider, "goodname").await.unwrap();
+        let result = scan_negative_associations(&CleanProvider, "goodname")
+            .await
+            .unwrap();
         assert!(result.is_empty());
     }
 
@@ -347,13 +376,21 @@ mod tests {
                 Ok(LlmResponse {
                     content: "```json\n[\"concern1\"]\n```".to_string(),
                     model: "test".to_string(),
-                    usage: TokenUsage { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+                    usage: TokenUsage {
+                        prompt_tokens: 0,
+                        completion_tokens: 0,
+                        total_tokens: 0,
+                    },
                 })
             }
-            fn name(&self) -> &str { "mock" }
+            fn name(&self) -> &str {
+                "mock"
+            }
         }
 
-        let result = scan_negative_associations(&FenceProvider, "name").await.unwrap();
+        let result = scan_negative_associations(&FenceProvider, "name")
+            .await
+            .unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0], "concern1");
     }

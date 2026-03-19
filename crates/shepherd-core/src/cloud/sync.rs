@@ -90,7 +90,9 @@ impl CloudClient {
     pub async fn push_config(&self, payload: &SyncConfigPayload) -> Result<(), super::CloudError> {
         let jwt = self.get_jwt()?;
         let url = format!("{}/api/sync/push", self.api_url());
-        let resp = self.http.post(&url)
+        let resp = self
+            .http
+            .post(&url)
             .bearer_auth(&jwt)
             .json(payload)
             .send()
@@ -100,15 +102,23 @@ impl CloudClient {
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
             let body = resp.text().await.unwrap_or_default();
-            return Err(super::CloudError::Api { status, message: body });
+            return Err(super::CloudError::Api {
+                status,
+                message: body,
+            });
         }
         Ok(())
     }
 
-    pub async fn pull_config(&self, machine_id: &str) -> Result<Option<SyncConfigEntry>, super::CloudError> {
+    pub async fn pull_config(
+        &self,
+        machine_id: &str,
+    ) -> Result<Option<SyncConfigEntry>, super::CloudError> {
         let jwt = self.get_jwt()?;
         let url = format!("{}/api/sync/pull?machine_id={}", self.api_url(), machine_id);
-        let resp = self.http.get(&url)
+        let resp = self
+            .http
+            .get(&url)
             .bearer_auth(&jwt)
             .send()
             .await
@@ -117,10 +127,15 @@ impl CloudClient {
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
             let body = resp.text().await.unwrap_or_default();
-            return Err(super::CloudError::Api { status, message: body });
+            return Err(super::CloudError::Api {
+                status,
+                message: body,
+            });
         }
 
-        let result: SyncPullResponse = resp.json().await
+        let result: SyncPullResponse = resp
+            .json()
+            .await
             .map_err(|e| super::CloudError::Network(e.to_string()))?;
         Ok(result.config)
     }
@@ -128,7 +143,9 @@ impl CloudClient {
     pub async fn pull_all_configs(&self) -> Result<Vec<SyncConfigEntry>, super::CloudError> {
         let jwt = self.get_jwt()?;
         let url = format!("{}/api/sync/pull", self.api_url());
-        let resp = self.http.get(&url)
+        let resp = self
+            .http
+            .get(&url)
             .bearer_auth(&jwt)
             .send()
             .await
@@ -137,10 +154,15 @@ impl CloudClient {
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
             let body = resp.text().await.unwrap_or_default();
-            return Err(super::CloudError::Api { status, message: body });
+            return Err(super::CloudError::Api {
+                status,
+                message: body,
+            });
         }
 
-        let result: SyncPullAllResponse = resp.json().await
+        let result: SyncPullAllResponse = resp
+            .json()
+            .await
             .map_err(|e| super::CloudError::Network(e.to_string()))?;
         Ok(result.configs)
     }

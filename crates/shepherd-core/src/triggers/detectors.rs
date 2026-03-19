@@ -7,7 +7,9 @@ use super::{TriggerDetector, TriggerPriority, TriggerSuggestion};
 pub struct NameGenDetector;
 
 impl TriggerDetector for NameGenDetector {
-    fn id(&self) -> &str { "namegen_untitled" }
+    fn id(&self) -> &str {
+        "namegen_untitled"
+    }
 
     fn detect(&self, project_dir: &Path) -> Result<Option<TriggerSuggestion>> {
         let pkg_json = project_dir.join("package.json");
@@ -37,7 +39,8 @@ impl TriggerDetector for NameGenDetector {
         if cargo_toml.exists() {
             let content = std::fs::read_to_string(&cargo_toml)?;
             if let Ok(parsed) = content.parse::<toml::Value>() {
-                if let Some(name) = parsed.get("package")
+                if let Some(name) = parsed
+                    .get("package")
                     .and_then(|p| p.get("name"))
                     .and_then(|n| n.as_str())
                 {
@@ -67,7 +70,9 @@ impl TriggerDetector for NameGenDetector {
 pub struct LogoGenDetector;
 
 impl TriggerDetector for LogoGenDetector {
-    fn id(&self) -> &str { "logogen_no_icon" }
+    fn id(&self) -> &str {
+        "logogen_no_icon"
+    }
 
     fn detect(&self, project_dir: &Path) -> Result<Option<TriggerSuggestion>> {
         let icon_locations = [
@@ -79,7 +84,9 @@ impl TriggerDetector for LogoGenDetector {
             "app/favicon.ico",
         ];
 
-        let has_icon = icon_locations.iter().any(|loc| project_dir.join(loc).exists());
+        let has_icon = icon_locations
+            .iter()
+            .any(|loc| project_dir.join(loc).exists());
 
         if !has_icon {
             let is_web_project = project_dir.join("package.json").exists()
@@ -106,7 +113,9 @@ impl TriggerDetector for LogoGenDetector {
 pub struct NorthStarDetector;
 
 impl TriggerDetector for NorthStarDetector {
-    fn id(&self) -> &str { "northstar_no_docs" }
+    fn id(&self) -> &str {
+        "northstar_no_docs"
+    }
 
     fn detect(&self, project_dir: &Path) -> Result<Option<TriggerSuggestion>> {
         let docs_dir = project_dir.join("docs");
@@ -139,7 +148,8 @@ mod tests {
         std::fs::write(
             tmp.path().join("package.json"),
             r#"{"name": "untitled", "version": "1.0.0"}"#,
-        ).unwrap();
+        )
+        .unwrap();
 
         let detector = NameGenDetector;
         let result = detector.detect(tmp.path()).unwrap();
@@ -153,7 +163,8 @@ mod tests {
         std::fs::write(
             tmp.path().join("package.json"),
             r#"{"name": "shepherd", "version": "1.0.0"}"#,
-        ).unwrap();
+        )
+        .unwrap();
 
         let detector = NameGenDetector;
         let result = detector.detect(tmp.path()).unwrap();
@@ -270,11 +281,7 @@ mod tests {
     #[test]
     fn test_namegen_detector_package_json_my_project() {
         let tmp = tempfile::tempdir().unwrap();
-        std::fs::write(
-            tmp.path().join("package.json"),
-            r#"{"name": "My-Project"}"#,
-        )
-        .unwrap();
+        std::fs::write(tmp.path().join("package.json"), r#"{"name": "My-Project"}"#).unwrap();
 
         let detector = NameGenDetector;
         let result = detector.detect(tmp.path()).unwrap();
@@ -284,11 +291,7 @@ mod tests {
     #[test]
     fn test_namegen_detector_package_json_app() {
         let tmp = tempfile::tempdir().unwrap();
-        std::fs::write(
-            tmp.path().join("package.json"),
-            r#"{"name": "app"}"#,
-        )
-        .unwrap();
+        std::fs::write(tmp.path().join("package.json"), r#"{"name": "app"}"#).unwrap();
 
         let detector = NameGenDetector;
         let result = detector.detect(tmp.path()).unwrap();
@@ -305,7 +308,10 @@ mod tests {
 
         let detector = LogoGenDetector;
         let result = detector.detect(tmp.path()).unwrap();
-        assert!(result.is_none(), "Non-web project should not trigger logo suggestion");
+        assert!(
+            result.is_none(),
+            "Non-web project should not trigger logo suggestion"
+        );
     }
 
     #[test]
@@ -355,11 +361,7 @@ mod tests {
     #[test]
     fn test_trigger_suggestion_fields() {
         let tmp = tempfile::tempdir().unwrap();
-        std::fs::write(
-            tmp.path().join("package.json"),
-            r#"{"name": "untitled"}"#,
-        )
-        .unwrap();
+        std::fs::write(tmp.path().join("package.json"), r#"{"name": "untitled"}"#).unwrap();
 
         let detector = NameGenDetector;
         let suggestion = detector.detect(tmp.path()).unwrap().unwrap();

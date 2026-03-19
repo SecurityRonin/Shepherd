@@ -1,5 +1,5 @@
-use serde::Deserialize;
 use super::CloudClient;
+use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -50,7 +50,9 @@ impl CloudClient {
             url = format!("{}?{}", url, params.join("&"));
         }
 
-        let resp = self.http.get(&url)
+        let resp = self
+            .http
+            .get(&url)
             .send()
             .await
             .map_err(|e| super::CloudError::Network(e.to_string()))?;
@@ -58,10 +60,15 @@ impl CloudClient {
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
             let body = resp.text().await.unwrap_or_default();
-            return Err(super::CloudError::Api { status, message: body });
+            return Err(super::CloudError::Api {
+                status,
+                message: body,
+            });
         }
 
-        let result: TemplatesResponse = resp.json().await
+        let result: TemplatesResponse = resp
+            .json()
+            .await
             .map_err(|e| super::CloudError::Network(e.to_string()))?;
         Ok(result.templates)
     }
@@ -124,7 +131,8 @@ mod tests {
 
     #[test]
     fn agent_role_config_is_flexible() {
-        let json = r#"{"role":"dev","agent_type":"claude-code","config":{"focus":"impl","max_turns":10}}"#;
+        let json =
+            r#"{"role":"dev","agent_type":"claude-code","config":{"focus":"impl","max_turns":10}}"#;
         let role: AgentRole = serde_json::from_str(json).unwrap();
         assert_eq!(role.config["max_turns"], 10);
     }
@@ -204,7 +212,10 @@ mod tests {
         });
 
         let client = super::super::CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
-        let templates = client.list_templates(Some("pipeline"), false).await.unwrap();
+        let templates = client
+            .list_templates(Some("pipeline"), false)
+            .await
+            .unwrap();
         assert_eq!(templates.len(), 1);
         assert_eq!(templates[0].category, TemplateCategory::Pipeline);
     }

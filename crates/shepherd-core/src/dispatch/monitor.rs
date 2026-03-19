@@ -12,7 +12,10 @@ pub enum Detection {
     /// Agent is idle / finished.
     Idle,
     /// Agent is requesting permission for an action.
-    PermissionRequest { tool_name: String, tool_args: String },
+    PermissionRequest {
+        tool_name: String,
+        tool_args: String,
+    },
     /// Agent encountered an error.
     Error(String),
     /// No pattern matched.
@@ -32,10 +35,7 @@ pub struct SessionMonitor {
 impl SessionMonitor {
     pub fn new(status: &StatusSection, permissions: &PermissionsSection) -> Self {
         let compile = |patterns: &[String]| -> Vec<Regex> {
-            patterns
-                .iter()
-                .filter_map(|p| Regex::new(p).ok())
-                .collect()
+            patterns.iter().filter_map(|p| Regex::new(p).ok()).collect()
         };
         Self {
             working_patterns: compile(&status.working_patterns),
@@ -128,10 +128,7 @@ mod tests {
     #[test]
     fn detects_working_state() {
         let monitor = SessionMonitor::new(&claude_code_status(), &claude_code_permissions());
-        assert_eq!(
-            monitor.analyze("⠋ Processing files..."),
-            Detection::Working
-        );
+        assert_eq!(monitor.analyze("⠋ Processing files..."), Detection::Working);
     }
 
     #[test]

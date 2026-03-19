@@ -1,6 +1,6 @@
-use std::path::{Path, PathBuf};
 use super::superpowers::InstallScope;
 use super::{EcosystemPlugin, PluginDetectionResult};
+use std::path::{Path, PathBuf};
 
 /// Return the shared plugin definition for context7.
 pub fn plugin() -> EcosystemPlugin {
@@ -70,7 +70,9 @@ impl InstallConfig {
             agent: cfg.agent,
             scope: cfg.scope,
             target_path: cfg.target_path,
-            mcp_server_json: format!("{{\n  \"mcpServers\": {{\n    {CONTEXT7_MCP_ENTRY}\n  }}\n}}"),
+            mcp_server_json: format!(
+                "{{\n  \"mcpServers\": {{\n    {CONTEXT7_MCP_ENTRY}\n  }}\n}}"
+            ),
         })
     }
 }
@@ -109,7 +111,8 @@ mod tests {
         std::fs::write(
             project.join(".claude/settings.json"),
             r#"{"mcpServers":{"context7":{"command":"npx"}}}"#,
-        ).unwrap();
+        )
+        .unwrap();
         let result = detect_for_agent("claude-code", &home, Some(&project));
         assert!(result.installed);
         assert_eq!(result.scope, InstallScope::Project);

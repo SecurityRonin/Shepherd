@@ -1,8 +1,6 @@
 use super::{
-    auth, CloudClient, CloudError,
-    CREDIT_COST_LOGO, CREDIT_COST_NAME, CREDIT_COST_NORTHSTAR,
-    CREDIT_COST_SCRAPE, CREDIT_COST_CRAWL, CREDIT_COST_VISION,
-    CREDIT_COST_SEARCH,
+    auth, CloudClient, CloudError, CREDIT_COST_CRAWL, CREDIT_COST_LOGO, CREDIT_COST_NAME,
+    CREDIT_COST_NORTHSTAR, CREDIT_COST_SCRAPE, CREDIT_COST_SEARCH, CREDIT_COST_VISION,
 };
 
 /// Feature identifier for credit/trial operations.
@@ -110,15 +108,18 @@ impl CloudClient {
     pub async fn refresh_balance(&self) -> Result<u32, CloudError> {
         let jwt = {
             #[cfg(test)]
-            { self.test_jwt.clone().ok_or(CloudError::NotAuthenticated)? }
+            {
+                self.test_jwt.clone().ok_or(CloudError::NotAuthenticated)?
+            }
             #[cfg(not(test))]
-            { auth::load_jwt().ok_or(CloudError::NotAuthenticated)? }
+            {
+                auth::load_jwt().ok_or(CloudError::NotAuthenticated)?
+            }
         };
         let profile = self.fetch_profile(&jwt).await?;
 
         // tarpaulin-start-ignore — save_cached_profile hits hardcoded filesystem
-        auth::save_cached_profile(&profile)
-            .map_err(|e| CloudError::Keychain(e.to_string()))?;
+        auth::save_cached_profile(&profile).map_err(|e| CloudError::Keychain(e.to_string()))?;
         // tarpaulin-stop-ignore
 
         Ok(profile.credits_balance)
@@ -167,7 +168,10 @@ mod tests {
         // Without any stored JWT, check_access should return NotAuthenticated.
         // (In tests, is_authenticated() returns false since there's no ~/.shepherd/.jwt)
         let client = CloudClient::new();
-        assert_eq!(client.check_access(Feature::Logo), AccessCheck::NotAuthenticated);
+        assert_eq!(
+            client.check_access(Feature::Logo),
+            AccessCheck::NotAuthenticated
+        );
     }
 
     #[test]
@@ -214,13 +218,27 @@ mod tests {
         let client = CloudClient::with_config(CloudConfig {
             api_url: "http://localhost:3000".to_string(),
         });
-        assert_eq!(client.subscription_url(), "http://localhost:3000/api/credits/purchase");
-        assert_eq!(client.topup_url(), "http://localhost:3000/api/credits/purchase");
+        assert_eq!(
+            client.subscription_url(),
+            "http://localhost:3000/api/credits/purchase"
+        );
+        assert_eq!(
+            client.topup_url(),
+            "http://localhost:3000/api/credits/purchase"
+        );
     }
 
     #[test]
     fn all_features_have_unique_keys() {
-        let features = [Feature::Logo, Feature::Name, Feature::NorthStar, Feature::Scrape, Feature::Crawl, Feature::Vision, Feature::Search];
+        let features = [
+            Feature::Logo,
+            Feature::Name,
+            Feature::NorthStar,
+            Feature::Scrape,
+            Feature::Crawl,
+            Feature::Vision,
+            Feature::Search,
+        ];
         let keys: Vec<&str> = features.iter().map(|f| f.key()).collect();
         let unique: std::collections::HashSet<&str> = keys.iter().copied().collect();
         assert_eq!(keys.len(), unique.len());
@@ -243,7 +261,15 @@ mod tests {
 
     #[test]
     fn all_features_have_positive_costs() {
-        let features = [Feature::Logo, Feature::Name, Feature::NorthStar, Feature::Scrape, Feature::Crawl, Feature::Vision, Feature::Search];
+        let features = [
+            Feature::Logo,
+            Feature::Name,
+            Feature::NorthStar,
+            Feature::Scrape,
+            Feature::Crawl,
+            Feature::Vision,
+            Feature::Search,
+        ];
         for f in &features {
             assert!(f.cost() > 0, "{:?} should have positive cost", f);
         }
@@ -306,7 +332,10 @@ mod tests {
         // A client without test_jwt set should return NotAuthenticated
         let client = CloudClient::new();
         let result = client.refresh_balance().await;
-        assert!(matches!(result, Err(super::super::CloudError::NotAuthenticated)));
+        assert!(matches!(
+            result,
+            Err(super::super::CloudError::NotAuthenticated)
+        ));
     }
 
     #[tokio::test]
@@ -333,7 +362,13 @@ mod tests {
         let client = CloudClient::with_config(CloudConfig {
             api_url: "http://localhost:4000".to_string(),
         });
-        assert_eq!(client.subscription_url(), "http://localhost:4000/api/credits/purchase");
-        assert_eq!(client.topup_url(), "http://localhost:4000/api/credits/purchase");
+        assert_eq!(
+            client.subscription_url(),
+            "http://localhost:4000/api/credits/purchase"
+        );
+        assert_eq!(
+            client.topup_url(),
+            "http://localhost:4000/api/credits/purchase"
+        );
     }
 }

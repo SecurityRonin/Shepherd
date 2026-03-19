@@ -74,50 +74,38 @@ pub async fn run_gates(project_dir: &Path, config: &GateConfig) -> Result<Vec<Ga
 
     if config.lint {
         for pt in &types {
-            results.push(
-                builtin::run_lint(project_dir, pt, config.timeout_seconds).await,
-            );
+            results.push(builtin::run_lint(project_dir, pt, config.timeout_seconds).await);
         }
     }
 
     if config.format_check {
         for pt in &types {
-            results.push(
-                builtin::run_format_check(project_dir, pt, config.timeout_seconds).await,
-            );
+            results.push(builtin::run_format_check(project_dir, pt, config.timeout_seconds).await);
         }
     }
 
     if config.type_check {
         for pt in &types {
-            results.push(
-                builtin::run_type_check(project_dir, pt, config.timeout_seconds).await,
-            );
+            results.push(builtin::run_type_check(project_dir, pt, config.timeout_seconds).await);
         }
     }
 
     if config.test {
         for pt in &types {
-            results.push(
-                builtin::run_tests(project_dir, pt, config.timeout_seconds).await,
-            );
+            results.push(builtin::run_tests(project_dir, pt, config.timeout_seconds).await);
         }
     }
 
     // Run custom plugin gates
     for gate_script in &config.custom_gates {
-        results.push(
-            plugin::run_plugin_gate(project_dir, gate_script).await,
-        );
+        results.push(plugin::run_plugin_gate(project_dir, gate_script).await);
     }
 
     // Discover and run plugin gates from .shepherd/gates/
     let discovered = plugin::discover_plugin_gates(project_dir);
     for gate_path in discovered {
         if let Some(script) = gate_path.to_str() {
-            results.push(
-                plugin::run_plugin_gate(project_dir, script).await,
-            );
+            results.push(plugin::run_plugin_gate(project_dir, script).await);
         }
     }
 
@@ -298,7 +286,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         // Create a simple custom gate script
         let script_path = dir.path().join("custom-gate.sh");
-        std::fs::write(&script_path, "#!/bin/sh\necho 'custom gate passed'\nexit 0\n").unwrap();
+        std::fs::write(
+            &script_path,
+            "#!/bin/sh\necho 'custom gate passed'\nexit 0\n",
+        )
+        .unwrap();
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -376,7 +368,10 @@ mod tests {
         let results = run_gates(dir.path(), &config).await.unwrap();
         // Should discover and run the plugin gate from .shepherd/gates/
         let plugin_result = results.iter().find(|r| r.gate_type == GateType::Custom);
-        assert!(plugin_result.is_some(), "Should have discovered plugin gate");
+        assert!(
+            plugin_result.is_some(),
+            "Should have discovered plugin gate"
+        );
         assert!(plugin_result.unwrap().passed);
     }
 }

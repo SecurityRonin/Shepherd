@@ -1,17 +1,17 @@
 pub mod alaya;
-pub mod superpowers;
-pub mod context_mode;
 pub mod context7;
-pub mod ralph_loop;
-pub mod frontend_design;
+pub mod context_hub;
+pub mod context_mode;
 pub mod docling;
-pub mod whisper;
-pub mod ffmpeg;
-pub mod playwright;
 pub mod exa;
+pub mod ffmpeg;
+pub mod frontend_design;
+pub mod playwright;
+pub mod ralph_loop;
 pub mod serena;
 pub mod sourcegraph;
-pub mod context_hub;
+pub mod superpowers;
+pub mod whisper;
 
 use std::path::{Path, PathBuf};
 use superpowers::InstallScope;
@@ -70,7 +70,12 @@ impl EcosystemPlugin {
     }
 
     /// Detect whether this plugin is installed for the given agent.
-    pub fn detect(&self, agent: &str, home: &Path, project_root: Option<&Path>) -> PluginDetectionResult {
+    pub fn detect(
+        &self,
+        agent: &str,
+        home: &Path,
+        project_root: Option<&Path>,
+    ) -> PluginDetectionResult {
         if !self.is_compatible(agent) {
             return PluginDetectionResult {
                 installed: false,
@@ -268,7 +273,9 @@ mod tests {
     #[test]
     fn test_install_config_user_scope() {
         let plugin = test_plugin();
-        let config = plugin.install_config("claude-code", InstallScope::User).unwrap();
+        let config = plugin
+            .install_config("claude-code", InstallScope::User)
+            .unwrap();
         assert_eq!(config.agent, "claude-code");
         assert_eq!(config.scope, InstallScope::User);
         assert_eq!(config.config_content, r#"{"enabled": true}"#);
@@ -277,7 +284,9 @@ mod tests {
     #[test]
     fn test_install_config_project_scope() {
         let plugin = test_plugin();
-        let config = plugin.install_config("claude-code", InstallScope::Project).unwrap();
+        let config = plugin
+            .install_config("claude-code", InstallScope::Project)
+            .unwrap();
         assert_eq!(config.scope, InstallScope::Project);
     }
 

@@ -166,7 +166,10 @@ mod tests {
         let sensitive = [".ssh", ".aws", ".gnupg", ".kube", ".netrc", ".npmrc"];
         for path_fragment in &sensitive {
             assert!(
-                profile.blocked_paths.iter().any(|p| p.contains(path_fragment)),
+                profile
+                    .blocked_paths
+                    .iter()
+                    .any(|p| p.contains(path_fragment)),
                 "Should block {path_fragment}"
             );
         }
@@ -191,7 +194,8 @@ mod tests {
     #[test]
     fn test_wrap_preserves_arg_order() {
         let profile = SandboxProfile::default();
-        let (_, args) = profile.wrap_command("git", &["push".into(), "origin".into(), "main".into()]);
+        let (_, args) =
+            profile.wrap_command("git", &["push".into(), "origin".into(), "main".into()]);
         let cmd_pos = args.iter().position(|a| a == "git").unwrap();
         assert_eq!(args[cmd_pos + 1], "push");
         assert_eq!(args[cmd_pos + 2], "origin");

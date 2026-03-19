@@ -11,20 +11,116 @@ pub struct TaskIntent {
 
 /// Stop words to filter out when extracting keywords.
 const STOP_WORDS: &[&str] = &[
-    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
-    "have", "has", "had", "do", "does", "did", "will", "would", "could",
-    "should", "may", "might", "shall", "can", "need", "must",
-    "in", "on", "at", "to", "for", "of", "with", "by", "from", "as",
-    "into", "through", "during", "before", "after", "above", "below",
-    "and", "but", "or", "nor", "not", "so", "yet", "both", "either",
-    "it", "its", "this", "that", "these", "those", "he", "she", "they",
-    "we", "you", "i", "me", "my", "your", "our", "their", "them",
-    "what", "which", "who", "when", "where", "how", "why",
-    "if", "then", "else", "also", "just", "only", "very", "too",
-    "all", "each", "every", "any", "some", "no", "more", "most",
-    "other", "than", "such", "like",
-    "add", "fix", "update", "implement", "create", "make", "use",
-    "get", "set", "new", "change", "remove", "delete",
+    "a",
+    "an",
+    "the",
+    "is",
+    "are",
+    "was",
+    "were",
+    "be",
+    "been",
+    "being",
+    "have",
+    "has",
+    "had",
+    "do",
+    "does",
+    "did",
+    "will",
+    "would",
+    "could",
+    "should",
+    "may",
+    "might",
+    "shall",
+    "can",
+    "need",
+    "must",
+    "in",
+    "on",
+    "at",
+    "to",
+    "for",
+    "of",
+    "with",
+    "by",
+    "from",
+    "as",
+    "into",
+    "through",
+    "during",
+    "before",
+    "after",
+    "above",
+    "below",
+    "and",
+    "but",
+    "or",
+    "nor",
+    "not",
+    "so",
+    "yet",
+    "both",
+    "either",
+    "it",
+    "its",
+    "this",
+    "that",
+    "these",
+    "those",
+    "he",
+    "she",
+    "they",
+    "we",
+    "you",
+    "i",
+    "me",
+    "my",
+    "your",
+    "our",
+    "their",
+    "them",
+    "what",
+    "which",
+    "who",
+    "when",
+    "where",
+    "how",
+    "why",
+    "if",
+    "then",
+    "else",
+    "also",
+    "just",
+    "only",
+    "very",
+    "too",
+    "all",
+    "each",
+    "every",
+    "any",
+    "some",
+    "no",
+    "more",
+    "most",
+    "other",
+    "than",
+    "such",
+    "like",
+    "add",
+    "fix",
+    "update",
+    "implement",
+    "create",
+    "make",
+    "use",
+    "get",
+    "set",
+    "new",
+    "change",
+    "remove",
+    "delete",
 ];
 
 /// Extract structured intent from a task's title and description.
@@ -44,7 +140,17 @@ pub fn extract_intent(title: &str, description: &str) -> TaskIntent {
 fn extract_file_paths(text: &str) -> Vec<String> {
     let mut paths = Vec::new();
     for word in text.split_whitespace() {
-        let cleaned = word.trim_matches(|c: char| c == ',' || c == '.' || c == ':' || c == ';' || c == '`' || c == '\'' || c == '"' || c == '(' || c == ')');
+        let cleaned = word.trim_matches(|c: char| {
+            c == ','
+                || c == '.'
+                || c == ':'
+                || c == ';'
+                || c == '`'
+                || c == '\''
+                || c == '"'
+                || c == '('
+                || c == ')'
+        });
         if is_file_path(cleaned) {
             paths.push(cleaned.to_string());
         }
@@ -62,23 +168,58 @@ fn is_file_path(s: &str) -> bool {
     // Must contain a known file extension
     let has_extension = s.contains('.') && {
         let ext = s.rsplit('.').next().unwrap_or("");
-        matches!(ext,
-            "rs" | "ts" | "tsx" | "js" | "jsx" | "py" | "go" | "java" |
-            "toml" | "yaml" | "yml" | "json" | "md" | "sql" | "html" |
-            "css" | "scss" | "vue" | "svelte" | "rb" | "c" | "cpp" |
-            "h" | "hpp" | "swift" | "kt" | "sh" | "bash" | "zsh"
+        matches!(
+            ext,
+            "rs" | "ts"
+                | "tsx"
+                | "js"
+                | "jsx"
+                | "py"
+                | "go"
+                | "java"
+                | "toml"
+                | "yaml"
+                | "yml"
+                | "json"
+                | "md"
+                | "sql"
+                | "html"
+                | "css"
+                | "scss"
+                | "vue"
+                | "svelte"
+                | "rb"
+                | "c"
+                | "cpp"
+                | "h"
+                | "hpp"
+                | "swift"
+                | "kt"
+                | "sh"
+                | "bash"
+                | "zsh"
         )
     };
     // Must have a recognized extension and look path-like (no spaces, valid chars)
     has_extension
         && !s.contains(' ')
-        && s.chars().all(|c| c.is_alphanumeric() || c == '/' || c == '.' || c == '_' || c == '-')
+        && s.chars()
+            .all(|c| c.is_alphanumeric() || c == '/' || c == '.' || c == '_' || c == '-')
 }
 
 /// Extract CamelCase type names and multi-word snake_case identifiers.
 fn extract_symbols(text: &str) -> Vec<String> {
     let mut symbols = Vec::new();
-    for word in text.split(|c: char| c.is_whitespace() || c == ',' || c == ';' || c == ':' || c == '(' || c == ')' || c == '`' || c == '.') {
+    for word in text.split(|c: char| {
+        c.is_whitespace()
+            || c == ','
+            || c == ';'
+            || c == ':'
+            || c == '('
+            || c == ')'
+            || c == '`'
+            || c == '.'
+    }) {
         let cleaned = word.trim_matches(|c: char| !c.is_alphanumeric() && c != '_');
         if cleaned.is_empty() || cleaned.len() < 2 {
             continue;
@@ -131,7 +272,10 @@ mod tests {
 
     #[test]
     fn extracts_rust_file_paths() {
-        let intent = extract_intent("Fix bug in src/auth.rs", "The login flow in src/cloud/mod.rs is broken");
+        let intent = extract_intent(
+            "Fix bug in src/auth.rs",
+            "The login flow in src/cloud/mod.rs is broken",
+        );
         assert!(intent.file_paths.contains(&"src/auth.rs".to_string()));
         assert!(intent.file_paths.contains(&"src/cloud/mod.rs".to_string()));
     }
@@ -139,7 +283,9 @@ mod tests {
     #[test]
     fn extracts_typescript_file_paths() {
         let intent = extract_intent("Update route", "Fix src/app/api/generate/search/route.ts");
-        assert!(intent.file_paths.contains(&"src/app/api/generate/search/route.ts".to_string()));
+        assert!(intent
+            .file_paths
+            .contains(&"src/app/api/generate/search/route.ts".to_string()));
     }
 
     #[test]
@@ -165,7 +311,14 @@ mod tests {
     #[test]
     fn deduplicates_file_paths() {
         let intent = extract_intent("Fix src/lib.rs", "Also check src/lib.rs again");
-        assert_eq!(intent.file_paths.iter().filter(|p| *p == "src/lib.rs").count(), 1);
+        assert_eq!(
+            intent
+                .file_paths
+                .iter()
+                .filter(|p| *p == "src/lib.rs")
+                .count(),
+            1
+        );
     }
 
     // ── Symbol extraction ────────────────────────────────────────
@@ -203,7 +356,10 @@ mod tests {
 
     #[test]
     fn extracts_significant_keywords() {
-        let intent = extract_intent("Fix authentication bug", "The login flow is broken for OAuth users");
+        let intent = extract_intent(
+            "Fix authentication bug",
+            "The login flow is broken for OAuth users",
+        );
         assert!(intent.keywords.contains(&"authentication".to_string()));
         assert!(intent.keywords.contains(&"login".to_string()));
         assert!(intent.keywords.contains(&"broken".to_string()));
@@ -240,7 +396,9 @@ mod tests {
             "Add search endpoint",
             "Create a new API route at src/app/api/search/route.ts that calls the ExaClient.searchWeb method. Should validate the query parameter and return results.",
         );
-        assert!(intent.file_paths.contains(&"src/app/api/search/route.ts".to_string()));
+        assert!(intent
+            .file_paths
+            .contains(&"src/app/api/search/route.ts".to_string()));
         assert!(intent.symbols.contains(&"ExaClient".to_string()));
         assert!(intent.keywords.contains(&"search".to_string()));
         assert!(intent.keywords.contains(&"endpoint".to_string()));
@@ -275,7 +433,9 @@ mod tests {
     fn extracts_go_file_paths() {
         let intent = extract_intent("Fix main.go", "Check pkg/server/handler.go");
         assert!(intent.file_paths.contains(&"main.go".to_string()));
-        assert!(intent.file_paths.contains(&"pkg/server/handler.go".to_string()));
+        assert!(intent
+            .file_paths
+            .contains(&"pkg/server/handler.go".to_string()));
     }
 
     #[test]
@@ -294,7 +454,10 @@ mod tests {
     #[test]
     fn keywords_filters_pure_numbers() {
         let intent = extract_intent("Fix bug 12345", "Issue 9999");
-        assert!(!intent.keywords.iter().any(|k| k.chars().all(|c| c.is_ascii_digit())));
+        assert!(!intent
+            .keywords
+            .iter()
+            .any(|k| k.chars().all(|c| c.is_ascii_digit())));
     }
 
     #[test]

@@ -2,8 +2,8 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use crate::config;
 use super::{CachedProfile, CloudClient, CloudError, TrialCounts};
+use crate::config;
 
 /// Auth tokens returned from the callback deep link.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -158,8 +158,7 @@ pub fn store_jwt(jwt: &str) -> Result<(), CloudError> {
     {
         use std::os::unix::fs::PermissionsExt;
         let perms = std::fs::Permissions::from_mode(0o600);
-        std::fs::set_permissions(&path, perms)
-            .map_err(|e| CloudError::Keychain(e.to_string()))?;
+        std::fs::set_permissions(&path, perms).map_err(|e| CloudError::Keychain(e.to_string()))?;
     }
 
     Ok(())
@@ -168,7 +167,9 @@ pub fn store_jwt(jwt: &str) -> Result<(), CloudError> {
 /// Load JWT from OS keychain / secure storage.
 pub fn load_jwt() -> Option<String> {
     let path = config::shepherd_dir().join(".jwt");
-    std::fs::read_to_string(&path).ok().map(|s| s.trim().to_string())
+    std::fs::read_to_string(&path)
+        .ok()
+        .map(|s| s.trim().to_string())
 }
 
 /// Delete JWT from keychain (logout).
@@ -209,14 +210,20 @@ mod tests {
     fn login_url_github() {
         let client = test_client();
         let url = client.login_url(Some("github"), None);
-        assert_eq!(url, "https://api.shepherd.codes/api/auth/login?provider=github");
+        assert_eq!(
+            url,
+            "https://api.shepherd.codes/api/auth/login?provider=github"
+        );
     }
 
     #[test]
     fn login_url_magic_link() {
         let client = test_client();
         let url = client.login_url(None, Some("user@example.com"));
-        assert_eq!(url, "https://api.shepherd.codes/api/auth/login?email=user@example.com");
+        assert_eq!(
+            url,
+            "https://api.shepherd.codes/api/auth/login?email=user@example.com"
+        );
     }
 
     #[test]
@@ -344,8 +351,13 @@ mod tests {
             plan: Plan::Pro,
             credits_balance: 100,
             trial_counts: TrialCounts {
-                logo: 2, name: 2, northstar: 2,
-                scrape: 2, crawl: 2, vision: 2, search: 2,
+                logo: 2,
+                name: 2,
+                northstar: 2,
+                scrape: 2,
+                crawl: 2,
+                vision: 2,
+                search: 2,
             },
         };
         let toml_str = toml::to_string_pretty(&profile).unwrap();
@@ -381,7 +393,9 @@ mod tests {
                 }));
         });
 
-        let client = CloudClient::with_config(CloudConfig { api_url: server.base_url() });
+        let client = CloudClient::with_config(CloudConfig {
+            api_url: server.base_url(),
+        });
         let result = client.fetch_profile("fake-jwt").await;
         assert!(result.is_ok(), "expected Ok, got {:?}", result);
         let profile = result.unwrap();
@@ -401,7 +415,9 @@ mod tests {
             then.status(401).body("Unauthorized");
         });
 
-        let client = CloudClient::with_config(CloudConfig { api_url: server.base_url() });
+        let client = CloudClient::with_config(CloudConfig {
+            api_url: server.base_url(),
+        });
         let result = client.fetch_profile("expired-jwt").await;
         assert!(matches!(result, Err(super::super::CloudError::AuthExpired)));
     }
@@ -415,7 +431,9 @@ mod tests {
             then.status(500).body("Internal Server Error");
         });
 
-        let client = CloudClient::with_config(CloudConfig { api_url: server.base_url() });
+        let client = CloudClient::with_config(CloudConfig {
+            api_url: server.base_url(),
+        });
         let result = client.fetch_profile("fake-jwt").await;
         match result {
             Err(super::super::CloudError::Api { status, .. }) => assert_eq!(status, 500),
@@ -454,8 +472,13 @@ mod tests {
             plan: Plan::Pro,
             credits_balance: 77,
             trial_counts: TrialCounts {
-                logo: 1, name: 0, northstar: 2,
-                scrape: 0, crawl: 1, vision: 0, search: 2,
+                logo: 1,
+                name: 0,
+                northstar: 2,
+                scrape: 0,
+                crawl: 1,
+                vision: 0,
+                search: 2,
             },
         };
 
@@ -519,7 +542,9 @@ mod tests {
     fn load_jwt_returns_none_when_absent() {
         let tmp = tempfile::tempdir().unwrap();
         let jwt_path = tmp.path().join(".jwt");
-        let result = std::fs::read_to_string(&jwt_path).ok().map(|s| s.trim().to_string());
+        let result = std::fs::read_to_string(&jwt_path)
+            .ok()
+            .map(|s| s.trim().to_string());
         assert!(result.is_none());
     }
 
@@ -528,7 +553,9 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let jwt_path = tmp.path().join(".jwt");
         std::fs::write(&jwt_path, "  my-jwt-token  \n").unwrap();
-        let loaded = std::fs::read_to_string(&jwt_path).ok().map(|s| s.trim().to_string());
+        let loaded = std::fs::read_to_string(&jwt_path)
+            .ok()
+            .map(|s| s.trim().to_string());
         assert_eq!(loaded, Some("my-jwt-token".to_string()));
     }
 
@@ -565,7 +592,9 @@ mod tests {
                 }));
         });
 
-        let client = CloudClient::with_config(CloudConfig { api_url: server.base_url() });
+        let client = CloudClient::with_config(CloudConfig {
+            api_url: server.base_url(),
+        });
         let profile = client.fetch_profile("fake-jwt").await.unwrap();
         assert_eq!(profile.trial_counts.logo, 1);
         assert_eq!(profile.trial_counts.name, 2);

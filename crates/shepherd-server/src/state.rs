@@ -48,7 +48,10 @@ mod tests {
             db: Arc::new(Mutex::new(db)),
             config,
             adapters: Arc::new(AdapterRegistry::default()),
-            yolo: Arc::new(YoloEngine::new(RuleSet { deny: vec![], allow: vec![] })),
+            yolo: Arc::new(YoloEngine::new(RuleSet {
+                deny: vec![],
+                allow: vec![],
+            })),
             pty: Arc::new(PtyManager::new(10, SandboxProfile::disabled())),
             event_tx: tx,
             llm_provider: None,

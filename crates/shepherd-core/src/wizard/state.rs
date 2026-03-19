@@ -37,23 +37,47 @@ impl WizardState {
             project_id: project_id.to_string(),
             current_phase: WizardPhase::NorthStar,
             phases: vec![
-                PhaseState { phase: WizardPhase::NorthStar, status: PhaseStatus::Pending, result: None },
-                PhaseState { phase: WizardPhase::NameGen, status: PhaseStatus::Pending, result: None },
-                PhaseState { phase: WizardPhase::LogoGen, status: PhaseStatus::Pending, result: None },
-                PhaseState { phase: WizardPhase::SuperpowersSetup, status: PhaseStatus::Pending, result: None },
+                PhaseState {
+                    phase: WizardPhase::NorthStar,
+                    status: PhaseStatus::Pending,
+                    result: None,
+                },
+                PhaseState {
+                    phase: WizardPhase::NameGen,
+                    status: PhaseStatus::Pending,
+                    result: None,
+                },
+                PhaseState {
+                    phase: WizardPhase::LogoGen,
+                    status: PhaseStatus::Pending,
+                    result: None,
+                },
+                PhaseState {
+                    phase: WizardPhase::SuperpowersSetup,
+                    status: PhaseStatus::Pending,
+                    result: None,
+                },
             ],
         }
     }
 
     pub fn skip_current(&mut self) {
-        if let Some(phase) = self.phases.iter_mut().find(|p| p.phase == self.current_phase) {
+        if let Some(phase) = self
+            .phases
+            .iter_mut()
+            .find(|p| p.phase == self.current_phase)
+        {
             phase.status = PhaseStatus::Skipped;
         }
         self.advance();
     }
 
     pub fn complete_current(&mut self, result: String) {
-        if let Some(phase) = self.phases.iter_mut().find(|p| p.phase == self.current_phase) {
+        if let Some(phase) = self
+            .phases
+            .iter_mut()
+            .find(|p| p.phase == self.current_phase)
+        {
             phase.status = PhaseStatus::Completed;
             phase.result = Some(result);
         }
@@ -65,11 +89,16 @@ impl WizardState {
     }
 
     pub fn is_complete(&self) -> bool {
-        self.phases.iter().all(|p| matches!(p.status, PhaseStatus::Completed | PhaseStatus::Skipped))
+        self.phases
+            .iter()
+            .all(|p| matches!(p.status, PhaseStatus::Completed | PhaseStatus::Skipped))
     }
 
     pub fn get_result(&self, phase: WizardPhase) -> Option<String> {
-        self.phases.iter().find(|p| p.phase == phase).and_then(|p| p.result.clone())
+        self.phases
+            .iter()
+            .find(|p| p.phase == phase)
+            .and_then(|p| p.result.clone())
     }
 
     fn advance(&mut self) {
@@ -79,7 +108,10 @@ impl WizardState {
             WizardPhase::LogoGen,
             WizardPhase::SuperpowersSetup,
         ];
-        let current_idx = order.iter().position(|p| *p == self.current_phase).unwrap_or(0);
+        let current_idx = order
+            .iter()
+            .position(|p| *p == self.current_phase)
+            .unwrap_or(0);
         if current_idx + 1 < order.len() {
             self.current_phase = order[current_idx + 1].clone();
         }
@@ -135,6 +167,9 @@ mod tests {
     fn test_results_flow_forward() {
         let mut state = WizardState::new("my-project");
         state.complete_current("pmf-analysis".into());
-        assert_eq!(state.get_result(WizardPhase::NorthStar).as_deref(), Some("pmf-analysis"));
+        assert_eq!(
+            state.get_result(WizardPhase::NorthStar).as_deref(),
+            Some("pmf-analysis")
+        );
     }
 }

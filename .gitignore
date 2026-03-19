@@ -4,3 +4,8 @@ node_modules/
 dist/
 src-tauri/target/
 src-tauri/gen/
+target/
+.DS_Store
+tarpaulin-report.json
+test-results/
+playwright-report/

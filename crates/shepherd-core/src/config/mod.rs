@@ -77,7 +77,8 @@ default_agent = "codex"
 default_isolation = "container"
 default_permission_mode = "auto"
 "#,
-        ).unwrap();
+        )
+        .unwrap();
         let config = load_config(Some(&project_dir)).unwrap();
         // Project overrides should take effect
         assert_eq!(config.default_agent, "codex");
@@ -132,7 +133,8 @@ default_permission_mode = "auto"
         std::fs::write(
             shepherd_dir.join("config.toml"),
             r#"default_agent = "opencode""#,
-        ).unwrap();
+        )
+        .unwrap();
         let config = load_config(Some(&project_dir)).unwrap();
         assert_eq!(config.default_agent, "opencode");
         // Other fields get project defaults (which are the same as global defaults)

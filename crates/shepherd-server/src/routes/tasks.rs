@@ -94,7 +94,10 @@ mod tests {
         }"#;
         let task: CreateTask = serde_json::from_str(json).unwrap();
         assert_eq!(task.title, "Add feature");
-        assert_eq!(task.prompt, Some("Implement the new login flow".to_string()));
+        assert_eq!(
+            task.prompt,
+            Some("Implement the new login flow".to_string())
+        );
         assert_eq!(task.repo_path, Some("/tmp/repo".to_string()));
         assert_eq!(task.isolation_mode, Some("worktree".to_string()));
         assert_eq!(task.iterm2_session_id, Some("sess-123".to_string()));

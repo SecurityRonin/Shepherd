@@ -82,12 +82,7 @@ impl From<NameCandidate> for CandidateResponse {
 impl From<DomainCheck> for DomainResponse {
     fn from(d: DomainCheck) -> Self {
         // Extract TLD from domain string (e.g., "myapp.com" -> "com")
-        let tld = d
-            .domain
-            .rsplit('.')
-            .next()
-            .unwrap_or("")
-            .to_string();
+        let tld = d.domain.rsplit('.').next().unwrap_or("").to_string();
 
         DomainResponse {
             tld,
@@ -146,7 +141,10 @@ pub async fn generate_names(
                 Err(CloudError::NotAuthenticated | CloudError::AuthExpired) => {
                     tracing::info!("Cloud auth unavailable, falling back to local LLM");
                 }
-                Err(CloudError::InsufficientCredits { required, available }) => {
+                Err(CloudError::InsufficientCredits {
+                    required,
+                    available,
+                }) => {
                     return Err((
                         StatusCode::PAYMENT_REQUIRED,
                         Json(serde_json::json!({

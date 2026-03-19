@@ -1,6 +1,6 @@
-use std::path::{Path, PathBuf};
 use super::superpowers::InstallScope;
 use super::{EcosystemPlugin, PluginDetectionResult};
+use std::path::{Path, PathBuf};
 
 /// Return the shared plugin definition for context-hub (chub).
 pub fn plugin() -> EcosystemPlugin {
@@ -9,15 +9,15 @@ pub fn plugin() -> EcosystemPlugin {
         description: "Andrew Ng's Context Hub — curated, versioned API docs for coding agents",
         compatible_agents: &["claude-code", "codex"],
         feature_key: "get-api-docs",
-        plugin_cache_dirs: &[
-            ("claude-code", ".claude/skills/get-api-docs"),
-        ],
-        user_settings_paths: &[
-            ("claude-code", ".claude/skills/get-api-docs/SKILL.md"),
-        ],
+        plugin_cache_dirs: &[("claude-code", ".claude/skills/get-api-docs")],
+        user_settings_paths: &[("claude-code", ".claude/skills/get-api-docs/SKILL.md")],
         project_settings_paths: &[],
         install_targets: &[
-            ("claude-code", true, "~/.claude/skills/get-api-docs/SKILL.md"),
+            (
+                "claude-code",
+                true,
+                "~/.claude/skills/get-api-docs/SKILL.md",
+            ),
             ("codex", true, "~/.codex/skills/get-api-docs/SKILL.md"),
         ],
         config_content: SKILL_CONTENT,
@@ -203,7 +203,10 @@ mod tests {
     #[test]
     fn test_install_config_claude_code() {
         let config = InstallConfig::for_agent("claude-code", InstallScope::User).unwrap();
-        assert!(config.target_path.to_string_lossy().contains("get-api-docs"));
+        assert!(config
+            .target_path
+            .to_string_lossy()
+            .contains("get-api-docs"));
         assert!(config.skill_content.contains("chub"));
         assert_eq!(config.npm_package, "@aisuite/chub");
     }
@@ -211,7 +214,10 @@ mod tests {
     #[test]
     fn test_install_config_codex() {
         let config = InstallConfig::for_agent("codex", InstallScope::User).unwrap();
-        assert!(config.target_path.to_string_lossy().contains("get-api-docs"));
+        assert!(config
+            .target_path
+            .to_string_lossy()
+            .contains("get-api-docs"));
     }
 
     #[test]

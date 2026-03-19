@@ -114,10 +114,7 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Some(Commands::Status) => {
-            let resp = client
-                .get(format!("{base_url}/api/tasks"))
-                .send()
-                .await?;
+            let resp = client.get(format!("{base_url}/api/tasks")).send().await?;
 
             if !resp.status().is_success() {
                 eprintln!("Error: Could not connect to Shepherd server at {base_url}");
@@ -132,9 +129,11 @@ async fn main() -> Result<()> {
                 return Ok(());
             }
 
-            let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+            let mut counts: std::collections::HashMap<String, usize> =
+                std::collections::HashMap::new();
             for task in &tasks {
-                let status = task.get("status")
+                let status = task
+                    .get("status")
                     .and_then(|s| s.as_str())
                     .unwrap_or("unknown");
                 *counts.entry(status.to_string()).or_default() += 1;
@@ -167,7 +166,12 @@ async fn main() -> Result<()> {
             }
         }
 
-        Some(Commands::New { prompt, agent, isolation, repo }) => {
+        Some(Commands::New {
+            prompt,
+            agent,
+            isolation,
+            repo,
+        }) => {
             let body = serde_json::json!({
                 "title": &prompt,
                 "prompt": &prompt,
@@ -270,10 +274,24 @@ async fn main() -> Result<()> {
                 let mut all_passed = true;
 
                 for result in &results {
-                    let name = result.get("gate_name").and_then(|v| v.as_str()).unwrap_or("?");
-                    let passed = result.get("passed").and_then(|v| v.as_bool()).unwrap_or(false);
-                    let ms = result.get("duration_ms").and_then(|v| v.as_u64()).unwrap_or(0);
-                    let icon = if passed { "PASS" } else { all_passed = false; "FAIL" };
+                    let name = result
+                        .get("gate_name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("?");
+                    let passed = result
+                        .get("passed")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    let ms = result
+                        .get("duration_ms")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
+                    let icon = if passed {
+                        "PASS"
+                    } else {
+                        all_passed = false;
+                        "FAIL"
+                    };
                     println!("  {icon} {name} ({ms}ms)");
                 }
 
@@ -346,10 +364,7 @@ async fn main() -> Result<()> {
         }
 
         Some(Commands::Stop) => {
-            let resp = client
-                .post(format!("{base_url}/api/shutdown"))
-                .send()
-                .await;
+            let resp = client.post(format!("{base_url}/api/shutdown")).send().await;
 
             match resp {
                 Ok(r) if r.status().is_success() => println!("Shepherd server stopped."),

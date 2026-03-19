@@ -143,11 +143,7 @@ pub fn get_events_by_type(
 }
 
 /// Search events by content substring.
-pub fn search_events(
-    conn: &Connection,
-    task_id: i64,
-    query: &str,
-) -> Result<Vec<TimelineEvent>> {
+pub fn search_events(conn: &Connection, task_id: i64, query: &str) -> Result<Vec<TimelineEvent>> {
     let pattern = format!("%{query}%");
     let mut stmt = conn.prepare(
         "SELECT id, task_id, session_id, event_type, summary, content, metadata, timestamp
@@ -210,10 +206,7 @@ pub fn classify_output(raw: &str) -> (EventType, String) {
 
     // Permission patterns
     if trimmed.contains("Allow") && (trimmed.contains("?") || trimmed.contains("(y/n)")) {
-        return (
-            EventType::PermissionRequest,
-            truncate_summary(trimmed),
-        );
+        return (EventType::PermissionRequest, truncate_summary(trimmed));
     }
 
     // Tool call patterns
@@ -222,7 +215,10 @@ pub fn classify_output(raw: &str) -> (EventType, String) {
     }
 
     // File change patterns
-    if trimmed.contains("Created file") || trimmed.contains("Modified file") || trimmed.contains("Wrote to") {
+    if trimmed.contains("Created file")
+        || trimmed.contains("Modified file")
+        || trimmed.contains("Wrote to")
+    {
         return (EventType::FileChange, truncate_summary(trimmed));
     }
 
@@ -293,12 +289,15 @@ mod tests {
     fn record_and_get_event() {
         let conn = setup_db();
         let id = record_event(
-            &conn, 1, 1,
+            &conn,
+            1,
+            1,
             &EventType::SessionStart,
             "Session started",
             "Agent claude-code started",
             None,
-        ).unwrap();
+        )
+        .unwrap();
         assert!(id > 0);
 
         let timeline = get_timeline(&conn, 1).unwrap();
@@ -311,8 +310,26 @@ mod tests {
     fn multiple_events_ordered() {
         let conn = setup_db();
         record_event(&conn, 1, 1, &EventType::SessionStart, "Start", "", None).unwrap();
-        record_event(&conn, 1, 1, &EventType::ToolCall, "Running tests", "cargo test", None).unwrap();
-        record_event(&conn, 1, 1, &EventType::Output, "Tests passed", "test result: ok", None).unwrap();
+        record_event(
+            &conn,
+            1,
+            1,
+            &EventType::ToolCall,
+            "Running tests",
+            "cargo test",
+            None,
+        )
+        .unwrap();
+        record_event(
+            &conn,
+            1,
+            1,
+            &EventType::Output,
+            "Tests passed",
+            "test result: ok",
+            None,
+        )
+        .unwrap();
         record_event(&conn, 1, 1, &EventType::SessionEnd, "Done", "", None).unwrap();
 
         let timeline = get_timeline(&conn, 1).unwrap();
@@ -340,9 +357,27 @@ mod tests {
     #[test]
     fn get_events_by_type_filters() {
         let conn = setup_db();
-        record_event(&conn, 1, 1, &EventType::ToolCall, "Tool", "cargo test", None).unwrap();
+        record_event(
+            &conn,
+            1,
+            1,
+            &EventType::ToolCall,
+            "Tool",
+            "cargo test",
+            None,
+        )
+        .unwrap();
         record_event(&conn, 1, 1, &EventType::Output, "Output", "ok", None).unwrap();
-        record_event(&conn, 1, 1, &EventType::ToolCall, "Tool2", "cargo build", None).unwrap();
+        record_event(
+            &conn,
+            1,
+            1,
+            &EventType::ToolCall,
+            "Tool2",
+            "cargo build",
+            None,
+        )
+        .unwrap();
 
         let tools = get_events_by_type(&conn, 1, &EventType::ToolCall).unwrap();
         assert_eq!(tools.len(), 2);
@@ -351,8 +386,26 @@ mod tests {
     #[test]
     fn search_events_finds_content() {
         let conn = setup_db();
-        record_event(&conn, 1, 1, &EventType::Output, "Test run", "test result: ok. 42 passed", None).unwrap();
-        record_event(&conn, 1, 1, &EventType::Error, "Build error", "error[E0308]: mismatched types", None).unwrap();
+        record_event(
+            &conn,
+            1,
+            1,
+            &EventType::Output,
+            "Test run",
+            "test result: ok. 42 passed",
+            None,
+        )
+        .unwrap();
+        record_event(
+            &conn,
+            1,
+            1,
+            &EventType::Error,
+            "Build error",
+            "error[E0308]: mismatched types",
+            None,
+        )
+        .unwrap();
 
         let results = search_events(&conn, 1, "error").unwrap();
         assert_eq!(results.len(), 1);
@@ -362,7 +415,16 @@ mod tests {
     #[test]
     fn search_events_finds_summary() {
         let conn = setup_db();
-        record_event(&conn, 1, 1, &EventType::FileChange, "Modified auth.rs", "", None).unwrap();
+        record_event(
+            &conn,
+            1,
+            1,
+            &EventType::FileChange,
+            "Modified auth.rs",
+            "",
+            None,
+        )
+        .unwrap();
         record_event(&conn, 1, 1, &EventType::Output, "Done", "", None).unwrap();
 
         let results = search_events(&conn, 1, "auth").unwrap();
@@ -430,11 +492,16 @@ mod tests {
     #[test]
     fn event_type_serde_roundtrip() {
         let types = vec![
-            EventType::SessionStart, EventType::SessionEnd,
-            EventType::Input, EventType::Output,
-            EventType::ToolCall, EventType::ToolResult,
-            EventType::LlmCall, EventType::Error,
-            EventType::PermissionRequest, EventType::PermissionResolve,
+            EventType::SessionStart,
+            EventType::SessionEnd,
+            EventType::Input,
+            EventType::Output,
+            EventType::ToolCall,
+            EventType::ToolResult,
+            EventType::LlmCall,
+            EventType::Error,
+            EventType::PermissionRequest,
+            EventType::PermissionResolve,
             EventType::FileChange,
         ];
         for t in types {
@@ -448,7 +515,16 @@ mod tests {
     fn metadata_stored_and_retrieved() {
         let conn = setup_db();
         let meta = r#"{"tool":"bash","args":"cargo test"}"#;
-        record_event(&conn, 1, 1, &EventType::ToolCall, "Test", "cargo test", Some(meta)).unwrap();
+        record_event(
+            &conn,
+            1,
+            1,
+            &EventType::ToolCall,
+            "Test",
+            "cargo test",
+            Some(meta),
+        )
+        .unwrap();
 
         let timeline = get_timeline(&conn, 1).unwrap();
         assert_eq!(timeline[0].metadata.as_deref(), Some(meta));
@@ -544,8 +620,14 @@ mod tests {
         assert_eq!(EventType::Output.to_string(), "output");
         assert_eq!(EventType::ToolResult.to_string(), "tool_result");
         assert_eq!(EventType::LlmCall.to_string(), "llm_call");
-        assert_eq!(EventType::PermissionRequest.to_string(), "permission_request");
-        assert_eq!(EventType::PermissionResolve.to_string(), "permission_resolve");
+        assert_eq!(
+            EventType::PermissionRequest.to_string(),
+            "permission_request"
+        );
+        assert_eq!(
+            EventType::PermissionResolve.to_string(),
+            "permission_resolve"
+        );
         assert_eq!(EventType::FileChange.to_string(), "file_change");
     }
 
@@ -591,12 +673,57 @@ mod tests {
     fn events_from_multiple_sessions_same_task() {
         let conn = setup_db();
         // Session 1
-        record_event(&conn, 1, 1, &EventType::SessionStart, "Session 1 start", "", None).unwrap();
-        record_event(&conn, 1, 1, &EventType::Output, "Session 1 output", "done", None).unwrap();
-        record_event(&conn, 1, 1, &EventType::SessionEnd, "Session 1 end", "", None).unwrap();
+        record_event(
+            &conn,
+            1,
+            1,
+            &EventType::SessionStart,
+            "Session 1 start",
+            "",
+            None,
+        )
+        .unwrap();
+        record_event(
+            &conn,
+            1,
+            1,
+            &EventType::Output,
+            "Session 1 output",
+            "done",
+            None,
+        )
+        .unwrap();
+        record_event(
+            &conn,
+            1,
+            1,
+            &EventType::SessionEnd,
+            "Session 1 end",
+            "",
+            None,
+        )
+        .unwrap();
         // Session 2 (retry)
-        record_event(&conn, 1, 2, &EventType::SessionStart, "Session 2 start", "", None).unwrap();
-        record_event(&conn, 1, 2, &EventType::SessionEnd, "Session 2 end", "", None).unwrap();
+        record_event(
+            &conn,
+            1,
+            2,
+            &EventType::SessionStart,
+            "Session 2 start",
+            "",
+            None,
+        )
+        .unwrap();
+        record_event(
+            &conn,
+            1,
+            2,
+            &EventType::SessionEnd,
+            "Session 2 end",
+            "",
+            None,
+        )
+        .unwrap();
 
         let timeline = get_timeline(&conn, 1).unwrap();
         assert_eq!(timeline.len(), 5);
@@ -645,12 +772,15 @@ mod tests {
         let conn = setup_db();
         let long_content = "x".repeat(10_000);
         let id = record_event(
-            &conn, 1, 1,
+            &conn,
+            1,
+            1,
             &EventType::Output,
             "Long output",
             &long_content,
             None,
-        ).unwrap();
+        )
+        .unwrap();
         assert!(id > 0);
 
         let timeline = get_timeline(&conn, 1).unwrap();

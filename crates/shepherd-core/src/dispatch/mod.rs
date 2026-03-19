@@ -7,12 +7,12 @@ use crate::db::models::{Task, TaskStatus};
 use crate::events::{PermissionEvent, ServerEvent, TaskEvent};
 use crate::pty::PtyManager;
 use crate::yolo::{Decision, YoloEngine};
+use anyhow::Result;
 use monitor::{Detection, SessionMonitor};
 use rusqlite::Connection;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{broadcast, Mutex};
-use anyhow::Result;
 
 /// Manages dispatching queued tasks to agent PTY sessions.
 pub struct TaskDispatcher {
@@ -126,11 +126,7 @@ impl TaskDispatcher {
     }
 
     /// Handle PTY output for a task — run through SessionMonitor.
-    pub async fn handle_pty_output(
-        &self,
-        task_id: i64,
-        output: &str,
-    ) -> Result<Option<Detection>> {
+    pub async fn handle_pty_output(&self, task_id: i64, output: &str) -> Result<Option<Detection>> {
         let monitors = self.monitors.lock().await;
         let monitor = match monitors.get(&task_id) {
             Some(m) => m,
@@ -303,7 +299,10 @@ mod tests {
         let lock_manager = Arc::new(Mutex::new(LockManager::new()));
 
         let dispatcher = TaskDispatcher::new(db, adapters, pty, yolo, lock_manager, tx);
-        let result = dispatcher.handle_pty_output(999, "some output").await.unwrap();
+        let result = dispatcher
+            .handle_pty_output(999, "some output")
+            .await
+            .unwrap();
         assert!(result.is_none());
     }
 
@@ -361,7 +360,10 @@ mod tests {
         let dispatcher = TaskDispatcher::new(db, adapters, pty, yolo, lock_manager, tx);
         let result = dispatcher.approve_task(999).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("No active session"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("No active session"));
     }
 
     #[tokio::test]
@@ -380,7 +382,10 @@ mod tests {
         let dispatcher = TaskDispatcher::new(db, adapters, pty, yolo, lock_manager, tx);
         let result = dispatcher.deny_task(999).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("No active session"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("No active session"));
     }
 
     #[tokio::test]
@@ -465,7 +470,9 @@ mod tests {
         // Verify status was updated to done
         let conn = db.lock().await;
         let status_str: String = conn
-            .query_row("SELECT status FROM tasks WHERE id = 1", [], |row| row.get(0))
+            .query_row("SELECT status FROM tasks WHERE id = 1", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(status_str, "done");
     }
@@ -515,7 +522,9 @@ mod tests {
         // Verify status was updated to error
         let conn = db.lock().await;
         let status_str: String = conn
-            .query_row("SELECT status FROM tasks WHERE id = 1", [], |row| row.get(0))
+            .query_row("SELECT status FROM tasks WHERE id = 1", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(status_str, "error");
     }
@@ -547,7 +556,9 @@ mod tests {
         // Verify the task status was set to error
         let conn = db.lock().await;
         let status_str: String = conn
-            .query_row("SELECT status FROM tasks WHERE id = 1", [], |row| row.get(0))
+            .query_row("SELECT status FROM tasks WHERE id = 1", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(status_str, "error");
     }
@@ -593,10 +604,7 @@ mod tests {
             .handle_pty_output(1, "Allow bash command: cargo test?")
             .await
             .unwrap();
-        assert!(matches!(
-            result,
-            Some(Detection::PermissionRequest { .. })
-        ));
+        assert!(matches!(result, Some(Detection::PermissionRequest { .. })));
 
         // Should have emitted a PermissionRequested event
         let event = rx.try_recv().unwrap();
@@ -611,7 +619,9 @@ mod tests {
         // Status should be input
         let conn = db.lock().await;
         let status_str: String = conn
-            .query_row("SELECT status FROM tasks WHERE id = 1", [], |row| row.get(0))
+            .query_row("SELECT status FROM tasks WHERE id = 1", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(status_str, "input");
     }
@@ -665,10 +675,7 @@ mod tests {
             .handle_pty_output(1, "Allow bash command: cargo test?")
             .await
             .unwrap();
-        assert!(matches!(
-            result,
-            Some(Detection::PermissionRequest { .. })
-        ));
+        assert!(matches!(result, Some(Detection::PermissionRequest { .. })));
     }
 
     #[tokio::test]
@@ -747,12 +754,13 @@ mod tests {
         let db = Arc::new(Mutex::new(conn));
         let adapters = Arc::new(adapters);
         let pty = Arc::new(PtyManager::new(4, SandboxProfile::disabled()));
-        let yolo = Arc::new(YoloEngine::new(RuleSet { deny: vec![], allow: vec![] }));
+        let yolo = Arc::new(YoloEngine::new(RuleSet {
+            deny: vec![],
+            allow: vec![],
+        }));
         let locks = Arc::new(Mutex::new(LockManager::new()));
 
-        let dispatcher = TaskDispatcher::new(
-            db.clone(), adapters, pty, yolo, locks, tx,
-        );
+        let dispatcher = TaskDispatcher::new(db.clone(), adapters, pty, yolo, locks, tx);
 
         let result = dispatcher.poll_and_dispatch().await;
         assert!(result.is_ok());
@@ -764,7 +772,9 @@ mod tests {
         // Check task status is now "running"
         let conn = db.lock().await;
         let status_str: String = conn
-            .query_row("SELECT status FROM tasks WHERE id = 1", [], |row| row.get(0))
+            .query_row("SELECT status FROM tasks WHERE id = 1", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(status_str, "running");
 
@@ -800,7 +810,10 @@ mod tests {
         let db = Arc::new(Mutex::new(conn));
         let adapters = Arc::new(adapters);
         let pty = Arc::new(PtyManager::new(4, SandboxProfile::disabled()));
-        let yolo = Arc::new(YoloEngine::new(RuleSet { deny: vec![], allow: vec![] }));
+        let yolo = Arc::new(YoloEngine::new(RuleSet {
+            deny: vec![],
+            allow: vec![],
+        }));
         let locks = Arc::new(Mutex::new(LockManager::new()));
 
         let dispatcher = TaskDispatcher::new(db.clone(), adapters, pty, yolo, locks, tx);
@@ -823,7 +836,10 @@ mod tests {
         let db = Arc::new(Mutex::new(conn));
         let adapters = Arc::new(AdapterRegistry::new());
         let pty = Arc::new(PtyManager::new(4, SandboxProfile::disabled()));
-        let yolo = Arc::new(YoloEngine::new(RuleSet { deny: vec![], allow: vec![] }));
+        let yolo = Arc::new(YoloEngine::new(RuleSet {
+            deny: vec![],
+            allow: vec![],
+        }));
         let lock_manager = Arc::new(Mutex::new(LockManager::new()));
 
         let dispatcher = TaskDispatcher::new(db.clone(), adapters, pty, yolo, lock_manager, tx);
@@ -853,7 +869,9 @@ mod tests {
         // Verify status was updated to running
         let conn = db.lock().await;
         let status_str: String = conn
-            .query_row("SELECT status FROM tasks WHERE id = 1", [], |row| row.get(0))
+            .query_row("SELECT status FROM tasks WHERE id = 1", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(status_str, "running");
     }
@@ -870,7 +888,10 @@ mod tests {
         let db = Arc::new(Mutex::new(conn));
         let adapters = Arc::new(AdapterRegistry::new());
         let pty = Arc::new(PtyManager::new(4, SandboxProfile::disabled()));
-        let yolo = Arc::new(YoloEngine::new(RuleSet { deny: vec![], allow: vec![] }));
+        let yolo = Arc::new(YoloEngine::new(RuleSet {
+            deny: vec![],
+            allow: vec![],
+        }));
         let lock_manager = Arc::new(Mutex::new(LockManager::new()));
 
         let dispatcher = TaskDispatcher::new(db.clone(), adapters, pty, yolo, lock_manager, tx);
@@ -898,7 +919,9 @@ mod tests {
         // Verify status was updated to running
         let conn = db.lock().await;
         let status_str: String = conn
-            .query_row("SELECT status FROM tasks WHERE id = 1", [], |row| row.get(0))
+            .query_row("SELECT status FROM tasks WHERE id = 1", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(status_str, "running");
     }
@@ -919,7 +942,10 @@ mod tests {
         let db = Arc::new(Mutex::new(conn));
         let adapters = Arc::new(adapters);
         let pty = Arc::new(PtyManager::new(4, SandboxProfile::disabled()));
-        let yolo = Arc::new(YoloEngine::new(RuleSet { deny: vec![], allow: vec![] }));
+        let yolo = Arc::new(YoloEngine::new(RuleSet {
+            deny: vec![],
+            allow: vec![],
+        }));
         let locks = Arc::new(Mutex::new(LockManager::new()));
 
         let dispatcher = TaskDispatcher::new(db.clone(), adapters, pty.clone(), yolo, locks, tx);
@@ -950,7 +976,10 @@ mod tests {
         let db = Arc::new(Mutex::new(conn));
         let adapters = Arc::new(adapters);
         let pty = Arc::new(PtyManager::new(4, SandboxProfile::disabled()));
-        let yolo = Arc::new(YoloEngine::new(RuleSet { deny: vec![], allow: vec![] }));
+        let yolo = Arc::new(YoloEngine::new(RuleSet {
+            deny: vec![],
+            allow: vec![],
+        }));
         let locks = Arc::new(Mutex::new(LockManager::new()));
 
         let dispatcher = TaskDispatcher::new(db.clone(), adapters, pty.clone(), yolo, locks, tx);
@@ -982,7 +1011,10 @@ mod tests {
         let db = Arc::new(Mutex::new(conn));
         let adapters = Arc::new(adapters);
         let pty = Arc::new(PtyManager::new(4, SandboxProfile::disabled()));
-        let yolo = Arc::new(YoloEngine::new(RuleSet { deny: vec![], allow: vec![] }));
+        let yolo = Arc::new(YoloEngine::new(RuleSet {
+            deny: vec![],
+            allow: vec![],
+        }));
         let locks = Arc::new(Mutex::new(LockManager::new()));
 
         let dispatcher = TaskDispatcher::new(db, adapters, pty, yolo, locks, tx);

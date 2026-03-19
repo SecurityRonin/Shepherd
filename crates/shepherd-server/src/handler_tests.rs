@@ -7,9 +7,9 @@ mod tests {
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
     use http_body_util::BodyExt; // for `collect`
-    use tower::ServiceExt; // for `oneshot`
     use std::sync::Arc;
     use tokio::sync::{broadcast, Mutex};
+    use tower::ServiceExt; // for `oneshot`
 
     /// Build a minimal AppState for testing (no LLM provider, no cloud client).
     fn test_state() -> Arc<crate::state::AppState> {
@@ -20,7 +20,10 @@ mod tests {
             config: shepherd_core::config::types::ShepherdConfig::default(),
             adapters: Arc::new(shepherd_core::adapters::AdapterRegistry::new()),
             yolo: Arc::new(shepherd_core::yolo::YoloEngine::new(
-                shepherd_core::yolo::rules::RuleSet { deny: vec![], allow: vec![] },
+                shepherd_core::yolo::rules::RuleSet {
+                    deny: vec![],
+                    allow: vec![],
+                },
             )),
             pty: Arc::new(shepherd_core::pty::PtyManager::new(
                 4,
@@ -45,10 +48,7 @@ mod tests {
 
     /// Helper to make a GET request.
     fn get(uri: &str) -> Request<Body> {
-        Request::builder()
-            .uri(uri)
-            .body(Body::empty())
-            .unwrap()
+        Request::builder().uri(uri).body(Body::empty()).unwrap()
     }
 
     /// Helper to make a DELETE request.
@@ -83,10 +83,13 @@ mod tests {
         let state = test_state();
         let app = crate::build_router(state);
         let resp = app
-            .oneshot(json_post("/api/tasks", serde_json::json!({
-                "title": "Test task",
-                "agent_id": "claude-code"
-            })))
+            .oneshot(json_post(
+                "/api/tasks",
+                serde_json::json!({
+                    "title": "Test task",
+                    "agent_id": "claude-code"
+                }),
+            ))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::CREATED);
@@ -101,10 +104,13 @@ mod tests {
         // Create task
         let app = crate::build_router(state.clone());
         let resp = app
-            .oneshot(json_post("/api/tasks", serde_json::json!({
-                "title": "To delete",
-                "agent_id": "claude-code"
-            })))
+            .oneshot(json_post(
+                "/api/tasks",
+                serde_json::json!({
+                    "title": "To delete",
+                    "agent_id": "claude-code"
+                }),
+            ))
             .await
             .unwrap();
         let body = body_json(resp).await;
@@ -134,15 +140,21 @@ mod tests {
         let state = test_state();
         let app = crate::build_router(state);
         let resp = app
-            .oneshot(json_post("/api/logogen", serde_json::json!({
-                "product_name": "Test",
-                "style": "minimal"
-            })))
+            .oneshot(json_post(
+                "/api/logogen",
+                serde_json::json!({
+                    "product_name": "Test",
+                    "style": "minimal"
+                }),
+            ))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
         let body = body_json(resp).await;
-        assert!(body["error"].as_str().unwrap().contains("No generation provider"));
+        assert!(body["error"]
+            .as_str()
+            .unwrap()
+            .contains("No generation provider"));
     }
 
     #[tokio::test]
@@ -150,10 +162,13 @@ mod tests {
         let state = test_state();
         let app = crate::build_router(state);
         let resp = app
-            .oneshot(json_post("/api/logogen/export", serde_json::json!({
-                "image_base64": "not-valid",
-                "product_name": "Test"
-            })))
+            .oneshot(json_post(
+                "/api/logogen/export",
+                serde_json::json!({
+                    "image_base64": "not-valid",
+                    "product_name": "Test"
+                }),
+            ))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
@@ -166,14 +181,20 @@ mod tests {
         let state = test_state();
         let app = crate::build_router(state);
         let resp = app
-            .oneshot(json_post("/api/namegen", serde_json::json!({
-                "description": "A test product"
-            })))
+            .oneshot(json_post(
+                "/api/namegen",
+                serde_json::json!({
+                    "description": "A test product"
+                }),
+            ))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
         let body = body_json(resp).await;
-        assert!(body["error"].as_str().unwrap().contains("No generation provider"));
+        assert!(body["error"]
+            .as_str()
+            .unwrap()
+            .contains("No generation provider"));
     }
 
     // -- Northstar handler tests ----------------------------------------------
@@ -193,11 +214,14 @@ mod tests {
         let state = test_state();
         let app = crate::build_router(state);
         let resp = app
-            .oneshot(json_post("/api/northstar/phase", serde_json::json!({
-                "product_name": "Test",
-                "product_description": "A test",
-                "phase_id": 99
-            })))
+            .oneshot(json_post(
+                "/api/northstar/phase",
+                serde_json::json!({
+                    "product_name": "Test",
+                    "product_description": "A test",
+                    "phase_id": 99
+                }),
+            ))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
@@ -210,11 +234,14 @@ mod tests {
         let state = test_state();
         let app = crate::build_router(state);
         let resp = app
-            .oneshot(json_post("/api/northstar/phase", serde_json::json!({
-                "product_name": "Test",
-                "product_description": "A test",
-                "phase_id": 1
-            })))
+            .oneshot(json_post(
+                "/api/northstar/phase",
+                serde_json::json!({
+                    "product_name": "Test",
+                    "product_description": "A test",
+                    "phase_id": 1
+                }),
+            ))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
@@ -318,11 +345,7 @@ mod tests {
             isolation_mode: None,
             iterm2_session_id: None,
         };
-        let result = crate::routes::tasks::create_task(
-            State(state),
-            Json(input),
-        )
-        .await;
+        let result = crate::routes::tasks::create_task(State(state), Json(input)).await;
         let (status, Json(body)) = result.unwrap();
         assert_eq!(status, StatusCode::CREATED);
         assert_eq!(body["title"], "Direct test");
@@ -341,20 +364,14 @@ mod tests {
             isolation_mode: None,
             iterm2_session_id: None,
         };
-        let (_, Json(created)) = crate::routes::tasks::create_task(
-            State(state.clone()),
-            Json(input),
-        )
-        .await
-        .unwrap();
+        let (_, Json(created)) =
+            crate::routes::tasks::create_task(State(state.clone()), Json(input))
+                .await
+                .unwrap();
         let id = created["id"].as_i64().unwrap();
 
         // Delete it
-        let result = crate::routes::tasks::delete_task(
-            State(state),
-            Path(id),
-        )
-        .await;
+        let result = crate::routes::tasks::delete_task(State(state), Path(id)).await;
         let Json(body) = result.unwrap();
         assert_eq!(body["deleted"], id);
     }
@@ -364,11 +381,7 @@ mod tests {
         // delete_task's SQL DELETE silently succeeds even for missing IDs,
         // so the handler returns Ok with the id echoed back.
         let state = test_state();
-        let result = crate::routes::tasks::delete_task(
-            State(state),
-            Path(99999i64),
-        )
-        .await;
+        let result = crate::routes::tasks::delete_task(State(state), Path(99999i64)).await;
         let Json(body) = result.unwrap();
         assert_eq!(body["deleted"], 99999);
     }
@@ -384,15 +397,14 @@ mod tests {
             style: "minimal".to_string(),
             colors: vec![],
         };
-        let result = crate::routes::logogen::generate_logo(
-            State(state),
-            Json(req),
-        )
-        .await;
+        let result = crate::routes::logogen::generate_logo(State(state), Json(req)).await;
         assert!(result.is_err());
         let (status, Json(body)) = result.unwrap_err();
         assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-        assert!(body["error"].as_str().unwrap().contains("No generation provider"));
+        assert!(body["error"]
+            .as_str()
+            .unwrap()
+            .contains("No generation provider"));
     }
 
     #[tokio::test]
@@ -418,15 +430,14 @@ mod tests {
             vibes: vec![],
             count: Some(5),
         };
-        let result = crate::routes::namegen::generate_names(
-            State(state),
-            Json(req),
-        )
-        .await;
+        let result = crate::routes::namegen::generate_names(State(state), Json(req)).await;
         assert!(result.is_err());
         let (status, Json(body)) = result.unwrap_err();
         assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-        assert!(body["error"].as_str().unwrap().contains("No generation provider"));
+        assert!(body["error"]
+            .as_str()
+            .unwrap()
+            .contains("No generation provider"));
     }
 
     // -- Direct: Northstar ----------------------------------------------------
@@ -447,11 +458,7 @@ mod tests {
             phase_id: 99,
             previous_context: None,
         };
-        let result = crate::routes::northstar::execute_phase(
-            State(state),
-            Json(req),
-        )
-        .await;
+        let result = crate::routes::northstar::execute_phase(State(state), Json(req)).await;
         assert!(result.is_err());
         let (status, Json(body)) = result.unwrap_err();
         assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -467,15 +474,14 @@ mod tests {
             phase_id: 1,
             previous_context: None,
         };
-        let result = crate::routes::northstar::execute_phase(
-            State(state),
-            Json(req),
-        )
-        .await;
+        let result = crate::routes::northstar::execute_phase(State(state), Json(req)).await;
         assert!(result.is_err());
         let (status, Json(body)) = result.unwrap_err();
         assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-        assert!(body["error"].as_str().unwrap().contains("No generation provider"));
+        assert!(body["error"]
+            .as_str()
+            .unwrap()
+            .contains("No generation provider"));
     }
 
     // -- Direct: Cloud --------------------------------------------------------
@@ -483,10 +489,7 @@ mod tests {
     #[tokio::test]
     async fn direct_cloud_status() {
         let state = test_state();
-        let Json(result) = crate::routes::cloud::cloud_status(
-            State(state),
-        )
-        .await;
+        let Json(result) = crate::routes::cloud::cloud_status(State(state)).await;
         assert!(!result.cloud_available);
         assert!(!result.authenticated);
         assert!(result.plan.is_none());
@@ -496,14 +499,14 @@ mod tests {
     #[tokio::test]
     async fn direct_cloud_balance_unavailable() {
         let state = test_state();
-        let result = crate::routes::cloud::cloud_balance(
-            State(state),
-        )
-        .await;
+        let result = crate::routes::cloud::cloud_balance(State(state)).await;
         assert!(result.is_err());
         let (status, Json(body)) = result.unwrap_err();
         assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-        assert!(body["error"].as_str().unwrap().contains("Cloud features not available"));
+        assert!(body["error"]
+            .as_str()
+            .unwrap()
+            .contains("Cloud features not available"));
     }
 
     #[tokio::test]
@@ -521,11 +524,7 @@ mod tests {
     #[tokio::test]
     async fn direct_gates_not_found() {
         let state = test_state();
-        let result = crate::routes::gates::run_task_gates(
-            State(state),
-            Path(99999i64),
-        )
-        .await;
+        let result = crate::routes::gates::run_task_gates(State(state), Path(99999i64)).await;
         assert!(result.is_err());
         let (status, Json(body)) = result.unwrap_err();
         assert_eq!(status, StatusCode::NOT_FOUND);
@@ -542,12 +541,7 @@ mod tests {
             auto_commit_message: true,
             run_gates: false,
         };
-        let result = crate::routes::pr::create_pr(
-            State(state),
-            Path(99999i64),
-            Json(req),
-        )
-        .await;
+        let result = crate::routes::pr::create_pr(State(state), Path(99999i64), Json(req)).await;
         assert!(result.is_err());
         let (status, Json(body)) = result.unwrap_err();
         assert_eq!(status, StatusCode::NOT_FOUND);

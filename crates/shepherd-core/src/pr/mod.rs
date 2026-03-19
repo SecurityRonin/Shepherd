@@ -89,7 +89,9 @@ where
         steps.push(step);
         edited.clone()
     } else if input.auto_commit_message {
-        let diff = github::git_diff_staged(project_dir).await.unwrap_or_default();
+        let diff = github::git_diff_staged(project_dir)
+            .await
+            .unwrap_or_default();
         let msg = if let Some(provider) = llm {
             commit::generate_commit_message(provider, &diff, &input.task_title)
                 .await
@@ -216,13 +218,8 @@ where
         .await
         .unwrap_or_default();
     let pr_body = github::build_pr_body(&input.task_title, &diff_stat, &steps);
-    let pr_step_result = github::gh_create_pr(
-        project_dir,
-        &input.task_title,
-        &pr_body,
-        &input.base_branch,
-    )
-    .await;
+    let pr_step_result =
+        github::gh_create_pr(project_dir, &input.task_title, &pr_body, &input.base_branch).await;
     let pr_step = match &pr_step_result {
         Ok(url) => {
             pr_url = Some(url.clone());
@@ -341,7 +338,10 @@ mod tests {
         assert_eq!(deser.steps.len(), 1);
         assert_eq!(deser.steps[0].name, "Test");
         assert_eq!(deser.steps[0].status, StepStatus::Passed);
-        assert_eq!(deser.pr_url, Some("https://github.com/org/repo/pull/1".into()));
+        assert_eq!(
+            deser.pr_url,
+            Some("https://github.com/org/repo/pull/1".into())
+        );
         assert!(deser.success);
     }
 
@@ -392,17 +392,17 @@ mod tests {
             run_gates: true,
             cleanup_worktree: true,
         };
-        assert_eq!(input.edited_commit_message.as_deref(), Some("fix: resolve null pointer"));
+        assert_eq!(
+            input.edited_commit_message.as_deref(),
+            Some("fix: resolve null pointer")
+        );
         assert!(input.run_gates);
         assert!(input.cleanup_worktree);
     }
 
     #[tokio::test]
     async fn run_step_success() {
-        let step = run_step("Test Step", || async {
-            Ok("all good".to_string())
-        })
-        .await;
+        let step = run_step("Test Step", || async { Ok("all good".to_string()) }).await;
         assert_eq!(step.name, "Test Step");
         assert_eq!(step.status, StepStatus::Passed);
         assert_eq!(step.output, "all good");
@@ -580,7 +580,9 @@ mod tests {
                     },
                 })
             }
-            fn name(&self) -> &str { "mock" }
+            fn name(&self) -> &str {
+                "mock"
+            }
         }
 
         let tmp = tempfile::tempdir().unwrap();
@@ -868,7 +870,10 @@ mod tests {
             success: true,
         };
         assert!(result.success);
-        assert_eq!(result.pr_url.unwrap(), "https://github.com/org/repo/pull/42");
+        assert_eq!(
+            result.pr_url.unwrap(),
+            "https://github.com/org/repo/pull/42"
+        );
         assert_eq!(result.steps.len(), 2);
     }
 

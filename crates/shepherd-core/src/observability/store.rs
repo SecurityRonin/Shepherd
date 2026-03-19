@@ -1,6 +1,6 @@
+use super::metrics::{AgentSpending, ModelSpending, SpendingSummary, TaskMetrics};
 use anyhow::Result;
 use rusqlite::{params, Connection};
-use super::metrics::{TaskMetrics, SpendingSummary, AgentSpending, ModelSpending};
 
 /// Create observability tables if they don't exist.
 pub fn migrate(conn: &Connection) -> Result<()> {
@@ -82,25 +82,23 @@ pub fn get_task_metrics(conn: &Connection, task_id: i64) -> Result<Option<TaskMe
 
 /// Get total cost for an agent today.
 pub fn get_agent_daily_cost(conn: &Connection, agent_id: &str) -> Result<f64> {
-    let cost: f64 = conn
-        .query_row(
-            "SELECT COALESCE(SUM(total_cost_usd), 0.0) FROM task_metrics
+    let cost: f64 = conn.query_row(
+        "SELECT COALESCE(SUM(total_cost_usd), 0.0) FROM task_metrics
              WHERE agent_id = ?1 AND DATE(created_at) = DATE('now')",
-            params![agent_id],
-            |row| row.get(0),
-        )?;
+        params![agent_id],
+        |row| row.get(0),
+    )?;
     Ok(cost)
 }
 
 /// Get total cost across all agents today.
 pub fn get_global_daily_cost(conn: &Connection) -> Result<f64> {
-    let cost: f64 = conn
-        .query_row(
-            "SELECT COALESCE(SUM(total_cost_usd), 0.0) FROM task_metrics
+    let cost: f64 = conn.query_row(
+        "SELECT COALESCE(SUM(total_cost_usd), 0.0) FROM task_metrics
              WHERE DATE(created_at) = DATE('now')",
-            [],
-            |row| row.get(0),
-        )?;
+        [],
+        |row| row.get(0),
+    )?;
     Ok(cost)
 }
 
@@ -286,8 +284,16 @@ mod tests {
     #[test]
     fn spending_summary_totals() {
         let conn = setup_db();
-        upsert_metrics(&conn, &sample_metrics(1, "claude-code", "claude-sonnet-4", 0.5)).unwrap();
-        upsert_metrics(&conn, &sample_metrics(2, "claude-code", "claude-sonnet-4", 0.3)).unwrap();
+        upsert_metrics(
+            &conn,
+            &sample_metrics(1, "claude-code", "claude-sonnet-4", 0.5),
+        )
+        .unwrap();
+        upsert_metrics(
+            &conn,
+            &sample_metrics(2, "claude-code", "claude-sonnet-4", 0.3),
+        )
+        .unwrap();
         upsert_metrics(&conn, &sample_metrics(3, "codex", "gpt-4o", 0.2)).unwrap();
 
         let summary = get_spending_summary(&conn).unwrap();
@@ -313,7 +319,11 @@ mod tests {
     #[test]
     fn spending_summary_by_model() {
         let conn = setup_db();
-        upsert_metrics(&conn, &sample_metrics(1, "claude-code", "claude-sonnet-4", 0.5)).unwrap();
+        upsert_metrics(
+            &conn,
+            &sample_metrics(1, "claude-code", "claude-sonnet-4", 0.5),
+        )
+        .unwrap();
         upsert_metrics(&conn, &sample_metrics(2, "codex", "gpt-4o", 0.3)).unwrap();
 
         let summary = get_spending_summary(&conn).unwrap();
@@ -379,8 +389,16 @@ mod tests {
     #[test]
     fn spending_summary_llm_calls_summed() {
         let conn = setup_db();
-        upsert_metrics(&conn, &sample_metrics(1, "claude-code", "claude-sonnet-4", 0.5)).unwrap();
-        upsert_metrics(&conn, &sample_metrics(2, "claude-code", "claude-sonnet-4", 0.3)).unwrap();
+        upsert_metrics(
+            &conn,
+            &sample_metrics(1, "claude-code", "claude-sonnet-4", 0.5),
+        )
+        .unwrap();
+        upsert_metrics(
+            &conn,
+            &sample_metrics(2, "claude-code", "claude-sonnet-4", 0.3),
+        )
+        .unwrap();
 
         let summary = get_spending_summary(&conn).unwrap();
         // Each sample_metrics has llm_calls=3, so total = 6

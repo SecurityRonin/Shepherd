@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use super::pricing;
+use serde::{Deserialize, Serialize};
 
 /// Cost estimate for a single LLM call.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -104,7 +104,8 @@ impl MetricsAccumulator {
             llm_calls: self.llm_calls,
             duration_secs: self.elapsed_secs(),
             status: status.to_string(),
-            created_at: self.start_time
+            created_at: self
+                .start_time
                 .map(|t| t.to_rfc3339())
                 .unwrap_or_else(|| now.clone()),
             updated_at: now,

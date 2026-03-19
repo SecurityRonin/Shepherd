@@ -43,7 +43,10 @@ pub fn list_claude_sessions(project_dir: &str) -> Vec<String> {
 pub fn claude_project_dir(cwd: &str) -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_default();
     let encoded = encode_cwd_for_projects(cwd);
-    PathBuf::from(home).join(".claude").join("projects").join(encoded)
+    PathBuf::from(home)
+        .join(".claude")
+        .join("projects")
+        .join(encoded)
 }
 
 /// Handle for the running iTerm2 integration.
@@ -66,11 +69,19 @@ impl Iterm2Manager {
     }
 
     pub async fn get_adopted_cwd(&self, iterm2_session_id: &str) -> Option<String> {
-        self.adopted.lock().await.get(iterm2_session_id).map(|s| s.cwd.clone())
+        self.adopted
+            .lock()
+            .await
+            .get(iterm2_session_id)
+            .map(|s| s.cwd.clone())
     }
 
     pub async fn get_task_id_for_iterm2(&self, iterm2_session_id: &str) -> Option<i64> {
-        self.adopted.lock().await.get(iterm2_session_id).map(|s| s.task_id)
+        self.adopted
+            .lock()
+            .await
+            .get(iterm2_session_id)
+            .map(|s| s.task_id)
     }
 
     /// Spawn the background adoption loop. Call once at startup.
@@ -118,9 +129,8 @@ impl Iterm2Manager {
         let socket = client::find_socket()?;
         let mut ws = client::WsClient::connect(&socket, auth).await?;
 
-        let adopted_ids: std::collections::HashSet<String> = {
-            self.adopted.lock().await.keys().cloned().collect()
-        };
+        let adopted_ids: std::collections::HashSet<String> =
+            { self.adopted.lock().await.keys().cloned().collect() };
         let mut scanner = scanner::Scanner::new(adopted_ids);
         let candidates = scanner.scan(&mut ws).await?;
 
@@ -131,14 +141,17 @@ impl Iterm2Manager {
         for candidate in candidates {
             let task = {
                 let conn = db.lock().await;
-                crate::db::queries::create_task(&conn, &CreateTask {
-                    title: format!("{}: {}", candidate.agent_name, candidate.cwd),
-                    prompt: None,
-                    agent_id: format!("iterm2-{}", candidate.agent_name),
-                    repo_path: Some(candidate.cwd.clone()),
-                    isolation_mode: Some("none".to_string()),
-                    iterm2_session_id: Some(candidate.iterm2_session_id.clone()),
-                })?
+                crate::db::queries::create_task(
+                    &conn,
+                    &CreateTask {
+                        title: format!("{}: {}", candidate.agent_name, candidate.cwd),
+                        prompt: None,
+                        agent_id: format!("iterm2-{}", candidate.agent_name),
+                        repo_path: Some(candidate.cwd.clone()),
+                        isolation_mode: Some("none".to_string()),
+                        iterm2_session_id: Some(candidate.iterm2_session_id.clone()),
+                    },
+                )?
             };
             tracing::info!(
                 "Adopted {} session {} as task {}",
@@ -234,7 +247,10 @@ mod tests {
     #[tokio::test]
     async fn test_manager_get_task_id_returns_none_when_empty() {
         let mgr = Iterm2Manager::new(PathBuf::from("/tmp/test.json"));
-        assert!(mgr.get_task_id_for_iterm2("nonexistent-session").await.is_none());
+        assert!(mgr
+            .get_task_id_for_iterm2("nonexistent-session")
+            .await
+            .is_none());
     }
 
     #[test]
@@ -285,7 +301,10 @@ mod tests {
             "sess-42".to_string(),
             session::AdoptedSession::new(42, "sess-42".to_string(), "/repo".to_string()),
         );
-        assert_eq!(mgr.get_adopted_cwd("sess-42").await.as_deref(), Some("/repo"));
+        assert_eq!(
+            mgr.get_adopted_cwd("sess-42").await.as_deref(),
+            Some("/repo")
+        );
         assert_eq!(mgr.get_task_id_for_iterm2("sess-42").await, Some(42));
         assert!(mgr.get_adopted_cwd("other").await.is_none());
     }

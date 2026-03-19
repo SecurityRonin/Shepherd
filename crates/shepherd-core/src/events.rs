@@ -7,12 +7,25 @@ use serde::{Deserialize, Serialize};
 pub enum ServerEvent {
     TaskCreated(TaskEvent),
     TaskUpdated(TaskEvent),
-    TaskDeleted { id: i64 },
-    TerminalOutput { task_id: i64, data: String },
+    TaskDeleted {
+        id: i64,
+    },
+    TerminalOutput {
+        task_id: i64,
+        data: String,
+    },
     PermissionRequested(PermissionEvent),
     PermissionResolved(PermissionEvent),
-    GateResult { task_id: i64, gate: String, passed: bool },
-    Notification { kind: String, title: String, body: String },
+    GateResult {
+        task_id: i64,
+        gate: String,
+        passed: bool,
+    },
+    Notification {
+        kind: String,
+        title: String,
+        body: String,
+    },
     StatusSnapshot(StatusSnapshot),
     /// Live metrics update for a running task.
     MetricsUpdate(MetricsEvent),
@@ -36,11 +49,22 @@ pub enum ClientEvent {
         isolation_mode: Option<String>,
         prompt: Option<String>,
     },
-    TaskApprove { task_id: i64 },
+    TaskApprove {
+        task_id: i64,
+    },
     TaskApproveAll,
-    TaskCancel { task_id: i64 },
-    TerminalInput { task_id: i64, data: String },
-    TerminalResize { task_id: i64, cols: u16, rows: u16 },
+    TaskCancel {
+        task_id: i64,
+    },
+    TerminalInput {
+        task_id: i64,
+        data: String,
+    },
+    TerminalResize {
+        task_id: i64,
+        cols: u16,
+        rows: u16,
+    },
     Subscribe,
 }
 
@@ -191,7 +215,11 @@ mod tests {
         assert!(json.contains("gate_result"));
         let parsed: ServerEvent = serde_json::from_str(&json).unwrap();
         match parsed {
-            ServerEvent::GateResult { task_id, gate, passed } => {
+            ServerEvent::GateResult {
+                task_id,
+                gate,
+                passed,
+            } => {
                 assert_eq!(task_id, 5);
                 assert_eq!(gate, "lint");
                 assert!(passed);
@@ -260,7 +288,13 @@ mod tests {
         let json = r#"{"type":"task_create","data":{"title":"New task","agent_id":"claude-code","repo_path":"/tmp/repo","isolation_mode":"worktree","prompt":"Do something"}}"#;
         let event: ClientEvent = serde_json::from_str(json).unwrap();
         match event {
-            ClientEvent::TaskCreate { title, agent_id, repo_path, isolation_mode, prompt } => {
+            ClientEvent::TaskCreate {
+                title,
+                agent_id,
+                repo_path,
+                isolation_mode,
+                prompt,
+            } => {
                 assert_eq!(title, "New task");
                 assert_eq!(agent_id, "claude-code");
                 assert_eq!(repo_path.as_deref(), Some("/tmp/repo"));
@@ -289,7 +323,11 @@ mod tests {
         let json = r#"{"type":"terminal_resize","data":{"task_id":1,"cols":120,"rows":40}}"#;
         let event: ClientEvent = serde_json::from_str(json).unwrap();
         match event {
-            ClientEvent::TerminalResize { task_id, cols, rows } => {
+            ClientEvent::TerminalResize {
+                task_id,
+                cols,
+                rows,
+            } => {
                 assert_eq!(task_id, 1);
                 assert_eq!(cols, 120);
                 assert_eq!(rows, 40);

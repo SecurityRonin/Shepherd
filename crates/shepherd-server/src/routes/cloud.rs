@@ -17,9 +17,7 @@ pub struct CloudStatusResponse {
 
 /// GET /api/cloud/status — cloud availability and auth state.
 #[tracing::instrument(skip(state))]
-pub async fn cloud_status(
-    State(state): State<Arc<AppState>>,
-) -> Json<CloudStatusResponse> {
+pub async fn cloud_status(State(state): State<Arc<AppState>>) -> Json<CloudStatusResponse> {
     let cloud_available = state.cloud_client.is_some();
     let cloud_generation_enabled = state.config.cloud.cloud_generation_enabled;
 
@@ -110,13 +108,34 @@ pub struct FeatureCost {
 pub async fn cloud_costs() -> Json<FeatureCostResponse> {
     Json(FeatureCostResponse {
         features: vec![
-            FeatureCost { name: "logo".into(), credits: cloud::CREDIT_COST_LOGO },
-            FeatureCost { name: "name".into(), credits: cloud::CREDIT_COST_NAME },
-            FeatureCost { name: "northstar".into(), credits: cloud::CREDIT_COST_NORTHSTAR },
-            FeatureCost { name: "scrape".into(), credits: cloud::CREDIT_COST_SCRAPE },
-            FeatureCost { name: "crawl".into(), credits: cloud::CREDIT_COST_CRAWL },
-            FeatureCost { name: "vision".into(), credits: cloud::CREDIT_COST_VISION },
-            FeatureCost { name: "search".into(), credits: cloud::CREDIT_COST_SEARCH },
+            FeatureCost {
+                name: "logo".into(),
+                credits: cloud::CREDIT_COST_LOGO,
+            },
+            FeatureCost {
+                name: "name".into(),
+                credits: cloud::CREDIT_COST_NAME,
+            },
+            FeatureCost {
+                name: "northstar".into(),
+                credits: cloud::CREDIT_COST_NORTHSTAR,
+            },
+            FeatureCost {
+                name: "scrape".into(),
+                credits: cloud::CREDIT_COST_SCRAPE,
+            },
+            FeatureCost {
+                name: "crawl".into(),
+                credits: cloud::CREDIT_COST_CRAWL,
+            },
+            FeatureCost {
+                name: "vision".into(),
+                credits: cloud::CREDIT_COST_VISION,
+            },
+            FeatureCost {
+                name: "search".into(),
+                credits: cloud::CREDIT_COST_SEARCH,
+            },
         ],
     })
 }
@@ -168,7 +187,10 @@ mod tests {
         let json = serde_json::to_value(&resp).unwrap();
         assert_eq!(json["plan"], "pro");
         assert_eq!(json["credits_balance"], 85);
-        assert!(json["subscription_url"].as_str().unwrap().contains("/credits/purchase"));
+        assert!(json["subscription_url"]
+            .as_str()
+            .unwrap()
+            .contains("/credits/purchase"));
     }
 
     #[test]
@@ -232,8 +254,14 @@ mod tests {
     fn feature_cost_response_serialize() {
         let resp = FeatureCostResponse {
             features: vec![
-                FeatureCost { name: "logo".to_string(), credits: 5 },
-                FeatureCost { name: "name".to_string(), credits: 3 },
+                FeatureCost {
+                    name: "logo".to_string(),
+                    credits: 5,
+                },
+                FeatureCost {
+                    name: "name".to_string(),
+                    credits: 3,
+                },
             ],
         };
         let json = serde_json::to_value(&resp).unwrap();
@@ -254,7 +282,10 @@ mod tests {
         let json = serde_json::to_value(&resp).unwrap();
         assert_eq!(json["plan"], "free");
         assert_eq!(json["credits_balance"], 0);
-        assert!(json["subscription_url"].as_str().unwrap().starts_with("https://"));
+        assert!(json["subscription_url"]
+            .as_str()
+            .unwrap()
+            .starts_with("https://"));
         assert!(json["topup_url"].as_str().unwrap().starts_with("https://"));
     }
 }

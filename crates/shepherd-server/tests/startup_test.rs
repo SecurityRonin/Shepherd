@@ -16,8 +16,7 @@ async fn start_server_binds_responds_and_writes_lockfile() {
     let mut cfg = ShepherdConfig::default();
     cfg.port = 0; // Let OS pick a free port
 
-    let (addr, _state, handle) =
-        shepherd_server::startup::start_server(cfg).await.unwrap();
+    let (addr, _state, handle) = shepherd_server::startup::start_server(cfg).await.unwrap();
 
     // Verify bound to a real port
     assert_ne!(addr.port(), 0);
@@ -53,8 +52,7 @@ async fn start_server_with_cloud_disabled() {
     cfg.port = 0; // Let OS pick a free port
     cfg.cloud.cloud_generation_enabled = false;
 
-    let (addr, state, handle) =
-        shepherd_server::startup::start_server(cfg).await.unwrap();
+    let (addr, state, handle) = shepherd_server::startup::start_server(cfg).await.unwrap();
 
     // Verify server started
     assert_ne!(addr.port(), 0);
@@ -112,8 +110,7 @@ deny = "n\n"
     // 2. Start the server (port 0 = OS picks a free port)
     let mut cfg = ShepherdConfig::default();
     cfg.port = 0;
-    let (addr, _state, handle) =
-        shepherd_server::startup::start_server(cfg).await.unwrap();
+    let (addr, _state, handle) = shepherd_server::startup::start_server(cfg).await.unwrap();
 
     // 3. Create a task via the REST API targeting our test adapter
     let client = reqwest::Client::new();
@@ -127,7 +124,11 @@ deny = "n\n"
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 201, "Task creation should return 201 Created");
+    assert_eq!(
+        resp.status(),
+        201,
+        "Task creation should return 201 Created"
+    );
 
     // 4. Wait for the dispatch loop to pick up the task and the echo command
     //    to produce output. The dispatch loop polls every 2 seconds, so we

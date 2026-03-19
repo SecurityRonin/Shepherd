@@ -1,6 +1,6 @@
-use std::path::{Path, PathBuf};
 use super::superpowers::InstallScope;
 use super::{EcosystemPlugin, PluginDetectionResult};
+use std::path::{Path, PathBuf};
 
 /// Return the shared plugin definition for exa-mcp.
 pub fn plugin() -> EcosystemPlugin {
@@ -108,7 +108,8 @@ mod tests {
         std::fs::write(
             claude_dir.join("settings.json"),
             r#"{"mcpServers":{"exa":{"command":"npx","args":["-y","exa-mcp-server"]}}}"#,
-        ).unwrap();
+        )
+        .unwrap();
         let result = detect_for_agent("claude-code", tmp.path(), None);
         assert!(result.installed);
         assert_eq!(result.scope, InstallScope::User);
@@ -123,7 +124,8 @@ mod tests {
         std::fs::write(
             project.join(".claude/settings.json"),
             r#"{"mcpServers":{"exa":{"command":"npx"}}}"#,
-        ).unwrap();
+        )
+        .unwrap();
         let result = detect_for_agent("claude-code", &home, Some(&project));
         assert!(result.installed);
         assert_eq!(result.scope, InstallScope::Project);

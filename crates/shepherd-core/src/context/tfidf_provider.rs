@@ -26,7 +26,7 @@ impl TfIdfProvider {
                 Ok(c) => c,
                 Err(_) => continue, // tarpaulin-start-ignore
             }; // tarpaulin-stop-ignore
-            // Limit content to first 300 lines for performance
+               // Limit content to first 300 lines for performance
             let preview: String = content.lines().take(300).collect::<Vec<_>>().join("\n");
             // Include file path in the document for path-based matching
             let doc_content = format!("{} {}", file_path.to_string_lossy(), preview);
@@ -153,7 +153,8 @@ mod tests {
         std::fs::write(
             src.join("api/handler.rs"),
             "pub fn handle_request() {}\npub fn parse_json() {}\npub fn validate_input() {}\n",
-        ).unwrap();
+        )
+        .unwrap();
         std::fs::write(
             src.join("api/search.rs"),
             "pub fn search_documents(query: &str) -> Vec<String> { vec![] }\npub fn index_document(doc: &str) {}\n",
@@ -224,10 +225,7 @@ mod tests {
         let items = provider.find_context(&intent, repo.path());
         assert!(!items.is_empty());
         // Auth files should rank highest
-        assert!(items[0]
-            .file_path
-            .to_string_lossy()
-            .contains("auth"));
+        assert!(items[0].file_path.to_string_lossy().contains("auth"));
     }
 
     #[test]
@@ -242,10 +240,7 @@ mod tests {
 
         let items = provider.find_context(&intent, repo.path());
         assert!(!items.is_empty());
-        assert!(items[0]
-            .file_path
-            .to_string_lossy()
-            .contains("db"));
+        assert!(items[0].file_path.to_string_lossy().contains("db"));
     }
 
     #[test]
@@ -330,9 +325,7 @@ mod tests {
 
         let queries = provider.suggest_mcp_queries(&intent);
         assert!(!queries.is_empty());
-        assert!(queries
-            .iter()
-            .any(|q| q.server == "sourcegraph"));
+        assert!(queries.iter().any(|q| q.server == "sourcegraph"));
     }
 
     #[test]

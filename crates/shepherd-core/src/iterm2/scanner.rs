@@ -55,12 +55,16 @@ impl Scanner {
         transport: &mut dyn Iterm2Transport,
     ) -> anyhow::Result<Vec<AdoptionCandidate>> {
         // 1. List all sessions
-        let resp = transport.send_recv(iterm2::ClientOriginatedMessage {
-            id: None,
-            submessage: Some(iterm2::client_originated_message::Submessage::ListSessionsRequest(
-                iterm2::ListSessionsRequest {},
-            )),
-        }).await?;
+        let resp = transport
+            .send_recv(iterm2::ClientOriginatedMessage {
+                id: None,
+                submessage: Some(
+                    iterm2::client_originated_message::Submessage::ListSessionsRequest(
+                        iterm2::ListSessionsRequest {},
+                    ),
+                ),
+            })
+            .await?;
 
         let list_resp = match resp.submessage {
             Some(iterm2::server_originated_message::Submessage::ListSessionsResponse(r)) => r,
@@ -78,16 +82,22 @@ impl Scanner {
             }
 
             // Query jobName
-            let job_resp = transport.send_recv(iterm2::ClientOriginatedMessage {
-                id: None,
-                submessage: Some(iterm2::client_originated_message::Submessage::VariableRequest(
-                    iterm2::VariableRequest {
-                        get: vec!["jobName".to_string()],
-                        scope: Some(iterm2::variable_request::Scope::SessionId(session_id.clone())),
-                        set: vec![],
-                    }
-                )),
-            }).await?;
+            let job_resp = transport
+                .send_recv(iterm2::ClientOriginatedMessage {
+                    id: None,
+                    submessage: Some(
+                        iterm2::client_originated_message::Submessage::VariableRequest(
+                            iterm2::VariableRequest {
+                                get: vec!["jobName".to_string()],
+                                scope: Some(iterm2::variable_request::Scope::SessionId(
+                                    session_id.clone(),
+                                )),
+                                set: vec![],
+                            },
+                        ),
+                    ),
+                })
+                .await?;
 
             let job_name = match job_resp.submessage {
                 Some(iterm2::server_originated_message::Submessage::VariableResponse(vr)) => {
@@ -103,16 +113,22 @@ impl Scanner {
             let agent_name = agent_name.to_string();
 
             // Query CWD (path variable, requires shell integration)
-            let path_resp = transport.send_recv(iterm2::ClientOriginatedMessage {
-                id: None,
-                submessage: Some(iterm2::client_originated_message::Submessage::VariableRequest(
-                    iterm2::VariableRequest {
-                        get: vec!["path".to_string()],
-                        scope: Some(iterm2::variable_request::Scope::SessionId(session_id.clone())),
-                        set: vec![],
-                    }
-                )),
-            }).await?;
+            let path_resp = transport
+                .send_recv(iterm2::ClientOriginatedMessage {
+                    id: None,
+                    submessage: Some(
+                        iterm2::client_originated_message::Submessage::VariableRequest(
+                            iterm2::VariableRequest {
+                                get: vec!["path".to_string()],
+                                scope: Some(iterm2::variable_request::Scope::SessionId(
+                                    session_id.clone(),
+                                )),
+                                set: vec![],
+                            },
+                        ),
+                    ),
+                })
+                .await?;
 
             let cwd = match path_resp.submessage {
                 Some(iterm2::server_originated_message::Submessage::VariableResponse(vr)) => {
@@ -124,36 +140,55 @@ impl Scanner {
             };
 
             // Subscribe to screen updates for this session
-            transport.send_only(iterm2::ClientOriginatedMessage {
-                id: None,
-                submessage: Some(iterm2::client_originated_message::Submessage::NotificationRequest(
-                    iterm2::NotificationRequest {
-                        session: Some(session_id.clone()),
-                        subscribe: Some(true),
-                        notification_type: Some(iterm2::NotificationType::NotifyOnScreenUpdate as i32),
-                        arguments: None,
-                    }
-                )),
-            }).await?;
+            transport
+                .send_only(iterm2::ClientOriginatedMessage {
+                    id: None,
+                    submessage: Some(
+                        iterm2::client_originated_message::Submessage::NotificationRequest(
+                            iterm2::NotificationRequest {
+                                session: Some(session_id.clone()),
+                                subscribe: Some(true),
+                                notification_type: Some(
+                                    iterm2::NotificationType::NotifyOnScreenUpdate as i32,
+                                ),
+                                arguments: None,
+                            },
+                        ),
+                    ),
+                })
+                .await?;
 
-            candidates.push(AdoptionCandidate { iterm2_session_id: session_id, cwd, agent_name });
+            candidates.push(AdoptionCandidate {
+                iterm2_session_id: session_id,
+                cwd,
+                agent_name,
+            });
         }
         Ok(candidates)
     }
 
     /// Subscribe globally to session termination (call once after first adoption).
-    pub async fn subscribe_terminate(&self, transport: &mut dyn Iterm2Transport) -> anyhow::Result<()> {
-        transport.send_only(iterm2::ClientOriginatedMessage {
-            id: None,
-            submessage: Some(iterm2::client_originated_message::Submessage::NotificationRequest(
-                iterm2::NotificationRequest {
-                    session: None,
-                    subscribe: Some(true),
-                    notification_type: Some(iterm2::NotificationType::NotifyOnTerminateSession as i32),
-                    arguments: None,
-                }
-            )),
-        }).await
+    pub async fn subscribe_terminate(
+        &self,
+        transport: &mut dyn Iterm2Transport,
+    ) -> anyhow::Result<()> {
+        transport
+            .send_only(iterm2::ClientOriginatedMessage {
+                id: None,
+                submessage: Some(
+                    iterm2::client_originated_message::Submessage::NotificationRequest(
+                        iterm2::NotificationRequest {
+                            session: None,
+                            subscribe: Some(true),
+                            notification_type: Some(
+                                iterm2::NotificationType::NotifyOnTerminateSession as i32,
+                            ),
+                            arguments: None,
+                        },
+                    ),
+                ),
+            })
+            .await
     }
 }
 
@@ -191,8 +226,8 @@ mod tests {
     use super::*;
     use crate::iterm2::client::iterm2;
     use crate::iterm2::client::iterm2::{
-        client_originated_message, server_originated_message,
-        list_sessions_response, split_tree_node,
+        client_originated_message, list_sessions_response, server_originated_message,
+        split_tree_node,
     };
 
     // Helper: build a ServerOriginatedMessage with one session in a window
@@ -209,19 +244,33 @@ mod tests {
                 )),
             })
             .collect();
-        let root = iterm2::SplitTreeNode { links, ..Default::default() };
-        let tab = list_sessions_response::Tab { root: Some(root), ..Default::default() };
-        let window = list_sessions_response::Window { tabs: vec![tab], ..Default::default() };
-        let lsr = iterm2::ListSessionsResponse { windows: vec![window], ..Default::default() };
+        let root = iterm2::SplitTreeNode {
+            links,
+            ..Default::default()
+        };
+        let tab = list_sessions_response::Tab {
+            root: Some(root),
+            ..Default::default()
+        };
+        let window = list_sessions_response::Window {
+            tabs: vec![tab],
+            ..Default::default()
+        };
+        let lsr = iterm2::ListSessionsResponse {
+            windows: vec![window],
+            ..Default::default()
+        };
         iterm2::ServerOriginatedMessage {
-            submessage: Some(server_originated_message::Submessage::ListSessionsResponse(lsr)),
+            submessage: Some(server_originated_message::Submessage::ListSessionsResponse(
+                lsr,
+            )),
             ..Default::default()
         }
     }
 
     fn make_variable_response(value: &str) -> iterm2::ServerOriginatedMessage {
         let vr = iterm2::VariableResponse {
-            values: vec![format!("\"{}\"", value)],  // JSON-encoded
+            values: vec![format!("\"{}\"", value)], // JSON-encoded
             ..Default::default()
         };
         iterm2::ServerOriginatedMessage {
@@ -257,10 +306,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_scan_finds_claude_session() {
-        struct MockT { calls: usize }
+        struct MockT {
+            calls: usize,
+        }
         #[async_trait::async_trait]
         impl crate::iterm2::client::Iterm2Transport for MockT {
-            async fn send_recv(&mut self, _: iterm2::ClientOriginatedMessage) -> anyhow::Result<iterm2::ServerOriginatedMessage> {
+            async fn send_recv(
+                &mut self,
+                _: iterm2::ClientOriginatedMessage,
+            ) -> anyhow::Result<iterm2::ServerOriginatedMessage> {
                 let r = match self.calls {
                     0 => make_list_response(vec![("sess-1", "bash")]),
                     1 => make_variable_response("claude"),
@@ -270,7 +324,12 @@ mod tests {
                 self.calls += 1;
                 Ok(r)
             }
-            async fn send_only(&mut self, _: iterm2::ClientOriginatedMessage) -> anyhow::Result<()> { Ok(()) }
+            async fn send_only(
+                &mut self,
+                _: iterm2::ClientOriginatedMessage,
+            ) -> anyhow::Result<()> {
+                Ok(())
+            }
             async fn recv(&mut self) -> anyhow::Result<iterm2::ServerOriginatedMessage> {
                 futures_util::future::pending().await
             }
@@ -285,10 +344,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_scan_skips_non_claude_session() {
-        struct MockT { calls: usize }
+        struct MockT {
+            calls: usize,
+        }
         #[async_trait::async_trait]
         impl crate::iterm2::client::Iterm2Transport for MockT {
-            async fn send_recv(&mut self, _: iterm2::ClientOriginatedMessage) -> anyhow::Result<iterm2::ServerOriginatedMessage> {
+            async fn send_recv(
+                &mut self,
+                _: iterm2::ClientOriginatedMessage,
+            ) -> anyhow::Result<iterm2::ServerOriginatedMessage> {
                 let r = match self.calls {
                     0 => make_list_response(vec![("sess-2", "vim")]),
                     1 => make_variable_response("vim"),
@@ -297,7 +361,12 @@ mod tests {
                 self.calls += 1;
                 Ok(r)
             }
-            async fn send_only(&mut self, _: iterm2::ClientOriginatedMessage) -> anyhow::Result<()> { Ok(()) }
+            async fn send_only(
+                &mut self,
+                _: iterm2::ClientOriginatedMessage,
+            ) -> anyhow::Result<()> {
+                Ok(())
+            }
             async fn recv(&mut self) -> anyhow::Result<iterm2::ServerOriginatedMessage> {
                 futures_util::future::pending().await
             }
@@ -312,10 +381,18 @@ mod tests {
         struct MockT;
         #[async_trait::async_trait]
         impl crate::iterm2::client::Iterm2Transport for MockT {
-            async fn send_recv(&mut self, _: iterm2::ClientOriginatedMessage) -> anyhow::Result<iterm2::ServerOriginatedMessage> {
+            async fn send_recv(
+                &mut self,
+                _: iterm2::ClientOriginatedMessage,
+            ) -> anyhow::Result<iterm2::ServerOriginatedMessage> {
                 Ok(make_list_response(vec![("sess-3", "claude")]))
             }
-            async fn send_only(&mut self, _: iterm2::ClientOriginatedMessage) -> anyhow::Result<()> { Ok(()) }
+            async fn send_only(
+                &mut self,
+                _: iterm2::ClientOriginatedMessage,
+            ) -> anyhow::Result<()> {
+                Ok(())
+            }
             async fn recv(&mut self) -> anyhow::Result<iterm2::ServerOriginatedMessage> {
                 futures_util::future::pending().await
             }
@@ -393,7 +470,9 @@ mod tests {
     /// Helper: a mock that returns a single-session list then two variable responses.
     macro_rules! make_agent_mock {
         ($name:ident, $sess:expr, $job:expr, $cwd:expr) => {
-            struct $name { calls: usize }
+            struct $name {
+                calls: usize,
+            }
             #[async_trait::async_trait]
             impl crate::iterm2::client::Iterm2Transport for $name {
                 async fn send_recv(
@@ -415,9 +494,7 @@ mod tests {
                 ) -> anyhow::Result<()> {
                     Ok(())
                 }
-                async fn recv(
-                    &mut self,
-                ) -> anyhow::Result<iterm2::ServerOriginatedMessage> {
+                async fn recv(&mut self) -> anyhow::Result<iterm2::ServerOriginatedMessage> {
                     futures_util::future::pending().await
                 }
             }
@@ -489,8 +566,14 @@ mod tests {
             links: vec![outer_link],
             ..Default::default()
         };
-        let tab = list_sessions_response::Tab { root: Some(root), ..Default::default() };
-        let window = list_sessions_response::Window { tabs: vec![tab], ..Default::default() };
+        let tab = list_sessions_response::Tab {
+            root: Some(root),
+            ..Default::default()
+        };
+        let window = list_sessions_response::Window {
+            tabs: vec![tab],
+            ..Default::default()
+        };
         let ids = collect_session_ids(&[window]);
         assert_eq!(ids, vec!["nested-sess"]);
     }
@@ -506,9 +589,18 @@ mod tests {
                 },
             )),
         };
-        let root = iterm2::SplitTreeNode { links: vec![link], ..Default::default() };
-        let tab = list_sessions_response::Tab { root: Some(root), ..Default::default() };
-        let window = list_sessions_response::Window { tabs: vec![tab], ..Default::default() };
+        let root = iterm2::SplitTreeNode {
+            links: vec![link],
+            ..Default::default()
+        };
+        let tab = list_sessions_response::Tab {
+            root: Some(root),
+            ..Default::default()
+        };
+        let window = list_sessions_response::Window {
+            tabs: vec![tab],
+            ..Default::default()
+        };
         let ids = collect_session_ids(&[window]);
         assert!(ids.is_empty());
     }
@@ -517,9 +609,18 @@ mod tests {
     fn test_collect_session_ids_none_child() {
         // Link with no child should be skipped
         let link = iterm2::split_tree_node::SplitTreeLink { child: None };
-        let root = iterm2::SplitTreeNode { links: vec![link], ..Default::default() };
-        let tab = list_sessions_response::Tab { root: Some(root), ..Default::default() };
-        let window = list_sessions_response::Window { tabs: vec![tab], ..Default::default() };
+        let root = iterm2::SplitTreeNode {
+            links: vec![link],
+            ..Default::default()
+        };
+        let tab = list_sessions_response::Tab {
+            root: Some(root),
+            ..Default::default()
+        };
+        let window = list_sessions_response::Window {
+            tabs: vec![tab],
+            ..Default::default()
+        };
         let ids = collect_session_ids(&[window]);
         assert!(ids.is_empty());
     }
@@ -542,12 +643,30 @@ mod tests {
                 },
             )),
         };
-        let root1 = iterm2::SplitTreeNode { links: vec![link1], ..Default::default() };
-        let root2 = iterm2::SplitTreeNode { links: vec![link2], ..Default::default() };
-        let tab1 = list_sessions_response::Tab { root: Some(root1), ..Default::default() };
-        let tab2 = list_sessions_response::Tab { root: Some(root2), ..Default::default() };
-        let window1 = list_sessions_response::Window { tabs: vec![tab1], ..Default::default() };
-        let window2 = list_sessions_response::Window { tabs: vec![tab2], ..Default::default() };
+        let root1 = iterm2::SplitTreeNode {
+            links: vec![link1],
+            ..Default::default()
+        };
+        let root2 = iterm2::SplitTreeNode {
+            links: vec![link2],
+            ..Default::default()
+        };
+        let tab1 = list_sessions_response::Tab {
+            root: Some(root1),
+            ..Default::default()
+        };
+        let tab2 = list_sessions_response::Tab {
+            root: Some(root2),
+            ..Default::default()
+        };
+        let window1 = list_sessions_response::Window {
+            tabs: vec![tab1],
+            ..Default::default()
+        };
+        let window2 = list_sessions_response::Window {
+            tabs: vec![tab2],
+            ..Default::default()
+        };
         let ids = collect_session_ids(&[window1, window2]);
         assert_eq!(ids.len(), 2);
         assert!(ids.contains(&"w1-t1".to_string()));
@@ -556,8 +675,14 @@ mod tests {
 
     #[test]
     fn test_collect_session_ids_tab_without_root() {
-        let tab = list_sessions_response::Tab { root: None, ..Default::default() };
-        let window = list_sessions_response::Window { tabs: vec![tab], ..Default::default() };
+        let tab = list_sessions_response::Tab {
+            root: None,
+            ..Default::default()
+        };
+        let window = list_sessions_response::Window {
+            tabs: vec![tab],
+            ..Default::default()
+        };
         let ids = collect_session_ids(&[window]);
         assert!(ids.is_empty());
     }

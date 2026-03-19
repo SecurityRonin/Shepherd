@@ -13,14 +13,15 @@ pub struct Iterm2Auth {
 pub fn load_auth(path: &Path) -> anyhow::Result<Iterm2Auth> {
     let contents = std::fs::read_to_string(path)
         .with_context(|| format!("reading iTerm2 auth from {}", path.display()))?;
-    serde_json::from_str(&contents)
-        .with_context(|| "parsing iTerm2 auth JSON")
+    serde_json::from_str(&contents).with_context(|| "parsing iTerm2 auth JSON")
 }
 
 /// Default path where the AutoLaunch bridge script writes credentials.
 pub fn default_auth_path() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_default();
-    PathBuf::from(home).join(".shepherd").join("iterm2-auth.json")
+    PathBuf::from(home)
+        .join(".shepherd")
+        .join("iterm2-auth.json")
 }
 
 /// Spawn a background thread that watches the auth file for changes and sends
@@ -95,8 +96,14 @@ mod tests {
     fn test_default_auth_path_is_in_shepherd_dir() {
         let path = default_auth_path();
         let s = path.to_str().unwrap();
-        assert!(s.contains(".shepherd"), "path should be under ~/.shepherd: {s}");
-        assert!(s.ends_with("iterm2-auth.json"), "path should end with iterm2-auth.json: {s}");
+        assert!(
+            s.contains(".shepherd"),
+            "path should be under ~/.shepherd: {s}"
+        );
+        assert!(
+            s.ends_with("iterm2-auth.json"),
+            "path should end with iterm2-auth.json: {s}"
+        );
     }
 
     #[test]
@@ -154,7 +161,10 @@ mod tests {
         // watch_auth spawns a background thread; verify it starts without panic
         // even when the watched path doesn't exist.
         let (tx, _rx) = tokio::sync::mpsc::channel(1);
-        watch_auth(std::path::PathBuf::from("/nonexistent/iterm2-auth.json"), tx);
+        watch_auth(
+            std::path::PathBuf::from("/nonexistent/iterm2-auth.json"),
+            tx,
+        );
         // Give the thread a moment to start and exit gracefully
         std::thread::sleep(std::time::Duration::from_millis(50));
     }

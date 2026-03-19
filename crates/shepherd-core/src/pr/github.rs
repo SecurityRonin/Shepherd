@@ -49,11 +49,7 @@ pub async fn git_rebase_abort(project_dir: &Path) -> Result<String> {
 /// Remove the worktree at the given path.
 pub async fn git_remove_worktree(project_dir: &Path) -> Result<String> {
     // Use the parent repo to remove this worktree
-    run_git(
-        project_dir,
-        &["worktree", "remove", "--force", "."],
-    )
-    .await
+    run_git(project_dir, &["worktree", "remove", "--force", "."]).await
 }
 
 /// Push the branch to origin.
@@ -92,11 +88,7 @@ pub async fn gh_create_pr(
 }
 
 /// Build the PR body markdown with pipeline results.
-pub fn build_pr_body(
-    task_title: &str,
-    diff_stat: &str,
-    steps: &[PipelineStep],
-) -> String {
+pub fn build_pr_body(task_title: &str, diff_stat: &str, steps: &[PipelineStep]) -> String {
     let mut body = String::new();
 
     body.push_str("## Summary\n\n");
@@ -130,8 +122,8 @@ pub fn build_pr_body(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::StepStatus;
+    use super::*;
 
     #[test]
     fn build_pr_body_test() {
@@ -318,7 +310,8 @@ mod tests {
             "title",
             "body",
             "main",
-        ).await;
+        )
+        .await;
         assert!(result.is_err());
     }
 

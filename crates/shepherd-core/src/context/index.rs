@@ -161,7 +161,10 @@ pub fn file_count(conn: &Connection) -> Result<u64> {
 
 /// Remove a file from the index.
 pub fn remove_file(conn: &Connection, file_path: &str) -> Result<bool> {
-    let affected = conn.execute("DELETE FROM file_index WHERE file_path = ?1", params![file_path])?;
+    let affected = conn.execute(
+        "DELETE FROM file_index WHERE file_path = ?1",
+        params![file_path],
+    )?;
     Ok(affected > 0)
 }
 
@@ -244,7 +247,14 @@ fn walk_recursive(dir: &Path, result: &mut Vec<PathBuf>) {
         let name_str = name.to_string_lossy();
 
         // Skip hidden dirs, node_modules, target, .git, etc.
-        if name_str.starts_with('.') || name_str == "node_modules" || name_str == "target" || name_str == "__pycache__" || name_str == "vendor" || name_str == "dist" || name_str == "build" {
+        if name_str.starts_with('.')
+            || name_str == "node_modules"
+            || name_str == "target"
+            || name_str == "__pycache__"
+            || name_str == "vendor"
+            || name_str == "dist"
+            || name_str == "build"
+        {
             continue;
         }
 
@@ -464,7 +474,11 @@ mod tests {
         scan_and_index(&conn, tmp.path()).unwrap();
 
         // Modify file
-        std::fs::write(tmp.path().join("main.rs"), "fn main() { println!(\"hi\"); }").unwrap();
+        std::fs::write(
+            tmp.path().join("main.rs"),
+            "fn main() { println!(\"hi\"); }",
+        )
+        .unwrap();
         let updated = scan_and_index(&conn, tmp.path()).unwrap();
         assert_eq!(updated, 1);
     }

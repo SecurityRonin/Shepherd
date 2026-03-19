@@ -103,7 +103,8 @@ impl NameGenResult {
     /// Return candidates sorted by validation status priority.
     /// AllClear first, then Partial, then Pending, then Conflicted.
     pub fn sorted(mut self) -> Self {
-        self.candidates.sort_by_key(|c| c.validation.overall_status.sort_priority());
+        self.candidates
+            .sort_by_key(|c| c.validation.overall_status.sort_priority());
         self
     }
 }
@@ -132,9 +133,13 @@ pub fn calculate_status(validation: &NameValidation) -> ValidationStatus {
     }
 
     // Check registries
-    for available in [validation.npm_available, validation.pypi_available, validation.github_available]
-        .into_iter()
-        .flatten()
+    for available in [
+        validation.npm_available,
+        validation.pypi_available,
+        validation.github_available,
+    ]
+    .into_iter()
+    .flatten()
     {
         has_any_data = true;
         if !available {
@@ -168,12 +173,17 @@ pub async fn generate_names(
 
         // Step 3: Validate (domains + registries)
         let validation_result = validate::validate_name(&name).await;
-        let (domains, npm_available, pypi_available, github_available): (Vec<DomainCheck>, Option<bool>, Option<bool>, Option<bool>) =
-            validation_result.unwrap_or_default();
+        let (domains, npm_available, pypi_available, github_available): (
+            Vec<DomainCheck>,
+            Option<bool>,
+            Option<bool>,
+            Option<bool>,
+        ) = validation_result.unwrap_or_default();
 
         // Step 4: Scan for negative associations
-        let negative_associations =
-            brainstorm::scan_negative_associations(provider, &name).await.unwrap_or_default();
+        let negative_associations = brainstorm::scan_negative_associations(provider, &name)
+            .await
+            .unwrap_or_default();
 
         let mut validation = NameValidation {
             domains,
@@ -240,13 +250,11 @@ mod tests {
     #[test]
     fn test_calculate_status_all_clear() {
         let validation = NameValidation {
-            domains: vec![
-                DomainCheck {
-                    domain: "test.com".to_string(),
-                    available: Some(true),
-                    error: None,
-                },
-            ],
+            domains: vec![DomainCheck {
+                domain: "test.com".to_string(),
+                available: Some(true),
+                error: None,
+            }],
             npm_available: Some(true),
             pypi_available: Some(true),
             github_available: Some(true),
@@ -260,13 +268,11 @@ mod tests {
     #[test]
     fn test_calculate_status_conflicted() {
         let validation = NameValidation {
-            domains: vec![
-                DomainCheck {
-                    domain: "test.com".to_string(),
-                    available: Some(true),
-                    error: None,
-                },
-            ],
+            domains: vec![DomainCheck {
+                domain: "test.com".to_string(),
+                available: Some(true),
+                error: None,
+            }],
             npm_available: Some(true),
             pypi_available: Some(true),
             github_available: Some(true),
@@ -280,13 +286,11 @@ mod tests {
     #[test]
     fn test_calculate_status_partial() {
         let validation = NameValidation {
-            domains: vec![
-                DomainCheck {
-                    domain: "test.com".to_string(),
-                    available: Some(false),
-                    error: None,
-                },
-            ],
+            domains: vec![DomainCheck {
+                domain: "test.com".to_string(),
+                available: Some(false),
+                error: None,
+            }],
             npm_available: Some(true),
             pypi_available: Some(true),
             github_available: Some(true),
@@ -324,8 +328,16 @@ mod tests {
     fn calculate_status_mixed_domains() {
         let validation = NameValidation {
             domains: vec![
-                DomainCheck { domain: "a.com".into(), available: Some(true), error: None },
-                DomainCheck { domain: "a.io".into(), available: Some(false), error: None },
+                DomainCheck {
+                    domain: "a.com".into(),
+                    available: Some(true),
+                    error: None,
+                },
+                DomainCheck {
+                    domain: "a.io".into(),
+                    available: Some(false),
+                    error: None,
+                },
             ],
             npm_available: Some(true),
             pypi_available: None,
@@ -432,7 +444,10 @@ mod tests {
         assert_eq!(deser.validation.domains.len(), 1);
         assert_eq!(deser.validation.npm_available, Some(true));
         assert_eq!(deser.validation.negative_associations.len(), 1);
-        assert_eq!(deser.validation.overall_status, ValidationStatus::Conflicted);
+        assert_eq!(
+            deser.validation.overall_status,
+            ValidationStatus::Conflicted
+        );
     }
 
     #[test]
@@ -451,9 +466,16 @@ mod tests {
 
     #[test]
     fn validation_status_sort_priority_order() {
-        assert!(ValidationStatus::AllClear.sort_priority() < ValidationStatus::Partial.sort_priority());
-        assert!(ValidationStatus::Partial.sort_priority() < ValidationStatus::Pending.sort_priority());
-        assert!(ValidationStatus::Pending.sort_priority() < ValidationStatus::Conflicted.sort_priority());
+        assert!(
+            ValidationStatus::AllClear.sort_priority() < ValidationStatus::Partial.sort_priority()
+        );
+        assert!(
+            ValidationStatus::Partial.sort_priority() < ValidationStatus::Pending.sort_priority()
+        );
+        assert!(
+            ValidationStatus::Pending.sort_priority()
+                < ValidationStatus::Conflicted.sort_priority()
+        );
     }
 
     #[test]
@@ -477,9 +499,18 @@ mod tests {
         };
         let sorted = result.sorted();
         // AllClear should come first, then Partial
-        assert_eq!(sorted.candidates[0].validation.overall_status, ValidationStatus::AllClear);
-        assert_eq!(sorted.candidates[1].validation.overall_status, ValidationStatus::AllClear);
-        assert_eq!(sorted.candidates[2].validation.overall_status, ValidationStatus::Partial);
+        assert_eq!(
+            sorted.candidates[0].validation.overall_status,
+            ValidationStatus::AllClear
+        );
+        assert_eq!(
+            sorted.candidates[1].validation.overall_status,
+            ValidationStatus::AllClear
+        );
+        assert_eq!(
+            sorted.candidates[2].validation.overall_status,
+            ValidationStatus::Partial
+        );
     }
 
     #[test]
@@ -667,11 +698,7 @@ mod tests {
         assert_eq!(result.candidates.len(), 2);
 
         // Verify candidates have names from the mock response
-        let names: Vec<&str> = result
-            .candidates
-            .iter()
-            .map(|c| c.name.as_str())
-            .collect();
+        let names: Vec<&str> = result.candidates.iter().map(|c| c.name.as_str()).collect();
         assert!(names.contains(&"testify"));
         assert!(names.contains(&"validox"));
 
@@ -683,19 +710,25 @@ mod tests {
             // - If network calls fail: Pending (no data from unwrap_or_default)
             assert!(matches!(
                 candidate.validation.overall_status,
-                ValidationStatus::AllClear
-                    | ValidationStatus::Partial
-                    | ValidationStatus::Pending
+                ValidationStatus::AllClear | ValidationStatus::Partial | ValidationStatus::Pending
             ));
             // Negative associations should be empty (mock returns [])
             assert!(candidate.validation.negative_associations.is_empty());
         }
 
         // Verify tagline handling
-        let testify = result.candidates.iter().find(|c| c.name == "testify").unwrap();
+        let testify = result
+            .candidates
+            .iter()
+            .find(|c| c.name == "testify")
+            .unwrap();
         assert_eq!(testify.tagline.as_deref(), Some("Test with confidence"));
 
-        let validox = result.candidates.iter().find(|c| c.name == "validox").unwrap();
+        let validox = result
+            .candidates
+            .iter()
+            .find(|c| c.name == "validox")
+            .unwrap();
         assert!(validox.tagline.is_none());
     }
 }

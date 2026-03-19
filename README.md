@@ -20,10 +20,11 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/SecurityRonin/Shepherd/actions/workflows/ci.yml"><img src="https://github.com/SecurityRonin/Shepherd/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/SecurityRonin/Shepherd/releases"><img src="https://img.shields.io/github/v/release/SecurityRonin/Shepherd?include_prereleases&label=release" alt="Release" /></a>
   <a href="https://github.com/sponsors/h4x0r"><img src="https://img.shields.io/badge/sponsor-♥-ea4aaa" alt="Sponsor" /></a>
   <img src="https://img.shields.io/badge/status-alpha-orange" alt="Status: Alpha" />
   <img src="https://img.shields.io/badge/license-Apache%202.0-green" alt="License: Apache 2.0" />
-  <img src="https://img.shields.io/badge/binary-~600KB-blue" alt="Binary: ~600KB" />
   <img src="https://img.shields.io/badge/platform-macOS%20·%20Linux%20·%20Windows-lightgrey" alt="Platforms" />
 </p>
 
@@ -42,14 +43,13 @@ Shepherd fixes that.
 **Install:**
 
 ```bash
-# macOS
-brew install shepherd-codes/tap/shepherd
+# Download a pre-built release (macOS, Linux, Windows)
+# → https://github.com/SecurityRonin/Shepherd/releases
 
-# Linux / from source
-curl -fsSL https://shepherd.codes/install.sh | sh
-
-# Windows
-winget install shepherd-codes.shepherd
+# Or build from source
+git clone https://github.com/SecurityRonin/Shepherd.git
+cd Shepherd && cargo build --release
+# Binaries: target/release/shepherd, target/release/shep, target/release/shepherd-server
 ```
 
 Installs both `shepherd` and `shep` (same binary, your choice).
@@ -348,21 +348,34 @@ AGENTS (your existing tools, unchanged)
 
 <h2 id="install">Install</h2>
 
-See **[Get started in 60 seconds](#get-started-in-60-seconds)** at the top for the full quickstart.
+### Pre-built releases (recommended)
+
+Download the latest release for your platform from [GitHub Releases](https://github.com/SecurityRonin/Shepherd/releases).
+
+Each release includes:
+
+| Platform | Desktop App | CLI-only |
+|----------|-------------|----------|
+| macOS (Apple Silicon) | `.dmg` | `shepherd-cli-aarch64-apple-darwin.tar.gz` |
+| macOS (Intel) | `.dmg` | `shepherd-cli-x86_64-apple-darwin.tar.gz` |
+| Linux (x86_64) | `.deb`, `.AppImage` | `shepherd-cli-x86_64-unknown-linux-gnu.tar.gz` |
+| Windows (x86_64) | `.msi` | `shepherd-cli-x86_64-pc-windows-msvc.zip` |
+
+The CLI tarball contains `shepherd`, `shep` (alias), and `shepherd-server`. Put them on your PATH.
+
+### From source
 
 ```bash
-# macOS
-brew install shepherd-codes/tap/shepherd
-
-# Linux
-curl -fsSL https://shepherd.codes/install.sh | sh
-
-# Windows
-winget install shepherd-codes.shepherd
-
-# From source (installs both `shepherd` and `shep`)
 git clone https://github.com/SecurityRonin/Shepherd.git
-cd Shepherd && bash scripts/install.sh && npm install && npm run build
+cd Shepherd
+
+# CLI only (no GUI)
+cargo build --release
+# → target/release/shepherd, target/release/shep, target/release/shepherd-server
+
+# Desktop app (requires Node.js + Tauri prerequisites)
+npm install && npm run build
+cargo tauri build
 ```
 
 Both `shepherd` and `shep` are installed — they're the same binary. Use whichever you prefer. Most examples in this README use `shep`.
@@ -430,9 +443,11 @@ Restart Shepherd. Your agent shows up in the New Task dropdown.
 
 ## Roadmap
 
-**v1.0** (current): Core engine, Kanban board, 9 agents, YOLO engine, quality gates, PR pipeline, CLI with shell completions, LLM client (OpenAI/Anthropic/Ollama), name generator, logo generator, North Star PMF wizard, contextual triggers, nono.sh sandbox, ecosystem auto-install (Superpowers + context-mode + Alaya), new project wizard, iTerm2 session adoption (9 agents, session picker, permission prompt detection, bridge script). 1,100+ tests.
+**v0.1.0** (current): Core engine with embedded Axum server, task dispatch loop, PTY agent execution, session monitoring, YOLO rules engine, Kanban board (React + Zustand + xterm.js), WebSocket real-time events, CLI with auto-server-spawn and shell completions, 9 agent adapters, iTerm2 session adoption, quality gates, name/logo generators, North Star PMF wizard, nono.sh sandbox, ecosystem auto-install. 1,400+ tests. 99.7% Rust code coverage. CI with fmt, clippy, cargo-deny, Vitest, and Playwright.
 
-**v1.1**: Best-of-N (run same task on multiple agents, compare outputs). Issue tracker integration (Linear, GitHub Issues, Jira). Event-driven automations.
+**v0.2**: Full multi-agent coordination (concurrent dispatch, agent-to-agent handoff). One-click PR pipeline. Docker isolation mode. Homebrew tap + winget package.
+
+**v1.0**: Best-of-N (run same task on multiple agents, compare outputs). Issue tracker integration (Linear, GitHub Issues, Jira). Event-driven automations. Cloud sync (Shepherd Pro).
 
 **v2.0**: Mobile monitoring (push notifications, approve from phone). Team dashboards. Browser UI for remote access. Adapter registry.
 
@@ -443,11 +458,25 @@ Shepherd is Apache 2.0 licensed and built in the open.
 ```bash
 git clone https://github.com/SecurityRonin/Shepherd.git
 cd Shepherd
-cargo build
-npm install && npm run dev
+
+# Backend
+cargo fmt --all -- --check      # formatting
+cargo clippy --workspace        # lints
+cargo deny check                # license + advisory audit
+cargo test --workspace          # 1,350+ Rust tests
+
+# Frontend
+npm install
+npx tsc --noEmit                # type check
+npx vitest run                  # 187 unit tests
+npx playwright test             # 8 e2e browser tests
+
+# Run the desktop app in dev mode
+npm run dev                     # starts Vite on :1420
+cargo tauri dev                 # launches Tauri with hot reload
 ```
 
-PRs welcome. Check [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+PRs welcome. CI enforces fmt, clippy, cargo-deny, and all test suites.
 
 If you find Shepherd useful, star the repo. It helps others find it.
 

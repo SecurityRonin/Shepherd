@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use super::CloudClient;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -47,10 +47,14 @@ pub struct SendNotificationResponse {
 }
 
 impl CloudClient {
-    pub async fn get_notification_preferences(&self) -> Result<NotificationPreferences, super::CloudError> {
+    pub async fn get_notification_preferences(
+        &self,
+    ) -> Result<NotificationPreferences, super::CloudError> {
         let jwt = self.get_jwt()?;
         let url = format!("{}/api/notifications/preferences", self.api_url());
-        let resp = self.http.get(&url)
+        let resp = self
+            .http
+            .get(&url)
             .bearer_auth(&jwt)
             .send()
             .await
@@ -59,18 +63,28 @@ impl CloudClient {
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
             let body = resp.text().await.unwrap_or_default();
-            return Err(super::CloudError::Api { status, message: body });
+            return Err(super::CloudError::Api {
+                status,
+                message: body,
+            });
         }
 
-        let result: NotificationPreferencesResponse = resp.json().await
+        let result: NotificationPreferencesResponse = resp
+            .json()
+            .await
             .map_err(|e| super::CloudError::Network(e.to_string()))?;
         Ok(result.preferences)
     }
 
-    pub async fn send_notification(&self, payload: &NotificationPayload) -> Result<bool, super::CloudError> {
+    pub async fn send_notification(
+        &self,
+        payload: &NotificationPayload,
+    ) -> Result<bool, super::CloudError> {
         let jwt = self.get_jwt()?;
         let url = format!("{}/api/notifications/send", self.api_url());
-        let resp = self.http.post(&url)
+        let resp = self
+            .http
+            .post(&url)
             .bearer_auth(&jwt)
             .json(payload)
             .send()
@@ -80,10 +94,15 @@ impl CloudClient {
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
             let body = resp.text().await.unwrap_or_default();
-            return Err(super::CloudError::Api { status, message: body });
+            return Err(super::CloudError::Api {
+                status,
+                message: body,
+            });
         }
 
-        let result: SendNotificationResponse = resp.json().await
+        let result: SendNotificationResponse = resp
+            .json()
+            .await
             .map_err(|e| super::CloudError::Network(e.to_string()))?;
         Ok(result.sent)
     }
@@ -159,7 +178,8 @@ mod tests {
 
     #[test]
     fn preferences_response_empty_events() {
-        let json = r#"{"preferences":{"slack_webhook_url":null,"email_enabled":false,"events":[]}}"#;
+        let json =
+            r#"{"preferences":{"slack_webhook_url":null,"email_enabled":false,"events":[]}}"#;
         let resp: NotificationPreferencesResponse = serde_json::from_str(json).unwrap();
         assert!(!resp.preferences.email_enabled);
         assert!(resp.preferences.events.is_empty());
@@ -218,7 +238,10 @@ mod tests {
         assert_eq!(prefs.events.len(), 2);
         assert_eq!(prefs.events[0], NotificationEvent::AgentFinished);
         assert_eq!(prefs.events[1], NotificationEvent::GateFailed);
-        assert_eq!(prefs.slack_webhook_url, Some("https://hooks.slack.com/T/B/x".to_string()));
+        assert_eq!(
+            prefs.slack_webhook_url,
+            Some("https://hooks.slack.com/T/B/x".to_string())
+        );
     }
 
     #[tokio::test]

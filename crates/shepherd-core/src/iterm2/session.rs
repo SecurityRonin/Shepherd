@@ -9,7 +9,8 @@ pub fn flatten_buffer(lines: &[iterm2::LineContents]) -> String {
         if let Some(ref text) = line.text {
             out.push_str(text);
         }
-        let is_soft = line.continuation
+        let is_soft = line
+            .continuation
             .map(|c| c == iterm2::line_contents::Continuation::SoftEol as i32)
             .unwrap_or(false);
         if !is_soft {
@@ -45,7 +46,11 @@ pub struct AdoptedSession {
 
 impl AdoptedSession {
     pub fn new(task_id: i64, iterm2_session_id: String, cwd: String) -> Self {
-        Self { task_id, iterm2_session_id, cwd }
+        Self {
+            task_id,
+            iterm2_session_id,
+            cwd,
+        }
     }
 }
 
@@ -56,7 +61,11 @@ mod tests {
 
     #[test]
     fn test_adopted_session_new_stores_fields() {
-        let s = AdoptedSession::new(99, "iterm2-sess-xyz".to_string(), "/home/user/proj".to_string());
+        let s = AdoptedSession::new(
+            99,
+            "iterm2-sess-xyz".to_string(),
+            "/home/user/proj".to_string(),
+        );
         assert_eq!(s.task_id, 99);
         assert_eq!(s.iterm2_session_id, "iterm2-sess-xyz");
         assert_eq!(s.cwd, "/home/user/proj");
@@ -76,10 +85,7 @@ mod tests {
 
     #[test]
     fn test_flatten_hard_eol_appends_newline() {
-        let lines = vec![
-            make_line("hello", true),
-            make_line("world", true),
-        ];
+        let lines = vec![make_line("hello", true), make_line("world", true)];
         assert_eq!(flatten_buffer(&lines), "hello\nworld\n");
     }
 
@@ -162,6 +168,9 @@ mod tests {
     fn test_detect_permission_prompt_extracts_tool_name() {
         let text = "Allow bash tool?\n(y/n) [y]: ";
         let tool = detect_permission_prompt(text).unwrap();
-        assert!(tool.contains("bash"), "tool name should contain 'bash', got: {tool}");
+        assert!(
+            tool.contains("bash"),
+            "tool name should contain 'bash', got: {tool}"
+        );
     }
 }

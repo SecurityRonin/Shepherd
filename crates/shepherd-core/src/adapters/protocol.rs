@@ -128,7 +128,10 @@ supports_worktree = false
         assert_eq!(config.agent.command, "claude");
         assert_eq!(config.agent.args, vec!["--json"]);
         assert_eq!(config.agent.args_interactive, vec!["--interactive"]);
-        assert_eq!(config.agent.version_check.as_deref(), Some("claude --version"));
+        assert_eq!(
+            config.agent.version_check.as_deref(),
+            Some("claude --version")
+        );
         assert_eq!(config.agent.icon.as_deref(), Some("brain"));
 
         // Roundtrip: serialize back to TOML and re-parse (before partial move)
@@ -241,7 +244,10 @@ icon = "robot"
 [permissions]
 "#;
         let config: AdapterConfig = toml::from_str(toml_str).unwrap();
-        assert_eq!(config.agent.version_check.as_deref(), Some("codex --version"));
+        assert_eq!(
+            config.agent.version_check.as_deref(),
+            Some("codex --version")
+        );
         assert_eq!(config.agent.icon.as_deref(), Some("robot"));
     }
 }

@@ -15,9 +15,15 @@ async fn start_test_server() -> (String, tokio::task::JoinHandle<()>) {
         let conn = shepherd_core::db::open_memory().unwrap();
         let adapters = std::sync::Arc::new(shepherd_core::adapters::AdapterRegistry::new());
         let yolo = std::sync::Arc::new(shepherd_core::yolo::YoloEngine::new(
-            shepherd_core::yolo::rules::RuleSet { deny: vec![], allow: vec![] },
+            shepherd_core::yolo::rules::RuleSet {
+                deny: vec![],
+                allow: vec![],
+            },
         ));
-        let pty = std::sync::Arc::new(shepherd_core::pty::PtyManager::new(cfg.max_agents, shepherd_core::pty::sandbox::SandboxProfile::disabled()));
+        let pty = std::sync::Arc::new(shepherd_core::pty::PtyManager::new(
+            cfg.max_agents,
+            shepherd_core::pty::sandbox::SandboxProfile::disabled(),
+        ));
         let (event_tx, _) = tokio::sync::broadcast::channel(256);
 
         let state = std::sync::Arc::new(shepherd_server::state::AppState {
@@ -163,7 +169,10 @@ async fn test_cloud_costs_endpoint() {
     let features = resp["features"].as_array().unwrap();
     assert_eq!(features.len(), 7);
     // Verify all expected feature names are present
-    let names: Vec<&str> = features.iter().map(|f| f["name"].as_str().unwrap()).collect();
+    let names: Vec<&str> = features
+        .iter()
+        .map(|f| f["name"].as_str().unwrap())
+        .collect();
     assert!(names.contains(&"logo"));
     assert!(names.contains(&"name"));
     assert!(names.contains(&"northstar"));
@@ -231,7 +240,10 @@ async fn test_logogen_no_provider_returns_503() {
         .unwrap();
     assert_eq!(resp.status(), 503);
     let body: Value = resp.json().await.unwrap();
-    assert!(body["error"].as_str().unwrap().contains("No generation provider"));
+    assert!(body["error"]
+        .as_str()
+        .unwrap()
+        .contains("No generation provider"));
 }
 
 #[tokio::test]
@@ -248,7 +260,10 @@ async fn test_namegen_no_provider_returns_503() {
         .unwrap();
     assert_eq!(resp.status(), 503);
     let body: Value = resp.json().await.unwrap();
-    assert!(body["error"].as_str().unwrap().contains("No generation provider"));
+    assert!(body["error"]
+        .as_str()
+        .unwrap()
+        .contains("No generation provider"));
 }
 
 #[tokio::test]
@@ -286,7 +301,10 @@ async fn test_northstar_execute_no_provider() {
         .unwrap();
     assert_eq!(resp.status(), 503);
     let body: Value = resp.json().await.unwrap();
-    assert!(body["error"].as_str().unwrap().contains("No generation provider"));
+    assert!(body["error"]
+        .as_str()
+        .unwrap()
+        .contains("No generation provider"));
 }
 
 #[tokio::test]
@@ -345,5 +363,8 @@ async fn test_logogen_export_invalid_base64() {
     // Invalid base64 triggers the export error path
     assert_eq!(resp.status(), 500);
     let body: Value = resp.json().await.unwrap();
-    assert!(body["error"].as_str().unwrap().contains("Icon export failed"));
+    assert!(body["error"]
+        .as_str()
+        .unwrap()
+        .contains("Icon export failed"));
 }

@@ -90,11 +90,15 @@ mod tests {
                     },
                 })
             }
-            fn name(&self) -> &str { "mock" }
+            fn name(&self) -> &str {
+                "mock"
+            }
         }
 
         let provider = MockProvider;
-        let msg = generate_commit_message(&provider, "diff --git a/auth.rs", "Fix auth").await.unwrap();
+        let msg = generate_commit_message(&provider, "diff --git a/auth.rs", "Fix auth")
+            .await
+            .unwrap();
         assert_eq!(msg, "fix: resolve authentication race condition");
     }
 
@@ -120,11 +124,15 @@ mod tests {
                     },
                 })
             }
-            fn name(&self) -> &str { "mock" }
+            fn name(&self) -> &str {
+                "mock"
+            }
         }
 
         let long_diff = "x".repeat(10000);
-        let msg = generate_commit_message(&DiffCheckProvider, &long_diff, "Task").await.unwrap();
+        let msg = generate_commit_message(&DiffCheckProvider, &long_diff, "Task")
+            .await
+            .unwrap();
         assert_eq!(msg, "feat: add feature");
     }
 
@@ -139,7 +147,9 @@ mod tests {
             async fn chat(&self, _request: &LlmRequest) -> anyhow::Result<LlmResponse> {
                 anyhow::bail!("API rate limited")
             }
-            fn name(&self) -> &str { "fail" }
+            fn name(&self) -> &str {
+                "fail"
+            }
         }
 
         let result = generate_commit_message(&FailProvider, "diff", "Task").await;

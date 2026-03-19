@@ -1,6 +1,6 @@
-use std::path::Path;
 use super::extractor::TaskIntent;
 use super::package::{ContextItem, ContextSource, McpQuery};
+use std::path::Path;
 
 /// A source of context for agent sessions.
 pub trait ContextProvider {
@@ -18,7 +18,10 @@ pub struct StructuralProvider;
 
 impl StructuralProvider {
     /// Walk directory and collect source files up to a depth limit.
-    pub(crate) fn collect_source_files(repo_path: &Path, max_depth: usize) -> Vec<std::path::PathBuf> {
+    pub(crate) fn collect_source_files(
+        repo_path: &Path,
+        max_depth: usize,
+    ) -> Vec<std::path::PathBuf> {
         let mut files = Vec::new();
         Self::walk_dir(repo_path, repo_path, max_depth, 0, &mut files);
         files
@@ -66,10 +69,29 @@ impl StructuralProvider {
         let ext = name.rsplit('.').next().unwrap_or("");
         matches!(
             ext,
-            "rs" | "ts" | "tsx" | "js" | "jsx" | "py" | "go" | "java"
-                | "toml" | "yaml" | "yml" | "json" | "sql" | "html"
-                | "css" | "vue" | "svelte" | "rb" | "c" | "cpp"
-                | "h" | "swift" | "kt" | "sh"
+            "rs" | "ts"
+                | "tsx"
+                | "js"
+                | "jsx"
+                | "py"
+                | "go"
+                | "java"
+                | "toml"
+                | "yaml"
+                | "yml"
+                | "json"
+                | "sql"
+                | "html"
+                | "css"
+                | "vue"
+                | "svelte"
+                | "rb"
+                | "c"
+                | "cpp"
+                | "h"
+                | "swift"
+                | "kt"
+                | "sh"
         )
     }
 
@@ -81,10 +103,7 @@ impl StructuralProvider {
             // Rust: use crate::foo::bar;  or  mod foo;
             if let Some(rest) = trimmed.strip_prefix("use ") {
                 if let Some(path) = rest.strip_prefix("crate::") {
-                    let module_path = path.trim_end_matches(';')
-                        .split("::")
-                        .next()
-                        .unwrap_or("");
+                    let module_path = path.trim_end_matches(';').split("::").next().unwrap_or("");
                     if !module_path.is_empty() {
                         imports.push(module_path.to_string());
                     }
@@ -169,10 +188,7 @@ impl ContextProvider for StructuralProvider {
                             source: ContextSource::Structural,
                             file_path: source_file.clone(),
                             relevance_score: 0.7,
-                            reason: format!(
-                                "Imported by {}",
-                                ref_file.to_string_lossy()
-                            ),
+                            reason: format!("Imported by {}", ref_file.to_string_lossy()),
                         });
                     }
                 }
@@ -373,7 +389,8 @@ mod tests {
         std::fs::write(
             src.join("db/mod.rs"),
             "pub struct Database;\n\nimpl Database {\n    pub fn connect() -> Self { Self }\n}\n",
-        ).unwrap();
+        )
+        .unwrap();
 
         std::fs::write(
             src.join("api/routes.ts"),
@@ -401,11 +418,11 @@ mod tests {
         };
 
         let items = provider.find_context(&intent, repo.path());
-        assert!(items.iter().any(|i|
-            i.file_path == PathBuf::from("src/auth/mod.rs")
-            && i.source == ContextSource::FileReference
-            && i.relevance_score == 1.0
-        ));
+        assert!(items
+            .iter()
+            .any(|i| i.file_path == PathBuf::from("src/auth/mod.rs")
+                && i.source == ContextSource::FileReference
+                && i.relevance_score == 1.0));
     }
 
     #[test]
@@ -420,10 +437,10 @@ mod tests {
 
         let items = provider.find_context(&intent, repo.path());
         // auth/mod.rs imports crate::db, so db/mod.rs should appear
-        assert!(items.iter().any(|i|
-            i.file_path == PathBuf::from("src/db/mod.rs")
-            && i.source == ContextSource::Structural
-        ));
+        assert!(items
+            .iter()
+            .any(|i| i.file_path == PathBuf::from("src/db/mod.rs")
+                && i.source == ContextSource::Structural));
     }
 
     #[test]
@@ -437,10 +454,10 @@ mod tests {
         };
 
         let items = provider.find_context(&intent, repo.path());
-        assert!(items.iter().any(|i|
-            i.file_path == PathBuf::from("src/auth/mod.rs")
-            && i.reason.contains("AuthService")
-        ));
+        assert!(items
+            .iter()
+            .any(|i| i.file_path == PathBuf::from("src/auth/mod.rs")
+                && i.reason.contains("AuthService")));
     }
 
     #[test]
@@ -453,12 +470,12 @@ mod tests {
         };
 
         let queries = provider.suggest_mcp_queries(&intent);
-        assert!(queries.iter().any(|q|
-            q.server == "serena" && q.tool == "find_symbol"
-        ));
-        assert!(queries.iter().any(|q|
-            q.server == "serena" && q.tool == "find_referencing_symbols"
-        ));
+        assert!(queries
+            .iter()
+            .any(|q| q.server == "serena" && q.tool == "find_symbol"));
+        assert!(queries
+            .iter()
+            .any(|q| q.server == "serena" && q.tool == "find_referencing_symbols"));
     }
 
     #[test]
@@ -489,7 +506,9 @@ mod tests {
         std::fs::write(nm.join("package.json"), "{}").unwrap();
 
         let files = StructuralProvider::collect_source_files(repo.path(), 8);
-        assert!(!files.iter().any(|f| f.to_string_lossy().contains("node_modules")));
+        assert!(!files
+            .iter()
+            .any(|f| f.to_string_lossy().contains("node_modules")));
     }
 
     // ── Import parsing tests ─────────────────────────────────────
@@ -531,10 +550,10 @@ mod tests {
         };
 
         let items = provider.find_context(&intent, repo.path());
-        assert!(items.iter().any(|i|
-            i.file_path.to_string_lossy().contains("auth")
-            && i.source == ContextSource::Semantic
-        ));
+        assert!(items
+            .iter()
+            .any(|i| i.file_path.to_string_lossy().contains("auth")
+                && i.source == ContextSource::Semantic));
     }
 
     #[test]
@@ -549,9 +568,9 @@ mod tests {
 
         let items = provider.find_context(&intent, repo.path());
         // api/search.ts and api/routes.ts both mention "search"
-        assert!(items.iter().any(|i|
-            i.file_path.to_string_lossy().contains("search")
-        ));
+        assert!(items
+            .iter()
+            .any(|i| i.file_path.to_string_lossy().contains("search")));
     }
 
     #[test]
@@ -593,9 +612,9 @@ mod tests {
         };
 
         let queries = provider.suggest_mcp_queries(&intent);
-        assert!(queries.iter().any(|q|
-            q.server == "sourcegraph" && q.tool == "search"
-        ));
+        assert!(queries
+            .iter()
+            .any(|q| q.server == "sourcegraph" && q.tool == "search"));
     }
 
     #[test]
@@ -607,14 +626,21 @@ mod tests {
             file_paths: vec![],
             symbols: vec![],
             keywords: vec![
-                "search".into(), "web".into(), "query".into(),
-                "api".into(), "fetch".into(),
+                "search".into(),
+                "web".into(),
+                "query".into(),
+                "api".into(),
+                "fetch".into(),
             ],
         };
 
         let items = provider.find_context(&intent, repo.path());
         for item in &items {
-            assert!(item.relevance_score <= 1.0, "Score {} exceeds 1.0", item.relevance_score);
+            assert!(
+                item.relevance_score <= 1.0,
+                "Score {} exceeds 1.0",
+                item.relevance_score
+            );
         }
     }
 
@@ -709,10 +735,14 @@ mod tests {
 
         let files_shallow = StructuralProvider::collect_source_files(tmp.path(), 1);
         // Shallow file should be found, deep one may not depending on depth
-        assert!(files_shallow.iter().any(|f| f.to_string_lossy().contains("shallow")));
+        assert!(files_shallow
+            .iter()
+            .any(|f| f.to_string_lossy().contains("shallow")));
 
         let files_deep = StructuralProvider::collect_source_files(tmp.path(), 10);
-        assert!(files_deep.iter().any(|f| f.to_string_lossy().contains("deep")));
+        assert!(files_deep
+            .iter()
+            .any(|f| f.to_string_lossy().contains("deep")));
     }
 
     // ── StructuralProvider trait methods ──────────────────────────
@@ -739,9 +769,7 @@ mod tests {
         let intent = TaskIntent {
             file_paths: vec![],
             symbols: vec![],
-            keywords: vec![
-                "a".into(), "b".into(), "c".into(), "d".into(), "e".into(),
-            ],
+            keywords: vec!["a".into(), "b".into(), "c".into(), "d".into(), "e".into()],
         };
         let queries = provider.suggest_mcp_queries(&intent);
         // 1 combined query + at most 3 individual keyword queries = 4
@@ -791,11 +819,7 @@ mod tests {
         std::fs::create_dir_all(&src).unwrap();
 
         // Create a source file that will be referenced
-        std::fs::write(
-            src.join("readable.rs"),
-            "use crate::secret;\nfn main() {}",
-        )
-        .unwrap();
+        std::fs::write(src.join("readable.rs"), "use crate::secret;\nfn main() {}").unwrap();
         // Create a file that will become unreadable
         std::fs::write(src.join("secret.rs"), "fn secret() {}").unwrap();
 

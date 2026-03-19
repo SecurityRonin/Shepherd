@@ -19,7 +19,7 @@ pub mod tfidf;
 pub mod tfidf_provider;
 
 pub use extractor::{extract_intent, TaskIntent};
-pub use index::{IndexedFile, scan_and_index};
+pub use index::{scan_and_index, IndexedFile};
 pub use injection::{prepare_injection, InjectionPayload, InjectionStrategy};
 pub use package::*;
 pub use provider::{ContextProvider, SemanticProvider, StructuralProvider};
@@ -36,10 +36,7 @@ impl ContextOrchestrator {
     /// (structural + semantic).
     pub fn new() -> Self {
         Self {
-            providers: vec![
-                Box::new(StructuralProvider),
-                Box::new(SemanticProvider),
-            ],
+            providers: vec![Box::new(StructuralProvider), Box::new(SemanticProvider)],
         }
     }
 
@@ -77,10 +74,7 @@ impl ContextOrchestrator {
         let summary = Self::generate_summary(&intent, &items);
 
         // Generate ID from timestamp
-        let id = format!(
-            "ctx-{}",
-            chrono::Utc::now().format("%Y%m%d%H%M%S%3f")
-        );
+        let id = format!("ctx-{}", chrono::Utc::now().format("%Y%m%d%H%M%S%3f"));
 
         ContextPackage {
             id,
@@ -157,7 +151,13 @@ impl ContextOrchestrator {
         if !intent.symbols.is_empty() {
             parts.push(format!(
                 "Key symbols: {}",
-                intent.symbols.iter().take(5).cloned().collect::<Vec<_>>().join(", ")
+                intent
+                    .symbols
+                    .iter()
+                    .take(5)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", ")
             ));
         }
 
@@ -192,7 +192,8 @@ mod tests {
         std::fs::write(
             src.join("main.rs"),
             "use crate::auth;\nuse crate::db;\n\nfn main() {\n    AuthService::new();\n}\n",
-        ).unwrap();
+        )
+        .unwrap();
         std::fs::write(
             src.join("auth/mod.rs"),
             "use crate::db;\npub struct AuthService;\nimpl AuthService {\n    pub fn new() -> Self { Self }\n}\n",
@@ -200,11 +201,13 @@ mod tests {
         std::fs::write(
             src.join("db/mod.rs"),
             "pub struct Database;\nimpl Database {\n    pub fn connect() -> Self { Self }\n}\n",
-        ).unwrap();
+        )
+        .unwrap();
         std::fs::write(
             src.join("api/handler.rs"),
             "use crate::auth::AuthService;\npub fn handle_login() {}\n",
-        ).unwrap();
+        )
+        .unwrap();
 
         tmp
     }
@@ -225,9 +228,10 @@ mod tests {
         };
 
         let pkg = orchestrator.build_context(&request);
-        assert!(pkg.items.iter().any(|i|
-            i.file_path == PathBuf::from("src/auth/mod.rs")
-        ));
+        assert!(pkg
+            .items
+            .iter()
+            .any(|i| i.file_path == PathBuf::from("src/auth/mod.rs")));
     }
 
     #[test]
@@ -245,9 +249,10 @@ mod tests {
 
         let pkg = orchestrator.build_context(&request);
         // auth/mod.rs imports db, so db/mod.rs should appear
-        assert!(pkg.items.iter().any(|i|
-            i.file_path == PathBuf::from("src/db/mod.rs")
-        ));
+        assert!(pkg
+            .items
+            .iter()
+            .any(|i| i.file_path == PathBuf::from("src/db/mod.rs")));
     }
 
     #[test]
@@ -282,13 +287,12 @@ mod tests {
 
         let pkg = orchestrator.build_context(&request);
         // Should have Serena queries for AuthService
-        assert!(pkg.mcp_queries.iter().any(|q|
-            q.server == "serena" && q.tool == "find_symbol"
-        ));
+        assert!(pkg
+            .mcp_queries
+            .iter()
+            .any(|q| q.server == "serena" && q.tool == "find_symbol"));
         // Should have Sourcegraph search queries
-        assert!(pkg.mcp_queries.iter().any(|q|
-            q.server == "sourcegraph"
-        ));
+        assert!(pkg.mcp_queries.iter().any(|q| q.server == "sourcegraph"));
     }
 
     #[test]
@@ -307,7 +311,9 @@ mod tests {
         let pkg = orchestrator.build_context(&request);
         // auth/mod.rs should appear only once despite being found by
         // multiple providers (file reference + symbol match + semantic)
-        let auth_count = pkg.items.iter()
+        let auth_count = pkg
+            .items
+            .iter()
             .filter(|i| i.file_path == PathBuf::from("src/auth/mod.rs"))
             .count();
         assert_eq!(auth_count, 1);
@@ -389,9 +395,7 @@ mod tests {
 
     #[test]
     fn with_providers_creates_custom_orchestrator() {
-        let orchestrator = ContextOrchestrator::with_providers(vec![
-            Box::new(StructuralProvider),
-        ]);
+        let orchestrator = ContextOrchestrator::with_providers(vec![Box::new(StructuralProvider)]);
         let repo = create_test_repo();
         let request = ContextRequest {
             task_id: Some(1),
@@ -403,7 +407,10 @@ mod tests {
         };
         let pkg = orchestrator.build_context(&request);
         // With only StructuralProvider, there should be no Semantic items
-        assert!(pkg.items.iter().all(|i| i.source != ContextSource::Semantic));
+        assert!(pkg
+            .items
+            .iter()
+            .all(|i| i.source != ContextSource::Semantic));
     }
 
     #[test]

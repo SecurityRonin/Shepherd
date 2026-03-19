@@ -32,10 +32,7 @@ pub fn build_logo_prompt(input: &LogoGenInput) -> String {
 }
 
 /// Generate logo variants using an LLM image generation provider.
-pub async fn generate_logos(
-    llm: &dyn LlmProvider,
-    input: &LogoGenInput,
-) -> Result<LogoGenResult> {
+pub async fn generate_logos(llm: &dyn LlmProvider, input: &LogoGenInput) -> Result<LogoGenResult> {
     let prompt = build_logo_prompt(input);
 
     let mut request = ImageGenRequest::new(prompt);
@@ -149,7 +146,12 @@ mod tests {
 
     #[test]
     fn build_logo_prompt_all_styles() {
-        for style in [LogoStyle::Minimal, LogoStyle::Abstract, LogoStyle::Geometric, LogoStyle::Mascot] {
+        for style in [
+            LogoStyle::Minimal,
+            LogoStyle::Abstract,
+            LogoStyle::Geometric,
+            LogoStyle::Mascot,
+        ] {
             let input = LogoGenInput {
                 product_name: "Test".to_string(),
                 product_description: None,
@@ -158,13 +160,18 @@ mod tests {
                 variants: 1,
             };
             let prompt = build_logo_prompt(&input);
-            assert!(prompt.contains(&style.prompt_hint().to_lowercase()) || prompt.contains("professional"));
+            assert!(
+                prompt.contains(&style.prompt_hint().to_lowercase())
+                    || prompt.contains("professional")
+            );
         }
     }
 
     #[tokio::test]
     async fn generate_logos_with_mock() {
-        use crate::llm::{GeneratedImage, ImageGenRequest, ImageGenResponse, LlmProvider, LlmRequest, LlmResponse};
+        use crate::llm::{
+            GeneratedImage, ImageGenRequest, ImageGenResponse, LlmProvider, LlmRequest, LlmResponse,
+        };
 
         struct MockImageProvider;
 
@@ -173,7 +180,10 @@ mod tests {
             async fn chat(&self, _request: &LlmRequest) -> anyhow::Result<LlmResponse> {
                 unimplemented!()
             }
-            async fn generate_image(&self, request: &ImageGenRequest) -> anyhow::Result<ImageGenResponse> {
+            async fn generate_image(
+                &self,
+                request: &ImageGenRequest,
+            ) -> anyhow::Result<ImageGenResponse> {
                 let images: Vec<GeneratedImage> = (0..request.n)
                     .map(|i| GeneratedImage {
                         data: format!("base64_png_data_{}", i),
@@ -182,7 +192,9 @@ mod tests {
                     .collect();
                 Ok(ImageGenResponse { images })
             }
-            fn name(&self) -> &str { "mock-image" }
+            fn name(&self) -> &str {
+                "mock-image"
+            }
         }
 
         let input = LogoGenInput {
@@ -215,10 +227,15 @@ mod tests {
             async fn chat(&self, _request: &LlmRequest) -> anyhow::Result<LlmResponse> {
                 unimplemented!()
             }
-            async fn generate_image(&self, _request: &ImageGenRequest) -> anyhow::Result<ImageGenResponse> {
+            async fn generate_image(
+                &self,
+                _request: &ImageGenRequest,
+            ) -> anyhow::Result<ImageGenResponse> {
                 anyhow::bail!("Image generation quota exceeded")
             }
-            fn name(&self) -> &str { "fail-image" }
+            fn name(&self) -> &str {
+                "fail-image"
+            }
         }
 
         let input = LogoGenInput {

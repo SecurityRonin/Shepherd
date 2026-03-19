@@ -1,6 +1,6 @@
-use std::path::{Path, PathBuf};
 use super::superpowers::InstallScope;
 use super::{EcosystemPlugin, PluginDetectionResult};
+use std::path::{Path, PathBuf};
 
 /// Return the shared plugin definition for serena.
 pub fn plugin() -> EcosystemPlugin {
@@ -121,7 +121,8 @@ mod tests {
         std::fs::write(
             project.join(".claude/settings.json"),
             r#"{"mcpServers":{"serena":{"command":"uvx"}}}"#,
-        ).unwrap();
+        )
+        .unwrap();
         let result = detect_for_agent("claude-code", &home, Some(&project));
         assert!(result.installed);
         assert_eq!(result.scope, InstallScope::Project);
@@ -135,7 +136,8 @@ mod tests {
         std::fs::write(
             codex_dir.join("config.json"),
             r#"{"mcpServers":{"serena":{"command":"uvx"}}}"#,
-        ).unwrap();
+        )
+        .unwrap();
         let result = detect_for_agent("codex", tmp.path(), None);
         assert!(result.installed);
         assert_eq!(result.scope, InstallScope::User);

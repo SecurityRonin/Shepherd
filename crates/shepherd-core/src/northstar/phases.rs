@@ -197,7 +197,14 @@ pub async fn execute_all_phases(
             Some(accumulated_context.as_str())
         };
 
-        match execute_phase(llm, phase, product_name, product_description, previous_context).await
+        match execute_phase(
+            llm,
+            phase,
+            product_name,
+            product_description,
+            previous_context,
+        )
+        .await
         {
             Ok(result) => {
                 // Add first 2000 chars of output to context for subsequent phases
@@ -345,10 +352,9 @@ mod tests {
         }
 
         let phase = &PHASES[0]; // Product Vision
-        let result =
-            execute_phase(&MockProvider, phase, "TestApp", "A test app", None)
-                .await
-                .unwrap();
+        let result = execute_phase(&MockProvider, phase, "TestApp", "A test app", None)
+            .await
+            .unwrap();
         assert_eq!(result.phase_id, 1);
         assert_eq!(result.phase_name, "Product Vision");
         assert_eq!(result.status, PhaseStatus::Completed);
@@ -369,7 +375,11 @@ mod tests {
         impl LlmProvider for ContextCheckProvider {
             async fn chat(&self, request: &LlmRequest) -> anyhow::Result<LlmResponse> {
                 // Should have 3 messages: system, context user msg, prompt user msg
-                assert_eq!(request.messages.len(), 3, "Expected 3 messages with context");
+                assert_eq!(
+                    request.messages.len(),
+                    3,
+                    "Expected 3 messages with context"
+                );
                 assert!(request.messages[1].content.contains("previous analysis"));
                 Ok(LlmResponse {
                     content: "Phase output".to_string(),

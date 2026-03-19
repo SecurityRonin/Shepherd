@@ -31,7 +31,14 @@ pub fn check_budgets(
     let agent_daily = store::get_agent_daily_cost(conn, agent_id).unwrap_or(0.0);
     let global_daily = store::get_global_daily_cost(conn).unwrap_or(0.0);
 
-    budget::check_task_budgets(config, task_cost, agent_daily, global_daily, task_id, agent_id)
+    budget::check_task_budgets(
+        config,
+        task_cost,
+        agent_daily,
+        global_daily,
+        task_id,
+        agent_id,
+    )
 }
 
 #[cfg(test)]

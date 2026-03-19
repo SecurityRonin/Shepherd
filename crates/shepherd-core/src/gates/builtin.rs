@@ -92,9 +92,7 @@ pub async fn run_lint(
     let start = Instant::now();
     let (program, args, name) = match project_type {
         ProjectType::Rust => ("cargo", vec!["clippy", "--", "-D", "warnings"], "rust-lint"),
-        ProjectType::Node | ProjectType::TypeScript => {
-            ("npx", vec!["eslint", "."], "js-lint")
-        }
+        ProjectType::Node | ProjectType::TypeScript => ("npx", vec!["eslint", "."], "js-lint"),
         ProjectType::Python => ("ruff", vec!["check", "."], "python-lint"),
         _ => {
             return GateResult {
@@ -125,11 +123,7 @@ pub async fn run_format_check(
 ) -> GateResult {
     let start = Instant::now();
     let (program, args, name) = match project_type {
-        ProjectType::Rust => (
-            "cargo",
-            vec!["fmt", "--", "--check"],
-            "rust-format",
-        ),
+        ProjectType::Rust => ("cargo", vec!["fmt", "--", "--check"], "rust-format"),
         ProjectType::Node | ProjectType::TypeScript => {
             ("npx", vec!["prettier", "--check", "."], "js-format")
         }
@@ -547,7 +541,8 @@ mod tests {
     #[tokio::test]
     async fn run_command_with_stderr() {
         let dir = TempDir::new().unwrap();
-        let (passed, output) = run_command(dir.path(), "sh", &["-c", "echo err >&2; exit 1"], 10).await;
+        let (passed, output) =
+            run_command(dir.path(), "sh", &["-c", "echo err >&2; exit 1"], 10).await;
         assert!(!passed);
         assert!(output.contains("err"));
     }

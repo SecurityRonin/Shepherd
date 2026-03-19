@@ -1,6 +1,6 @@
-use std::path::{Path, PathBuf};
 use super::superpowers::InstallScope;
 use super::{EcosystemPlugin, PluginDetectionResult};
+use std::path::{Path, PathBuf};
 
 /// Return the shared plugin definition for context-mode.
 pub fn plugin() -> EcosystemPlugin {
@@ -70,15 +70,17 @@ impl InstallConfig {
             agent: cfg.agent,
             scope: cfg.scope,
             target_path: cfg.target_path,
-            mcp_server_json: format!("{{\n  \"mcpServers\": {{\n    {CONTEXT_MODE_MCP_ENTRY}\n  }}\n}}"),
+            mcp_server_json: format!(
+                "{{\n  \"mcpServers\": {{\n    {CONTEXT_MODE_MCP_ENTRY}\n  }}\n}}"
+            ),
         })
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::superpowers::InstallScope;
+    use super::*;
 
     #[test]
     fn test_detect_not_installed() {
@@ -95,7 +97,8 @@ mod tests {
         std::fs::write(
             claude_dir.join("settings.json"),
             r#"{"mcpServers":{"context-mode":{"command":"npx","args":["-y","context-mode"]}}}"#,
-        ).unwrap();
+        )
+        .unwrap();
         let result = detect_for_agent("claude-code", tmp.path(), None);
         assert!(result.installed);
         assert_eq!(result.scope, InstallScope::User);
@@ -110,7 +113,8 @@ mod tests {
         std::fs::write(
             project.join(".claude/settings.json"),
             r#"{"mcpServers":{"context-mode":{"command":"npx"}}}"#,
-        ).unwrap();
+        )
+        .unwrap();
         let result = detect_for_agent("claude-code", &home, Some(&project));
         assert!(result.installed);
         assert_eq!(result.scope, InstallScope::Project);

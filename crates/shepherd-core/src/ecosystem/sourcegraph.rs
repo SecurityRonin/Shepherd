@@ -1,6 +1,6 @@
-use std::path::{Path, PathBuf};
 use super::superpowers::InstallScope;
 use super::{EcosystemPlugin, PluginDetectionResult};
+use std::path::{Path, PathBuf};
 
 /// Return the shared plugin definition for sourcegraph-mcp.
 pub fn plugin() -> EcosystemPlugin {
@@ -85,7 +85,9 @@ impl InstallConfig {
             agent: cfg.agent,
             scope: cfg.scope,
             target_path: cfg.target_path,
-            mcp_server_json: format!("{{\n  \"mcpServers\": {{\n    {SOURCEGRAPH_MCP_ENTRY}\n  }}\n}}"),
+            mcp_server_json: format!(
+                "{{\n  \"mcpServers\": {{\n    {SOURCEGRAPH_MCP_ENTRY}\n  }}\n}}"
+            ),
         })
     }
 }
@@ -124,7 +126,8 @@ mod tests {
         std::fs::write(
             project.join(".claude/settings.json"),
             r#"{"mcpServers":{"sourcegraph":{"command":"npx"}}}"#,
-        ).unwrap();
+        )
+        .unwrap();
         let result = detect_for_agent("claude-code", &home, Some(&project));
         assert!(result.installed);
         assert_eq!(result.scope, InstallScope::Project);
@@ -138,7 +141,8 @@ mod tests {
         std::fs::write(
             codex_dir.join("config.json"),
             r#"{"mcpServers":{"sourcegraph":{"command":"npx"}}}"#,
-        ).unwrap();
+        )
+        .unwrap();
         let result = detect_for_agent("codex", tmp.path(), None);
         assert!(result.installed);
         assert_eq!(result.scope, InstallScope::User);

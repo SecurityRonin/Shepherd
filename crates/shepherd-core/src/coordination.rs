@@ -47,12 +47,7 @@ impl LockManager {
 
     /// Attempt to acquire locks on a set of files for a task.
     /// Returns Acquired if all locks were obtained, or Conflict with details.
-    pub fn try_acquire(
-        &mut self,
-        task_id: i64,
-        agent_id: &str,
-        files: &[PathBuf],
-    ) -> LockResult {
+    pub fn try_acquire(&mut self, task_id: i64, agent_id: &str, files: &[PathBuf]) -> LockResult {
         // Check for conflicts first
         let mut conflicts = Vec::new();
         for file in files {
@@ -161,12 +156,8 @@ pub fn detect_domain(file_paths: &[String], keywords: &[String]) -> TaskDomain {
             "typescript" | "react" | "nextjs" | "next" => {
                 *ext_counts.entry("typescript").or_default() += 1
             }
-            "javascript" | "node" | "npm" => {
-                *ext_counts.entry("javascript").or_default() += 1
-            }
-            "python" | "pip" | "django" | "flask" => {
-                *ext_counts.entry("python").or_default() += 1
-            }
+            "javascript" | "node" | "npm" => *ext_counts.entry("javascript").or_default() += 1,
+            "python" | "pip" | "django" | "flask" => *ext_counts.entry("python").or_default() += 1,
             "golang" => *ext_counts.entry("go").or_default() += 1,
             _ => {}
         }
@@ -269,7 +260,11 @@ pub fn rank_agents(
         .iter()
         .map(|(id, mcp, wt)| score_agent(id, domain, *mcp, *wt))
         .collect();
-    matches.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    matches.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     matches
 }
 
@@ -411,10 +406,7 @@ mod tests {
 
     #[test]
     fn detect_mixed_domain() {
-        let domain = detect_domain(
-            &["src/main.rs".into(), "app/page.tsx".into()],
-            &[],
-        );
+        let domain = detect_domain(&["src/main.rs".into(), "app/page.tsx".into()], &[]);
         assert_eq!(domain, TaskDomain::Mixed);
     }
 
@@ -691,9 +683,15 @@ mod tests {
     #[test]
     fn task_domain_serde_roundtrip() {
         for domain in [
-            TaskDomain::Rust, TaskDomain::TypeScript, TaskDomain::JavaScript,
-            TaskDomain::Python, TaskDomain::Go, TaskDomain::Ruby,
-            TaskDomain::Shell, TaskDomain::Mixed, TaskDomain::Unknown,
+            TaskDomain::Rust,
+            TaskDomain::TypeScript,
+            TaskDomain::JavaScript,
+            TaskDomain::Python,
+            TaskDomain::Go,
+            TaskDomain::Ruby,
+            TaskDomain::Shell,
+            TaskDomain::Mixed,
+            TaskDomain::Unknown,
         ] {
             let json = serde_json::to_string(&domain).unwrap();
             let parsed: TaskDomain = serde_json::from_str(&json).unwrap();

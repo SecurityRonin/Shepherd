@@ -1,6 +1,6 @@
-use std::path::{Path, PathBuf};
 use super::superpowers::InstallScope;
 use super::{EcosystemPlugin, PluginDetectionResult};
+use std::path::{Path, PathBuf};
 
 /// Return the shared plugin definition for ralph-loop.
 pub fn plugin() -> EcosystemPlugin {
@@ -83,7 +83,9 @@ mod tests {
     #[test]
     fn test_detect_claude_code_plugin_dir() {
         let tmp = tempfile::tempdir().unwrap();
-        let plugin_dir = tmp.path().join(".claude/plugins/cache/ralph-loop-setup/ralph-loop");
+        let plugin_dir = tmp
+            .path()
+            .join(".claude/plugins/cache/ralph-loop-setup/ralph-loop");
         std::fs::create_dir_all(&plugin_dir).unwrap();
         let result = detect_for_agent("claude-code", tmp.path(), None);
         assert!(result.installed);
@@ -98,7 +100,8 @@ mod tests {
         std::fs::write(
             claude_dir.join("settings.json"),
             r#"{"plugins":["ralph-loop"]}"#,
-        ).unwrap();
+        )
+        .unwrap();
         let result = detect_for_agent("claude-code", tmp.path(), None);
         assert!(result.installed);
         assert_eq!(result.scope, InstallScope::User);
@@ -113,7 +116,8 @@ mod tests {
         std::fs::write(
             project.join(".claude/settings.json"),
             r#"{"plugins":["ralph-loop"]}"#,
-        ).unwrap();
+        )
+        .unwrap();
         let result = detect_for_agent("claude-code", &home, Some(&project));
         assert!(result.installed);
         assert_eq!(result.scope, InstallScope::Project);

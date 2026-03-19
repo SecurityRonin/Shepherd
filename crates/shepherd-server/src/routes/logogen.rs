@@ -121,7 +121,10 @@ pub async fn generate_logo(
                 Err(CloudError::NotAuthenticated | CloudError::AuthExpired) => {
                     tracing::info!("Cloud auth unavailable, falling back to local LLM");
                 }
-                Err(CloudError::InsufficientCredits { required, available }) => {
+                Err(CloudError::InsufficientCredits {
+                    required,
+                    available,
+                }) => {
                     return Err((
                         StatusCode::PAYMENT_REQUIRED,
                         Json(serde_json::json!({
@@ -183,15 +186,19 @@ pub async fn export_icons(
 
     let export = logogen::export::export_icons(&req.image_base64, &output_dir, &req.product_name)
         .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": format!("Icon export failed: {e}")
-                })),
-            )
-        })?;
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "error": format!("Icon export failed: {e}")
+            })),
+        )
+    })?;
 
-    let files = export.files.into_iter().map(ExportedFileResponse::from).collect();
+    let files = export
+        .files
+        .into_iter()
+        .map(ExportedFileResponse::from)
+        .collect();
 
     Ok(Json(ExportResponse { files }))
 }
@@ -382,7 +389,10 @@ mod tests {
         };
 
         assert_eq!(input.product_name, "TestBrand");
-        assert_eq!(input.product_description, Some("A great product".to_string()));
+        assert_eq!(
+            input.product_description,
+            Some("A great product".to_string())
+        );
         assert_eq!(input.style, LogoStyle::Geometric);
         assert_eq!(input.colors, vec!["#FF0000"]);
         assert_eq!(input.variants, 4);

@@ -30,9 +30,7 @@ pub async fn list_claude_sessions(
     };
 
     let project_dir = shepherd_core::iterm2::claude_project_dir(&cwd);
-    let sessions = shepherd_core::iterm2::list_claude_sessions(
-        project_dir.to_str().unwrap_or(""),
-    );
+    let sessions = shepherd_core::iterm2::list_claude_sessions(project_dir.to_str().unwrap_or(""));
 
     Ok(Json(ClaudeSessionsResponse { sessions }))
 }
@@ -98,10 +96,12 @@ mod tests {
             db: Arc::new(tokio::sync::Mutex::new(conn)),
             config: shepherd_core::config::load_config(None).unwrap(),
             adapters: Arc::new(shepherd_core::adapters::AdapterRegistry::new()),
-            yolo: Arc::new(shepherd_core::yolo::YoloEngine::load(
-                std::path::Path::new("/tmp/__nonexistent_shepherd_rules.yaml"),
-            )
-            .unwrap()),
+            yolo: Arc::new(
+                shepherd_core::yolo::YoloEngine::load(std::path::Path::new(
+                    "/tmp/__nonexistent_shepherd_rules.yaml",
+                ))
+                .unwrap(),
+            ),
             pty: Arc::new(shepherd_core::pty::PtyManager::new(
                 1,
                 shepherd_core::pty::sandbox::SandboxProfile::default(),
@@ -152,14 +152,17 @@ mod tests {
         let state = test_state().await;
         let task_id = {
             let conn = state.db.lock().await;
-            shepherd_core::db::queries::create_task(&conn, &CreateTask {
-                title: "regular task".into(),
-                prompt: None,
-                agent_id: "claude".into(),
-                repo_path: None,
-                isolation_mode: None,
-                iterm2_session_id: None,
-            })
+            shepherd_core::db::queries::create_task(
+                &conn,
+                &CreateTask {
+                    title: "regular task".into(),
+                    prompt: None,
+                    agent_id: "claude".into(),
+                    repo_path: None,
+                    isolation_mode: None,
+                    iterm2_session_id: None,
+                },
+            )
             .unwrap()
             .id
         };
@@ -183,14 +186,17 @@ mod tests {
         let state = test_state().await;
         let task_id = {
             let conn = state.db.lock().await;
-            shepherd_core::db::queries::create_task(&conn, &CreateTask {
-                title: "iTerm2 task".into(),
-                prompt: None,
-                agent_id: "iterm2-adopted".into(),
-                repo_path: Some("/tmp/proj".into()),
-                isolation_mode: None,
-                iterm2_session_id: Some("sess-resume-test".into()),
-            })
+            shepherd_core::db::queries::create_task(
+                &conn,
+                &CreateTask {
+                    title: "iTerm2 task".into(),
+                    prompt: None,
+                    agent_id: "iterm2-adopted".into(),
+                    repo_path: Some("/tmp/proj".into()),
+                    isolation_mode: None,
+                    iterm2_session_id: Some("sess-resume-test".into()),
+                },
+            )
             .unwrap()
             .id
         };
@@ -231,14 +237,17 @@ mod tests {
         let state = test_state().await;
         let task_id = {
             let conn = state.db.lock().await;
-            shepherd_core::db::queries::create_task(&conn, &CreateTask {
-                title: "regular task".into(),
-                prompt: None,
-                agent_id: "claude".into(),
-                repo_path: None,
-                isolation_mode: None,
-                iterm2_session_id: None,
-            })
+            shepherd_core::db::queries::create_task(
+                &conn,
+                &CreateTask {
+                    title: "regular task".into(),
+                    prompt: None,
+                    agent_id: "claude".into(),
+                    repo_path: None,
+                    isolation_mode: None,
+                    iterm2_session_id: None,
+                },
+            )
             .unwrap()
             .id
         };
@@ -261,14 +270,17 @@ mod tests {
         let state = test_state().await;
         let task_id = {
             let conn = state.db.lock().await;
-            shepherd_core::db::queries::create_task(&conn, &CreateTask {
-                title: "iTerm2 task".into(),
-                prompt: None,
-                agent_id: "iterm2-adopted".into(),
-                repo_path: Some("/tmp/proj".into()),
-                isolation_mode: None,
-                iterm2_session_id: Some("sess-fresh-test".into()),
-            })
+            shepherd_core::db::queries::create_task(
+                &conn,
+                &CreateTask {
+                    title: "iTerm2 task".into(),
+                    prompt: None,
+                    agent_id: "iterm2-adopted".into(),
+                    repo_path: Some("/tmp/proj".into()),
+                    isolation_mode: None,
+                    iterm2_session_id: Some("sess-fresh-test".into()),
+                },
+            )
             .unwrap()
             .id
         };

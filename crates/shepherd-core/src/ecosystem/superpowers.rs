@@ -36,13 +36,30 @@ fn detect_user_scope(agent: &str, home: &Path) -> DetectionResult {
         "claude-code" => home.join(".claude/plugins/cache/claude-plugins-official/superpowers"),
         "codex" => home.join(".codex/superpowers"),
         "opencode" => home.join(".opencode/superpowers"),
-        _ => return DetectionResult { installed: false, scope: InstallScope::User, path: None, version: None },
+        _ => {
+            return DetectionResult {
+                installed: false,
+                scope: InstallScope::User,
+                path: None,
+                version: None,
+            }
+        }
     };
     if path.exists() {
         let version = detect_version(&path);
-        DetectionResult { installed: true, scope: InstallScope::User, path: Some(path), version }
+        DetectionResult {
+            installed: true,
+            scope: InstallScope::User,
+            path: Some(path),
+            version,
+        }
     } else {
-        DetectionResult { installed: false, scope: InstallScope::User, path: None, version: None }
+        DetectionResult {
+            installed: false,
+            scope: InstallScope::User,
+            path: None,
+            version: None,
+        }
     }
 }
 
@@ -76,7 +93,12 @@ fn detect_version(path: &Path) -> Option<String> {
         .filter(|e| e.file_type().ok().map(|t| t.is_dir()).unwrap_or(false))
         .filter_map(|e| {
             let name = e.file_name().to_string_lossy().to_string();
-            if name.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+            if name
+                .chars()
+                .next()
+                .map(|c| c.is_ascii_digit())
+                .unwrap_or(false)
+            {
                 Some(name)
             } else {
                 None
@@ -141,7 +163,9 @@ mod tests {
     #[test]
     fn test_detect_claude_code_user_scope() {
         let tmp = tempfile::tempdir().unwrap();
-        let skills_dir = tmp.path().join(".claude/plugins/cache/claude-plugins-official/superpowers");
+        let skills_dir = tmp
+            .path()
+            .join(".claude/plugins/cache/claude-plugins-official/superpowers");
         std::fs::create_dir_all(&skills_dir).unwrap();
         let result = detect_for_agent("claude-code", tmp.path(), None);
         assert!(result.installed);
@@ -157,7 +181,8 @@ mod tests {
         std::fs::write(
             project.join(".claude/settings.json"),
             r#"{"plugins":["superpowers"]}"#,
-        ).unwrap();
+        )
+        .unwrap();
         let result = detect_for_agent("claude-code", &home, Some(&project));
         assert!(result.installed);
         assert_eq!(result.scope, InstallScope::Project);
@@ -231,7 +256,8 @@ mod tests {
         std::fs::write(
             project.join(".codex/instructions.md"),
             "Enable superpowers for this project",
-        ).unwrap();
+        )
+        .unwrap();
         let result = detect_for_agent("codex", &home, Some(&project));
         assert!(result.installed);
         assert_eq!(result.scope, InstallScope::Project);
@@ -243,10 +269,7 @@ mod tests {
         let home = tmp.path().join("home");
         let project = tmp.path().join("project");
         std::fs::create_dir_all(project.join(".opencode")).unwrap();
-        std::fs::write(
-            project.join(".opencode/config.toml"),
-            "superpowers = true",
-        ).unwrap();
+        std::fs::write(project.join(".opencode/config.toml"), "superpowers = true").unwrap();
         let result = detect_for_agent("opencode", &home, Some(&project));
         assert!(result.installed);
         assert_eq!(result.scope, InstallScope::Project);
@@ -261,7 +284,8 @@ mod tests {
         std::fs::write(
             project.join(".claude/settings.json"),
             r#"{"plugins":["other-plugin"]}"#,
-        ).unwrap();
+        )
+        .unwrap();
         // Config file exists but doesn't mention superpowers, so falls through
         // to user scope detection (which also won't find it)
         let result = detect_for_agent("claude-code", &home, Some(&project));
@@ -304,7 +328,9 @@ mod tests {
     #[test]
     fn test_detect_user_scope_with_version() {
         let tmp = tempfile::tempdir().unwrap();
-        let skills_dir = tmp.path().join(".claude/plugins/cache/claude-plugins-official/superpowers");
+        let skills_dir = tmp
+            .path()
+            .join(".claude/plugins/cache/claude-plugins-official/superpowers");
         std::fs::create_dir_all(skills_dir.join("1.2.3")).unwrap();
         let result = detect_for_agent("claude-code", tmp.path(), None);
         assert!(result.installed);
@@ -316,7 +342,10 @@ mod tests {
         let config = InstallConfig::for_agent("codex", InstallScope::User).unwrap();
         assert_eq!(config.agent, "codex");
         assert!(config.target_path.to_string_lossy().contains(".codex"));
-        assert!(config.config_content.contains("superpowers") || config.config_content.contains("Superpowers"));
+        assert!(
+            config.config_content.contains("superpowers")
+                || config.config_content.contains("Superpowers")
+        );
     }
 
     #[test]
@@ -350,7 +379,8 @@ mod tests {
         std::fs::write(
             project.join(".claude/settings.json"),
             r#"{"superpowers": true}"#,
-        ).unwrap();
+        )
+        .unwrap();
         // Also set up user-level detection
         let home = tmp.path().join("home");
         let user_dir = home.join(".claude/plugins/cache/claude-plugins-official/superpowers");

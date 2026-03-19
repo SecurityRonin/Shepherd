@@ -28,12 +28,7 @@ pub async fn validate_name(
         check_github(client_ref, name_ref),
     );
 
-    Ok((
-        domains,
-        npm.ok(),
-        pypi.ok(),
-        github.ok(),
-    ))
+    Ok((domains, npm.ok(), pypi.ok(), github.ok()))
 }
 
 /// Check npm registry for package name availability.
@@ -116,9 +111,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_name_returns_results() {
         // Use a very unlikely name to test the full pipeline
-        if let Ok((domains, npm, pypi, github)) =
-            validate_name("zzxxqqww99887766notreal").await
-        {
+        if let Ok((domains, npm, pypi, github)) = validate_name("zzxxqqww99887766notreal").await {
             // Should have domain results for all default TLDs
             assert_eq!(domains.len(), 5);
             // npm/pypi/github should have Some value (either true or false)

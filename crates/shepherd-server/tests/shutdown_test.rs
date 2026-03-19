@@ -22,8 +22,7 @@ async fn server_writes_lockfile_on_start() {
     let mut cfg = ShepherdConfig::default();
     cfg.port = 0; // OS picks a free port
 
-    let (addr, _state, handle) =
-        shepherd_server::startup::start_server(cfg).await.unwrap();
+    let (addr, _state, handle) = shepherd_server::startup::start_server(cfg).await.unwrap();
     assert_ne!(addr.port(), 0);
 
     // Verify lockfile was written — use write_to/read_from with a known
@@ -64,8 +63,7 @@ async fn server_health_check_works_and_abort_returns() {
     let mut cfg = ShepherdConfig::default();
     cfg.port = 0;
 
-    let (addr, _state, handle) =
-        shepherd_server::startup::start_server(cfg).await.unwrap();
+    let (addr, _state, handle) = shepherd_server::startup::start_server(cfg).await.unwrap();
 
     let client = reqwest::Client::new();
     let health_url = format!("http://127.0.0.1:{}/api/health", addr.port());
@@ -117,8 +115,8 @@ async fn sigint_triggers_graceful_shutdown_and_removes_lockfile() {
     );
 
     // Find the binary in target/debug
-    let binary = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/debug/shepherd-server");
+    let binary =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/shepherd-server");
     assert!(
         binary.exists(),
         "shepherd-server binary not found at {:?}",
@@ -152,9 +150,8 @@ async fn sigint_triggers_graceful_shutdown_and_removes_lockfile() {
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
 
-    let port = server_port.expect(
-        "server.json was not written within 15 seconds — server may have failed to start",
-    );
+    let port = server_port
+        .expect("server.json was not written within 15 seconds — server may have failed to start");
 
     // Verify the server is actually responding
     let client = reqwest::Client::new();
@@ -194,9 +191,7 @@ async fn sigint_triggers_graceful_shutdown_and_removes_lockfile() {
         }
     }
 
-    let status = exit_status.expect(
-        "shepherd-server did not exit within 15 seconds after SIGINT",
-    );
+    let status = exit_status.expect("shepherd-server did not exit within 15 seconds after SIGINT");
 
     // On Unix, SIGINT either gives exit code 0 (caught and handled gracefully)
     // or 130 (128 + signal 2). Our graceful handler should produce a clean exit.
@@ -218,8 +213,7 @@ async fn sigint_triggers_graceful_shutdown_and_removes_lockfile() {
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     assert!(
-        ServerInfo::read().is_none()
-            || ServerInfo::read().map_or(true, |i| i.pid != child_pid),
+        ServerInfo::read().is_none() || ServerInfo::read().map_or(true, |i| i.pid != child_pid),
         "server.json should be removed after graceful shutdown via SIGINT"
     );
 }

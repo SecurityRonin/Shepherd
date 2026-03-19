@@ -16,8 +16,7 @@ fn row_to_task(row: &Row) -> rusqlite::Result<Task> {
         repo_path: row.get(4)?,
         branch: row.get(5)?,
         isolation_mode: row.get(6)?,
-        status: TaskStatus::parse_status(&row.get::<_, String>(7)?)
-            .unwrap_or(TaskStatus::Queued),
+        status: TaskStatus::parse_status(&row.get::<_, String>(7)?).unwrap_or(TaskStatus::Queued),
         created_at: row.get(8)?,
         updated_at: row.get(9)?,
         iterm2_session_id: row.get(10)?,
@@ -53,7 +52,8 @@ pub fn list_tasks(conn: &Connection) -> Result<Vec<Task>> {
     let mut stmt = conn.prepare(
         "SELECT id, title, prompt, agent_id, repo_path, branch, isolation_mode, status, created_at, updated_at, iterm2_session_id FROM tasks ORDER BY id"
     )?;
-    let tasks = stmt.query_map([], row_to_task)?
+    let tasks = stmt
+        .query_map([], row_to_task)?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(tasks)
 }
@@ -122,22 +122,30 @@ mod tests {
     #[test]
     fn test_list_tasks() {
         let conn = open_memory().unwrap();
-        create_task(&conn, &CreateTask {
-            title: "Task 1".into(),
-            prompt: None,
-            agent_id: "claude-code".into(),
-            repo_path: None,
-            isolation_mode: None,
-            iterm2_session_id: None,
-        }).unwrap();
-        create_task(&conn, &CreateTask {
-            title: "Task 2".into(),
-            prompt: None,
-            agent_id: "codex".into(),
-            repo_path: None,
-            isolation_mode: None,
-            iterm2_session_id: None,
-        }).unwrap();
+        create_task(
+            &conn,
+            &CreateTask {
+                title: "Task 1".into(),
+                prompt: None,
+                agent_id: "claude-code".into(),
+                repo_path: None,
+                isolation_mode: None,
+                iterm2_session_id: None,
+            },
+        )
+        .unwrap();
+        create_task(
+            &conn,
+            &CreateTask {
+                title: "Task 2".into(),
+                prompt: None,
+                agent_id: "codex".into(),
+                repo_path: None,
+                isolation_mode: None,
+                iterm2_session_id: None,
+            },
+        )
+        .unwrap();
 
         let tasks = list_tasks(&conn).unwrap();
         assert_eq!(tasks.len(), 2);
@@ -146,14 +154,18 @@ mod tests {
     #[test]
     fn test_update_status() {
         let conn = open_memory().unwrap();
-        let task = create_task(&conn, &CreateTask {
-            title: "Test".into(),
-            prompt: None,
-            agent_id: "claude-code".into(),
-            repo_path: None,
-            isolation_mode: None,
-            iterm2_session_id: None,
-        }).unwrap();
+        let task = create_task(
+            &conn,
+            &CreateTask {
+                title: "Test".into(),
+                prompt: None,
+                agent_id: "claude-code".into(),
+                repo_path: None,
+                isolation_mode: None,
+                iterm2_session_id: None,
+            },
+        )
+        .unwrap();
 
         update_task_status(&conn, task.id, &TaskStatus::Running).unwrap();
         let updated = get_task(&conn, task.id).unwrap();
@@ -163,12 +175,30 @@ mod tests {
     #[test]
     fn test_count_by_status() {
         let conn = open_memory().unwrap();
-        create_task(&conn, &CreateTask {
-            title: "T1".into(), prompt: None, agent_id: "a".into(), repo_path: None, isolation_mode: None, iterm2_session_id: None,
-        }).unwrap();
-        create_task(&conn, &CreateTask {
-            title: "T2".into(), prompt: None, agent_id: "a".into(), repo_path: None, isolation_mode: None, iterm2_session_id: None,
-        }).unwrap();
+        create_task(
+            &conn,
+            &CreateTask {
+                title: "T1".into(),
+                prompt: None,
+                agent_id: "a".into(),
+                repo_path: None,
+                isolation_mode: None,
+                iterm2_session_id: None,
+            },
+        )
+        .unwrap();
+        create_task(
+            &conn,
+            &CreateTask {
+                title: "T2".into(),
+                prompt: None,
+                agent_id: "a".into(),
+                repo_path: None,
+                isolation_mode: None,
+                iterm2_session_id: None,
+            },
+        )
+        .unwrap();
 
         let counts = count_by_status(&conn).unwrap();
         assert_eq!(counts.len(), 1);
@@ -202,14 +232,18 @@ mod tests {
     #[test]
     fn test_find_task_by_iterm2_id_found() {
         let conn = open_memory().unwrap();
-        let task = create_task(&conn, &CreateTask {
-            title: "iterm2 session".into(),
-            prompt: None,
-            agent_id: "claude".into(),
-            repo_path: None,
-            isolation_mode: None,
-            iterm2_session_id: Some("session-xyz".into()),
-        }).unwrap();
+        let task = create_task(
+            &conn,
+            &CreateTask {
+                title: "iterm2 session".into(),
+                prompt: None,
+                agent_id: "claude".into(),
+                repo_path: None,
+                isolation_mode: None,
+                iterm2_session_id: Some("session-xyz".into()),
+            },
+        )
+        .unwrap();
         let found = find_task_by_iterm2_id(&conn, "session-xyz").unwrap();
         assert_eq!(found.map(|t| t.id), Some(task.id));
     }
@@ -225,14 +259,18 @@ mod tests {
     fn test_update_task_status_changes_status() {
         use crate::db::models::TaskStatus;
         let conn = open_memory().unwrap();
-        let task = create_task(&conn, &CreateTask {
-            title: "status test".into(),
-            prompt: None,
-            agent_id: "claude".into(),
-            repo_path: None,
-            isolation_mode: None,
-            iterm2_session_id: None,
-        }).unwrap();
+        let task = create_task(
+            &conn,
+            &CreateTask {
+                title: "status test".into(),
+                prompt: None,
+                agent_id: "claude".into(),
+                repo_path: None,
+                isolation_mode: None,
+                iterm2_session_id: None,
+            },
+        )
+        .unwrap();
         update_task_status(&conn, task.id, &TaskStatus::Done).unwrap();
         let updated = get_task(&conn, task.id).unwrap();
         assert_eq!(updated.status, TaskStatus::Done);

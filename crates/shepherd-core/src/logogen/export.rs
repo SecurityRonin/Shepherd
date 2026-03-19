@@ -22,16 +22,13 @@ pub const PNG_SIZES: &[(u32, &str)] = &[
 ///
 /// Creates PNG icons at standard sizes, favicon.ico, apple-touch-icon,
 /// app.ico, app.icns (or placeholder), logo.svg placeholder, and manifest.json.
-pub fn export_icons(
-    png_base64: &str,
-    output_dir: &Path,
-    product_name: &str,
-) -> Result<IconExport> {
+pub fn export_icons(png_base64: &str, output_dir: &Path, product_name: &str) -> Result<IconExport> {
     let png_bytes = base64::engine::general_purpose::STANDARD
         .decode(png_base64)
         .context("Failed to decode base64 PNG data")?;
 
-    let img = image::load_from_memory(&png_bytes).context("Failed to load PNG image from decoded bytes")?;
+    let img = image::load_from_memory(&png_bytes)
+        .context("Failed to load PNG image from decoded bytes")?;
 
     fs::create_dir_all(output_dir).context("Failed to create output directory")?;
 
@@ -238,8 +235,7 @@ pub fn export_icns(img: &DynamicImage, path: &Path) -> Result<()> {
             let placeholder = b"icns\x00\x00\x00\x08";
             fs::write(path, placeholder).context("Failed to write placeholder .icns")?;
             Ok(())
-        }
-        // tarpaulin-stop-ignore
+        } // tarpaulin-stop-ignore
     }
 }
 
@@ -289,10 +285,7 @@ mod tests {
         assert_eq!(icons.len(), 3);
 
         // Check that expected sizes are present
-        let sizes: Vec<&str> = icons
-            .iter()
-            .map(|i| i["sizes"].as_str().unwrap())
-            .collect();
+        let sizes: Vec<&str> = icons.iter().map(|i| i["sizes"].as_str().unwrap()).collect();
         assert!(sizes.contains(&"192x192"));
         assert!(sizes.contains(&"512x512"));
         assert!(sizes.contains(&"180x180"));
@@ -327,7 +320,10 @@ mod tests {
                 name.contains(&size.to_string()),
                 "Filename {name} should contain size {size}"
             );
-            assert!(name.ends_with(".png"), "Filename {name} should end with .png");
+            assert!(
+                name.ends_with(".png"),
+                "Filename {name} should end with .png"
+            );
         }
     }
 
@@ -426,8 +422,7 @@ mod tests {
 
         // Manifest
         assert!(tmp.path().join("manifest.json").exists());
-        let manifest_content =
-            std::fs::read_to_string(tmp.path().join("manifest.json")).unwrap();
+        let manifest_content = std::fs::read_to_string(tmp.path().join("manifest.json")).unwrap();
         assert!(manifest_content.contains("TestApp"));
     }
 
@@ -469,11 +464,9 @@ mod tests {
     #[test]
     fn export_ico_with_256_size() {
         let tmp = tempfile::tempdir().unwrap();
-        let img = image::DynamicImage::ImageRgba8(image::RgbaImage::from_fn(
-            256,
-            256,
-            |_, _| image::Rgba([128, 128, 128, 255]),
-        ));
+        let img = image::DynamicImage::ImageRgba8(image::RgbaImage::from_fn(256, 256, |_, _| {
+            image::Rgba([128, 128, 128, 255])
+        }));
         let path = tmp.path().join("large.ico");
         export_ico(&img, &path, &[256]).unwrap();
         assert!(path.exists());
@@ -544,8 +537,7 @@ mod tests {
         use base64::Engine;
         let tmp = tempfile::tempdir().unwrap();
         // Valid base64, but not valid PNG data
-        let b64 =
-            base64::engine::general_purpose::STANDARD.encode(b"this is not a png image");
+        let b64 = base64::engine::general_purpose::STANDARD.encode(b"this is not a png image");
         let result = export_icons(&b64, tmp.path(), "Test");
         assert!(result.is_err());
     }
@@ -561,10 +553,7 @@ mod tests {
         assert_eq!(parsed["background_color"], "#ffffff");
         // Check icon src paths
         let icons = parsed["icons"].as_array().unwrap();
-        let srcs: Vec<&str> = icons
-            .iter()
-            .map(|i| i["src"].as_str().unwrap())
-            .collect();
+        let srcs: Vec<&str> = icons.iter().map(|i| i["src"].as_str().unwrap()).collect();
         assert!(srcs.contains(&"icon-192.png"));
         assert!(srcs.contains(&"icon-512.png"));
         assert!(srcs.contains(&"apple-touch-icon.png"));

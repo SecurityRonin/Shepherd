@@ -209,9 +209,13 @@ impl CloudClient {
     ) -> Result<CloudLogoResponse, CloudError> {
         let jwt = {
             #[cfg(test)]
-            { self.test_jwt.clone().ok_or(CloudError::NotAuthenticated)? }
+            {
+                self.test_jwt.clone().ok_or(CloudError::NotAuthenticated)?
+            }
             #[cfg(not(test))]
-            { auth::load_jwt().ok_or(CloudError::NotAuthenticated)? }
+            {
+                auth::load_jwt().ok_or(CloudError::NotAuthenticated)?
+            }
         };
         let url = format!("{}/api/generate/logo", self.api_url());
 
@@ -260,9 +264,13 @@ impl CloudClient {
     ) -> Result<CloudNameResponse, CloudError> {
         let jwt = {
             #[cfg(test)]
-            { self.test_jwt.clone().ok_or(CloudError::NotAuthenticated)? }
+            {
+                self.test_jwt.clone().ok_or(CloudError::NotAuthenticated)?
+            }
             #[cfg(not(test))]
-            { auth::load_jwt().ok_or(CloudError::NotAuthenticated)? }
+            {
+                auth::load_jwt().ok_or(CloudError::NotAuthenticated)?
+            }
         };
         let url = format!("{}/api/generate/name", self.api_url());
 
@@ -315,9 +323,13 @@ impl CloudClient {
     ) -> Result<CloudNorthStarResponse, CloudError> {
         let jwt = {
             #[cfg(test)]
-            { self.test_jwt.clone().ok_or(CloudError::NotAuthenticated)? }
+            {
+                self.test_jwt.clone().ok_or(CloudError::NotAuthenticated)?
+            }
             #[cfg(not(test))]
-            { auth::load_jwt().ok_or(CloudError::NotAuthenticated)? }
+            {
+                auth::load_jwt().ok_or(CloudError::NotAuthenticated)?
+            }
         };
         let url = format!("{}/api/generate/northstar", self.api_url());
 
@@ -369,9 +381,13 @@ impl CloudClient {
     ) -> Result<CloudScrapeResponse, CloudError> {
         let jwt = {
             #[cfg(test)]
-            { self.test_jwt.clone().ok_or(CloudError::NotAuthenticated)? }
+            {
+                self.test_jwt.clone().ok_or(CloudError::NotAuthenticated)?
+            }
             #[cfg(not(test))]
-            { auth::load_jwt().ok_or(CloudError::NotAuthenticated)? }
+            {
+                auth::load_jwt().ok_or(CloudError::NotAuthenticated)?
+            }
         };
         let api_url = format!("{}/api/generate/scrape", self.api_url());
 
@@ -424,9 +440,13 @@ impl CloudClient {
     ) -> Result<CloudCrawlResponse, CloudError> {
         let jwt = {
             #[cfg(test)]
-            { self.test_jwt.clone().ok_or(CloudError::NotAuthenticated)? }
+            {
+                self.test_jwt.clone().ok_or(CloudError::NotAuthenticated)?
+            }
             #[cfg(not(test))]
-            { auth::load_jwt().ok_or(CloudError::NotAuthenticated)? }
+            {
+                auth::load_jwt().ok_or(CloudError::NotAuthenticated)?
+            }
         };
         let api_url = format!("{}/api/generate/crawl", self.api_url());
 
@@ -478,9 +498,13 @@ impl CloudClient {
     ) -> Result<CloudCrawlStatusResponse, CloudError> {
         let jwt = {
             #[cfg(test)]
-            { self.test_jwt.clone().ok_or(CloudError::NotAuthenticated)? }
+            {
+                self.test_jwt.clone().ok_or(CloudError::NotAuthenticated)?
+            }
             #[cfg(not(test))]
-            { auth::load_jwt().ok_or(CloudError::NotAuthenticated)? }
+            {
+                auth::load_jwt().ok_or(CloudError::NotAuthenticated)?
+            }
         };
         let api_url = format!("{}/api/generate/crawl/{crawl_id}", self.api_url());
 
@@ -519,9 +543,13 @@ impl CloudClient {
     ) -> Result<CloudVisionResponse, CloudError> {
         let jwt = {
             #[cfg(test)]
-            { self.test_jwt.clone().ok_or(CloudError::NotAuthenticated)? }
+            {
+                self.test_jwt.clone().ok_or(CloudError::NotAuthenticated)?
+            }
             #[cfg(not(test))]
-            { auth::load_jwt().ok_or(CloudError::NotAuthenticated)? }
+            {
+                auth::load_jwt().ok_or(CloudError::NotAuthenticated)?
+            }
         };
         let api_url = format!("{}/api/generate/vision", self.api_url());
 
@@ -567,9 +595,13 @@ impl CloudClient {
     ) -> Result<CloudSearchResponse, CloudError> {
         let jwt = {
             #[cfg(test)]
-            { self.test_jwt.clone().ok_or(CloudError::NotAuthenticated)? }
+            {
+                self.test_jwt.clone().ok_or(CloudError::NotAuthenticated)?
+            }
             #[cfg(not(test))]
-            { auth::load_jwt().ok_or(CloudError::NotAuthenticated)? }
+            {
+                auth::load_jwt().ok_or(CloudError::NotAuthenticated)?
+            }
         };
         let url = format!("{}/api/generate/search", self.api_url());
 
@@ -589,10 +621,8 @@ impl CloudClient {
         }
 
         if status == 402 {
-            let _body: super::ApiErrorResponse = resp
-                .json()
-                .await
-                .unwrap_or(super::ApiErrorResponse {
+            let _body: super::ApiErrorResponse =
+                resp.json().await.unwrap_or(super::ApiErrorResponse {
                     error: "Insufficient credits".to_string(),
                 });
             return Err(CloudError::InsufficientCredits {
@@ -912,9 +942,15 @@ mod tests {
         assert_eq!(resp.results.len(), 2);
         assert_eq!(resp.results[0].title, "Actix Web Framework");
         assert_eq!(resp.results[0].score, 0.95);
-        assert_eq!(resp.results[0].text, Some("A powerful web framework for Rust".to_string()));
+        assert_eq!(
+            resp.results[0].text,
+            Some("A powerful web framework for Rust".to_string())
+        );
         assert_eq!(resp.results[1].text, None);
-        assert_eq!(resp.autoprompt, Some("Rust web frameworks comparison".to_string()));
+        assert_eq!(
+            resp.autoprompt,
+            Some("Rust web frameworks comparison".to_string())
+        );
         assert_eq!(resp.credits_remaining, 49);
     }
 
@@ -1024,8 +1060,8 @@ mod tests {
 
     // ── httpmock-based async tests ────────────────────────────────────────
 
-    use httpmock::prelude::*;
     use crate::cloud::CloudClient;
+    use httpmock::prelude::*;
 
     fn logo_input() -> crate::logogen::LogoGenInput {
         crate::logogen::LogoGenInput {
@@ -1079,7 +1115,10 @@ mod tests {
         });
         let client = CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
         let result = client.generate_logo(&logo_input()).await;
-        assert!(matches!(result, Err(super::CloudError::InsufficientCredits { .. })));
+        assert!(matches!(
+            result,
+            Err(super::CloudError::InsufficientCredits { .. })
+        ));
     }
 
     #[tokio::test]
@@ -1139,7 +1178,10 @@ mod tests {
         });
         let client = CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
         let result = client.generate_name("desc", &[]).await;
-        assert!(matches!(result, Err(super::CloudError::InsufficientCredits { .. })));
+        assert!(matches!(
+            result,
+            Err(super::CloudError::InsufficientCredits { .. })
+        ));
     }
 
     #[tokio::test]
@@ -1173,7 +1215,10 @@ mod tests {
                 }));
         });
         let client = CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
-        let result = client.generate_northstar("brand_foundations", serde_json::json!({})).await.unwrap();
+        let result = client
+            .generate_northstar("brand_foundations", serde_json::json!({}))
+            .await
+            .unwrap();
         assert_eq!(result.phase, "brand_foundations");
         assert_eq!(result.credits_remaining, 35);
     }
@@ -1186,7 +1231,9 @@ mod tests {
             then.status(401).body("Unauthorized");
         });
         let client = CloudClient::with_test_jwt(&server.base_url(), "expired-jwt");
-        let result = client.generate_northstar("phase", serde_json::json!({})).await;
+        let result = client
+            .generate_northstar("phase", serde_json::json!({}))
+            .await;
         assert!(matches!(result, Err(super::CloudError::AuthExpired)));
     }
 
@@ -1198,8 +1245,13 @@ mod tests {
             then.status(402).body("Payment Required");
         });
         let client = CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
-        let result = client.generate_northstar("phase", serde_json::json!({})).await;
-        assert!(matches!(result, Err(super::CloudError::InsufficientCredits { .. })));
+        let result = client
+            .generate_northstar("phase", serde_json::json!({}))
+            .await;
+        assert!(matches!(
+            result,
+            Err(super::CloudError::InsufficientCredits { .. })
+        ));
     }
 
     #[tokio::test]
@@ -1210,7 +1262,9 @@ mod tests {
             then.status(500).body("Server error");
         });
         let client = CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
-        let result = client.generate_northstar("phase", serde_json::json!({})).await;
+        let result = client
+            .generate_northstar("phase", serde_json::json!({}))
+            .await;
         match result {
             Err(super::CloudError::Api { status, .. }) => assert_eq!(status, 500),
             other => panic!("expected Api error, got {:?}", other),
@@ -1235,7 +1289,10 @@ mod tests {
                 }));
         });
         let client = CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
-        let result = client.scrape_page("https://example.com", None).await.unwrap();
+        let result = client
+            .scrape_page("https://example.com", None)
+            .await
+            .unwrap();
         assert_eq!(result.generation_id, "gen-001");
         assert_eq!(result.markdown, Some("# Hello".to_string()));
         assert_eq!(result.credits_remaining, 49);
@@ -1262,7 +1319,10 @@ mod tests {
         });
         let client = CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
         let result = client.scrape_page("https://example.com", None).await;
-        assert!(matches!(result, Err(super::CloudError::InsufficientCredits { .. })));
+        assert!(matches!(
+            result,
+            Err(super::CloudError::InsufficientCredits { .. })
+        ));
     }
 
     #[tokio::test]
@@ -1297,7 +1357,10 @@ mod tests {
                 }));
         });
         let client = CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
-        let result = client.start_crawl("https://example.com", None, None).await.unwrap();
+        let result = client
+            .start_crawl("https://example.com", None, None)
+            .await
+            .unwrap();
         assert_eq!(result.crawl_id, "crawl-abc");
         assert_eq!(result.credits_remaining, 45);
     }
@@ -1323,7 +1386,10 @@ mod tests {
         });
         let client = CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
         let result = client.start_crawl("https://example.com", None, None).await;
-        assert!(matches!(result, Err(super::CloudError::InsufficientCredits { .. })));
+        assert!(matches!(
+            result,
+            Err(super::CloudError::InsufficientCredits { .. })
+        ));
     }
 
     #[tokio::test]
@@ -1431,7 +1497,11 @@ mod tests {
             then.status(401).body("Unauthorized");
         });
         let client = CloudClient::with_test_jwt(&server.base_url(), "expired-jwt");
-        let req = CloudVisionRequest { image_url: None, image_base64: None, prompt: "test".to_string() };
+        let req = CloudVisionRequest {
+            image_url: None,
+            image_base64: None,
+            prompt: "test".to_string(),
+        };
         let result = client.analyze_image(&req).await;
         assert!(matches!(result, Err(super::CloudError::AuthExpired)));
     }
@@ -1444,9 +1514,16 @@ mod tests {
             then.status(402).body("Payment Required");
         });
         let client = CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
-        let req = CloudVisionRequest { image_url: None, image_base64: None, prompt: "test".to_string() };
+        let req = CloudVisionRequest {
+            image_url: None,
+            image_base64: None,
+            prompt: "test".to_string(),
+        };
         let result = client.analyze_image(&req).await;
-        assert!(matches!(result, Err(super::CloudError::InsufficientCredits { .. })));
+        assert!(matches!(
+            result,
+            Err(super::CloudError::InsufficientCredits { .. })
+        ));
     }
 
     // ── search ─────────────────────────────────────────────────────────────
@@ -1493,8 +1570,12 @@ mod tests {
         let client = CloudClient::with_test_jwt(&server.base_url(), "expired-jwt");
         let req = CloudSearchRequest {
             query: "test".to_string(),
-            search_type: None, num_results: None, include_domains: None,
-            exclude_domains: None, start_published_date: None, category: None,
+            search_type: None,
+            num_results: None,
+            include_domains: None,
+            exclude_domains: None,
+            start_published_date: None,
+            category: None,
         };
         let result = client.search(&req).await;
         assert!(matches!(result, Err(super::CloudError::AuthExpired)));
@@ -1512,11 +1593,18 @@ mod tests {
         let client = CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
         let req = CloudSearchRequest {
             query: "test".to_string(),
-            search_type: None, num_results: None, include_domains: None,
-            exclude_domains: None, start_published_date: None, category: None,
+            search_type: None,
+            num_results: None,
+            include_domains: None,
+            exclude_domains: None,
+            start_published_date: None,
+            category: None,
         };
         let result = client.search(&req).await;
-        assert!(matches!(result, Err(super::CloudError::InsufficientCredits { .. })));
+        assert!(matches!(
+            result,
+            Err(super::CloudError::InsufficientCredits { .. })
+        ));
     }
 
     #[tokio::test]
@@ -1529,8 +1617,12 @@ mod tests {
         let client = CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
         let req = CloudSearchRequest {
             query: "test".to_string(),
-            search_type: None, num_results: None, include_domains: None,
-            exclude_domains: None, start_published_date: None, category: None,
+            search_type: None,
+            num_results: None,
+            include_domains: None,
+            exclude_domains: None,
+            start_published_date: None,
+            category: None,
         };
         let result = client.search(&req).await;
         match result {
@@ -1547,7 +1639,11 @@ mod tests {
             then.status(500).body("Internal Server Error");
         });
         let client = CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
-        let req = CloudVisionRequest { image_url: None, image_base64: None, prompt: "test".to_string() };
+        let req = CloudVisionRequest {
+            image_url: None,
+            image_base64: None,
+            prompt: "test".to_string(),
+        };
         let result = client.analyze_image(&req).await;
         match result {
             Err(super::CloudError::Api { status, .. }) => assert_eq!(status, 500),
@@ -1565,10 +1661,17 @@ mod tests {
         let client = CloudClient::with_test_jwt(&server.base_url(), "fake-jwt");
         let req = CloudSearchRequest {
             query: "test".to_string(),
-            search_type: None, num_results: None, include_domains: None,
-            exclude_domains: None, start_published_date: None, category: None,
+            search_type: None,
+            num_results: None,
+            include_domains: None,
+            exclude_domains: None,
+            start_published_date: None,
+            category: None,
         };
         let result = client.search(&req).await;
-        assert!(matches!(result, Err(super::CloudError::InsufficientCredits { .. })));
+        assert!(matches!(
+            result,
+            Err(super::CloudError::InsufficientCredits { .. })
+        ));
     }
 }

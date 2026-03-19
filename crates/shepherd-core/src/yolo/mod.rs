@@ -22,7 +22,10 @@ impl YoloEngine {
 
     pub fn load(path: &Path) -> Result<Self> {
         if !path.exists() {
-            return Ok(Self::new(RuleSet { deny: vec![], allow: vec![] }));
+            return Ok(Self::new(RuleSet {
+                deny: vec![],
+                allow: vec![],
+            }));
         }
         let content = std::fs::read_to_string(path)?;
         let rules: RuleSet = serde_yaml::from_str(&content)?;
@@ -95,14 +98,38 @@ mod tests {
     fn make_engine() -> YoloEngine {
         YoloEngine::new(RuleSet {
             deny: vec![
-                Rule { tool: None, pattern: Some("rm -rf /".into()), path: None },
-                Rule { tool: None, pattern: Some("git push --force".into()), path: None },
-                Rule { tool: Some("Bash".into()), pattern: Some("curl".into()), path: None },
+                Rule {
+                    tool: None,
+                    pattern: Some("rm -rf /".into()),
+                    path: None,
+                },
+                Rule {
+                    tool: None,
+                    pattern: Some("git push --force".into()),
+                    path: None,
+                },
+                Rule {
+                    tool: Some("Bash".into()),
+                    pattern: Some("curl".into()),
+                    path: None,
+                },
             ],
             allow: vec![
-                Rule { tool: Some("Read".into()), pattern: None, path: None },
-                Rule { tool: Some("Glob".into()), pattern: None, path: None },
-                Rule { tool: Some("Write".into()), pattern: None, path: Some("src/**".into()) },
+                Rule {
+                    tool: Some("Read".into()),
+                    pattern: None,
+                    path: None,
+                },
+                Rule {
+                    tool: Some("Glob".into()),
+                    pattern: None,
+                    path: None,
+                },
+                Rule {
+                    tool: Some("Write".into()),
+                    pattern: None,
+                    path: Some("src/**".into()),
+                },
             ],
         })
     }
@@ -135,13 +162,19 @@ mod tests {
     #[test]
     fn test_allow_read_tool() {
         let engine = make_engine();
-        assert!(matches!(engine.evaluate("Read", "src/main.rs"), Decision::Allow(_)));
+        assert!(matches!(
+            engine.evaluate("Read", "src/main.rs"),
+            Decision::Allow(_)
+        ));
     }
 
     #[test]
     fn test_allow_write_to_src() {
         let engine = make_engine();
-        assert!(matches!(engine.evaluate("Write", "src/db/pool.rs"), Decision::Allow(_)));
+        assert!(matches!(
+            engine.evaluate("Write", "src/db/pool.rs"),
+            Decision::Allow(_)
+        ));
     }
 
     #[test]
@@ -153,15 +186,29 @@ mod tests {
     #[test]
     fn test_deny_takes_precedence_over_allow() {
         let engine = YoloEngine::new(RuleSet {
-            deny: vec![Rule { tool: Some("Write".into()), pattern: Some("secret".into()), path: None }],
-            allow: vec![Rule { tool: Some("Write".into()), pattern: None, path: None }],
+            deny: vec![Rule {
+                tool: Some("Write".into()),
+                pattern: Some("secret".into()),
+                path: None,
+            }],
+            allow: vec![Rule {
+                tool: Some("Write".into()),
+                pattern: None,
+                path: None,
+            }],
         });
-        assert!(matches!(engine.evaluate("Write", "secret.env"), Decision::Deny(_)));
+        assert!(matches!(
+            engine.evaluate("Write", "secret.env"),
+            Decision::Deny(_)
+        ));
     }
 
     #[test]
     fn test_empty_rules_always_asks() {
-        let engine = YoloEngine::new(RuleSet { deny: vec![], allow: vec![] });
+        let engine = YoloEngine::new(RuleSet {
+            deny: vec![],
+            allow: vec![],
+        });
         assert_eq!(engine.evaluate("Read", "anything"), Decision::Ask);
     }
 

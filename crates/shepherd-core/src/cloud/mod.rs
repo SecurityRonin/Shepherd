@@ -1,9 +1,9 @@
 pub mod auth;
 pub mod credits;
 pub mod generation;
-pub mod sync;
-pub mod observability;
 pub mod notifications;
+pub mod observability;
+pub mod sync;
 pub mod templates;
 
 use serde::{Deserialize, Serialize};
@@ -176,13 +176,21 @@ pub enum CloudError {
 impl fmt::Display for CloudError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            CloudError::NotAuthenticated => write!(f, "Not signed in. Sign in to use cloud features."),
+            CloudError::NotAuthenticated => {
+                write!(f, "Not signed in. Sign in to use cloud features.")
+            }
             CloudError::AuthExpired => write!(f, "Session expired. Please sign in again."),
-            CloudError::InsufficientCredits { required, available } => {
+            CloudError::InsufficientCredits {
+                required,
+                available,
+            } => {
                 write!(f, "Insufficient credits: need {required}, have {available}")
             }
             CloudError::NoTrialsRemaining { feature } => {
-                write!(f, "No free trials remaining for {feature}. Upgrade to Pro for credits.")
+                write!(
+                    f,
+                    "No free trials remaining for {feature}. Upgrade to Pro for credits."
+                )
             }
             CloudError::Network(msg) => write!(f, "Network error: {msg}"),
             CloudError::Api { status, message } => write!(f, "API error ({status}): {message}"),
@@ -240,7 +248,9 @@ impl CloudClient {
     /// Test-only constructor that injects a fake JWT and points at a mock server URL.
     #[cfg(test)]
     pub fn with_test_jwt(api_url: &str, jwt: &str) -> Self {
-        let mut client = Self::with_config(CloudConfig { api_url: api_url.to_string() });
+        let mut client = Self::with_config(CloudConfig {
+            api_url: api_url.to_string(),
+        });
         client.test_jwt = Some(jwt.to_string());
         client
     }
@@ -253,10 +263,14 @@ impl CloudClient {
     /// Extract JWT, encapsulating the test/prod conditional.
     pub(crate) fn get_jwt(&self) -> Result<String, CloudError> {
         #[cfg(test)]
-        { self.test_jwt.clone().ok_or(CloudError::NotAuthenticated) }
+        {
+            self.test_jwt.clone().ok_or(CloudError::NotAuthenticated)
+        }
         // tarpaulin-start-ignore
         #[cfg(not(test))]
-        { auth::load_jwt().ok_or(CloudError::NotAuthenticated) }
+        {
+            auth::load_jwt().ok_or(CloudError::NotAuthenticated)
+        }
         // tarpaulin-stop-ignore
     }
 }
@@ -293,8 +307,13 @@ mod tests {
     #[test]
     fn trial_counts_has_trial() {
         let counts = TrialCounts {
-            logo: 0, name: 1, northstar: 2,
-            scrape: 0, crawl: 1, vision: 2, search: 1,
+            logo: 0,
+            name: 1,
+            northstar: 2,
+            scrape: 0,
+            crawl: 1,
+            vision: 2,
+            search: 1,
         };
         assert!(counts.has_trial("logo"));
         assert!(counts.has_trial("name"));
@@ -309,8 +328,13 @@ mod tests {
     #[test]
     fn trial_counts_remaining() {
         let counts = TrialCounts {
-            logo: 0, name: 1, northstar: 2,
-            scrape: 0, crawl: 1, vision: 2, search: 1,
+            logo: 0,
+            name: 1,
+            northstar: 2,
+            scrape: 0,
+            crawl: 1,
+            vision: 2,
+            search: 1,
         };
         assert_eq!(counts.remaining("logo"), 2);
         assert_eq!(counts.remaining("name"), 1);
@@ -375,11 +399,16 @@ mod tests {
         let err = CloudError::NotAuthenticated;
         assert!(err.to_string().contains("Not signed in"));
 
-        let err = CloudError::InsufficientCredits { required: 15, available: 3 };
+        let err = CloudError::InsufficientCredits {
+            required: 15,
+            available: 3,
+        };
         assert!(err.to_string().contains("15"));
         assert!(err.to_string().contains("3"));
 
-        let err = CloudError::NoTrialsRemaining { feature: "logo".to_string() };
+        let err = CloudError::NoTrialsRemaining {
+            feature: "logo".to_string(),
+        };
         assert!(err.to_string().contains("logo"));
     }
 
@@ -392,8 +421,13 @@ mod tests {
             plan: Plan::Pro,
             credits_balance: 42,
             trial_counts: TrialCounts {
-                logo: 1, name: 0, northstar: 2,
-                scrape: 1, crawl: 0, vision: 2, search: 0,
+                logo: 1,
+                name: 0,
+                northstar: 2,
+                scrape: 1,
+                crawl: 0,
+                vision: 2,
+                search: 0,
             },
         };
 
@@ -470,7 +504,10 @@ mod tests {
 
     #[test]
     fn cloud_error_display_api() {
-        let err = CloudError::Api { status: 500, message: "Internal Server Error".to_string() };
+        let err = CloudError::Api {
+            status: 500,
+            message: "Internal Server Error".to_string(),
+        };
         let msg = err.to_string();
         assert!(msg.contains("500"));
         assert!(msg.contains("Internal Server Error"));
@@ -522,8 +559,13 @@ mod tests {
     #[test]
     fn trial_counts_serde_roundtrip() {
         let counts = TrialCounts {
-            logo: 1, name: 2, northstar: 0,
-            scrape: 1, crawl: 0, vision: 2, search: 1,
+            logo: 1,
+            name: 2,
+            northstar: 0,
+            scrape: 1,
+            crawl: 0,
+            vision: 2,
+            search: 1,
         };
         let json = serde_json::to_string(&counts).unwrap();
         let parsed: TrialCounts = serde_json::from_str(&json).unwrap();

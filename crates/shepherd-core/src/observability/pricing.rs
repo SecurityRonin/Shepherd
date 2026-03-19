@@ -117,13 +117,19 @@ pub fn find_pricing(model_id: &str) -> Option<ModelPricing> {
 
     // Provider-level fallback (e.g., any "claude-" model uses sonnet pricing)
     if model_id.starts_with("claude-") {
-        return table.iter().find(|p| p.model_id == "claude-sonnet-4").cloned();
+        return table
+            .iter()
+            .find(|p| p.model_id == "claude-sonnet-4")
+            .cloned();
     }
     if model_id.starts_with("gpt-") {
         return table.iter().find(|p| p.model_id == "gpt-4o").cloned();
     }
     if model_id.starts_with("gemini-") {
-        return table.iter().find(|p| p.model_id == "gemini-2.5-flash").cloned();
+        return table
+            .iter()
+            .find(|p| p.model_id == "gemini-2.5-flash")
+            .cloned();
     }
 
     None

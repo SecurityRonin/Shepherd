@@ -268,7 +268,12 @@ mod tests {
         use httpmock::prelude::*;
         let server = MockServer::start();
         server.mock(|when, then| {
-            when.method(GET).path(RDAP_BOOTSTRAP_URL.split("iana.org").last().unwrap_or("/rdap/dns.json"));
+            when.method(GET).path(
+                RDAP_BOOTSTRAP_URL
+                    .split("iana.org")
+                    .last()
+                    .unwrap_or("/rdap/dns.json"),
+            );
             then.status(200).body("not json at all");
         });
 

@@ -117,8 +117,7 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
 
-        let result =
-            run_plugin_gate(dir.path(), script.to_str().unwrap()).await;
+        let result = run_plugin_gate(dir.path(), script.to_str().unwrap()).await;
         assert!(result.passed);
         assert!(result.output.contains("all good"));
         assert_eq!(result.gate_type, GateType::Custom);
@@ -134,8 +133,7 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
 
-        let result =
-            run_plugin_gate(dir.path(), script.to_str().unwrap()).await;
+        let result = run_plugin_gate(dir.path(), script.to_str().unwrap()).await;
         assert!(!result.passed);
         assert!(result.output.contains("lint error"));
         assert_eq!(result.gate_type, GateType::Custom);

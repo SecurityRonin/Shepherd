@@ -150,9 +150,7 @@ pub fn create_provider(config: ProviderConfig) -> Result<Box<dyn LlmProvider>> {
             let base_url = config
                 .base_url
                 .unwrap_or_else(|| "https://api.openai.com/v1".to_string());
-            let default_model = config
-                .default_model
-                .unwrap_or_else(|| "gpt-4o".to_string());
+            let default_model = config.default_model.unwrap_or_else(|| "gpt-4o".to_string());
             Ok(Box::new(providers::OpenAiProvider::new(
                 api_key,
                 base_url,
@@ -179,9 +177,7 @@ pub fn create_provider(config: ProviderConfig) -> Result<Box<dyn LlmProvider>> {
             let base_url = config
                 .base_url
                 .unwrap_or_else(|| "http://localhost:11434".to_string());
-            let default_model = config
-                .default_model
-                .unwrap_or_else(|| "llama3".to_string());
+            let default_model = config.default_model.unwrap_or_else(|| "llama3".to_string());
             Ok(Box::new(providers::OllamaProvider::new(
                 base_url,
                 default_model,
@@ -438,10 +434,7 @@ mod tests {
 
     #[test]
     fn test_llm_request_custom_fields() {
-        let mut req = LlmRequest::new(vec![
-            ChatMessage::system("sys"),
-            ChatMessage::user("usr"),
-        ]);
+        let mut req = LlmRequest::new(vec![ChatMessage::system("sys"), ChatMessage::user("usr")]);
         req.max_tokens = 8192;
         req.temperature = 0.5;
         req.model = Some("gpt-4o-mini".to_string());

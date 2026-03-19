@@ -460,10 +460,8 @@ mod tests {
 
     #[test]
     fn test_ollama_provider_creation() {
-        let provider = OllamaProvider::new(
-            "http://localhost:11434".to_string(),
-            "llama3".to_string(),
-        );
+        let provider =
+            OllamaProvider::new("http://localhost:11434".to_string(), "llama3".to_string());
         assert_eq!(provider.name(), "ollama");
         assert_eq!(provider.base_url, "http://localhost:11434");
         assert_eq!(provider.default_model, "llama3");
@@ -579,7 +577,10 @@ mod tests {
         }"#;
         let resp: OpenAiImageResponse = serde_json::from_str(json).unwrap();
         assert_eq!(resp.data.len(), 3);
-        assert_eq!(resp.data[0].url.as_deref(), Some("https://example.com/img.png"));
+        assert_eq!(
+            resp.data[0].url.as_deref(),
+            Some("https://example.com/img.png")
+        );
         assert!(resp.data[0].b64_json.is_none());
         assert!(resp.data[1].url.is_none());
         assert_eq!(resp.data[1].b64_json.as_deref(), Some("iVBOR..."));
@@ -698,8 +699,8 @@ mod tests {
 
     // ── httpmock-based async tests ────────────────────────────────────────
 
+    use crate::llm::{ChatMessage, ImageGenRequest, LlmRequest, Role};
     use httpmock::prelude::*;
-    use crate::llm::{ChatMessage, LlmRequest, Role, ImageGenRequest};
 
     fn basic_llm_request() -> LlmRequest {
         LlmRequest {

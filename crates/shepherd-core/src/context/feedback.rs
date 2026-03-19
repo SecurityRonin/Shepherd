@@ -1,6 +1,6 @@
+use super::package::{ContextFeedback, ContextPackage};
 use anyhow::Result;
 use rusqlite::{params, Connection};
-use super::package::{ContextFeedback, ContextPackage};
 
 /// Create context tracking tables if they don't exist.
 pub fn migrate(conn: &Connection) -> Result<()> {
@@ -373,28 +373,39 @@ mod tests {
         save_package(&conn, &pkg2).unwrap();
 
         // Feedback: auth.rs used both times, succeeded once
-        record_feedback(&conn, &ContextFeedback {
-            package_id: "pkg-eff-001".into(),
-            task_id: 1,
-            task_succeeded: true,
-            items_used: vec!["src/auth.rs".into()],
-            agent_duration_secs: None,
-            notes: None,
-        }).unwrap();
+        record_feedback(
+            &conn,
+            &ContextFeedback {
+                package_id: "pkg-eff-001".into(),
+                task_id: 1,
+                task_succeeded: true,
+                items_used: vec!["src/auth.rs".into()],
+                agent_duration_secs: None,
+                notes: None,
+            },
+        )
+        .unwrap();
 
-        record_feedback(&conn, &ContextFeedback {
-            package_id: "pkg-eff-002".into(),
-            task_id: 2,
-            task_succeeded: false,
-            items_used: vec!["src/auth.rs".into()],
-            agent_duration_secs: None,
-            notes: None,
-        }).unwrap();
+        record_feedback(
+            &conn,
+            &ContextFeedback {
+                package_id: "pkg-eff-002".into(),
+                task_id: 2,
+                task_succeeded: false,
+                items_used: vec!["src/auth.rs".into()],
+                agent_duration_secs: None,
+                notes: None,
+            },
+        )
+        .unwrap();
 
         let results = get_effectiveness(&conn, 1).unwrap();
 
         // auth.rs: suggested 2x, used 2x, succeeded 1x
-        let auth = results.iter().find(|r| r.file_path == "src/auth.rs").unwrap();
+        let auth = results
+            .iter()
+            .find(|r| r.file_path == "src/auth.rs")
+            .unwrap();
         assert_eq!(auth.times_suggested, 2);
         assert_eq!(auth.times_used, 2);
         assert_eq!(auth.times_succeeded, 1);
@@ -420,14 +431,18 @@ mod tests {
             created_at: "2026-03-13T00:00:00Z".into(),
         };
         save_package(&conn, &pkg).unwrap();
-        record_feedback(&conn, &ContextFeedback {
-            package_id: "pkg-min-001".into(),
-            task_id: 1,
-            task_succeeded: true,
-            items_used: vec!["src/rare.rs".into()],
-            agent_duration_secs: None,
-            notes: None,
-        }).unwrap();
+        record_feedback(
+            &conn,
+            &ContextFeedback {
+                package_id: "pkg-min-001".into(),
+                task_id: 1,
+                task_succeeded: true,
+                items_used: vec!["src/rare.rs".into()],
+                agent_duration_secs: None,
+                notes: None,
+            },
+        )
+        .unwrap();
 
         // With min_suggestions=1, should appear
         let results = get_effectiveness(&conn, 1).unwrap();

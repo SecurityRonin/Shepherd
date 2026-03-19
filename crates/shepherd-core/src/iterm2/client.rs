@@ -27,10 +27,7 @@ pub trait Iterm2Transport: Send {
 
     /// Send a message without waiting for a response (for subscriptions and
     /// fire-and-forget requests like SendTextRequest).
-    async fn send_only(
-        &mut self,
-        msg: iterm2::ClientOriginatedMessage,
-    ) -> anyhow::Result<()>;
+    async fn send_only(&mut self, msg: iterm2::ClientOriginatedMessage) -> anyhow::Result<()>;
 
     /// Receive the next unsolicited server message (notifications).
     async fn recv(&mut self) -> anyhow::Result<iterm2::ServerOriginatedMessage>;
@@ -96,10 +93,7 @@ impl Iterm2Transport for WsClient {
         }
     }
 
-    async fn send_only(
-        &mut self,
-        mut msg: iterm2::ClientOriginatedMessage,
-    ) -> anyhow::Result<()> {
+    async fn send_only(&mut self, mut msg: iterm2::ClientOriginatedMessage) -> anyhow::Result<()> {
         msg.id = Some(next_id());
         let bytes = msg.encode_to_vec();
         self.ws
@@ -191,7 +185,9 @@ mod tests {
                 iterm2::client_originated_message::Submessage::VariableRequest(
                     iterm2::VariableRequest {
                         get: vec!["jobName".to_string()],
-                        scope: Some(iterm2::variable_request::Scope::SessionId("sess-1".to_string())),
+                        scope: Some(iterm2::variable_request::Scope::SessionId(
+                            "sess-1".to_string(),
+                        )),
                         set: vec![],
                     },
                 ),
@@ -218,7 +214,9 @@ mod tests {
                     iterm2::NotificationRequest {
                         session: Some("sess-2".to_string()),
                         subscribe: Some(true),
-                        notification_type: Some(iterm2::NotificationType::NotifyOnScreenUpdate as i32),
+                        notification_type: Some(
+                            iterm2::NotificationType::NotifyOnScreenUpdate as i32,
+                        ),
                         arguments: None,
                     },
                 ),

@@ -1,6 +1,6 @@
-use std::path::{Path, PathBuf};
 use super::superpowers::InstallScope;
 use super::{EcosystemPlugin, PluginDetectionResult};
+use std::path::{Path, PathBuf};
 
 /// Return the shared plugin definition for Alaya.
 /// Alaya is an MCP memory engine — compatible with any MCP-capable agent.
@@ -67,7 +67,11 @@ pub struct DetectionResult {
 
 impl From<PluginDetectionResult> for DetectionResult {
     fn from(r: PluginDetectionResult) -> Self {
-        Self { installed: r.installed, scope: r.scope, path: r.path }
+        Self {
+            installed: r.installed,
+            scope: r.scope,
+            path: r.path,
+        }
     }
 }
 
@@ -108,7 +112,11 @@ pub fn detect_for_agent(agent: &str, home: &Path, project_root: Option<&Path>) -
             }
         }
     }
-    DetectionResult { installed: false, scope: InstallScope::User, path: None }
+    DetectionResult {
+        installed: false,
+        scope: InstallScope::User,
+        path: None,
+    }
 }
 
 /// Inject the Alaya MCP entry into `~/.claude.json` idempotently.
@@ -120,8 +128,7 @@ pub fn ensure_installed(home: &Path) -> anyhow::Result<bool> {
     let mut config: serde_json::Value = if config_path.exists() {
         let raw = std::fs::read_to_string(&config_path)
             .with_context(|| format!("reading {}", config_path.display()))?;
-        serde_json::from_str(&raw)
-            .with_context(|| format!("parsing {}", config_path.display()))?
+        serde_json::from_str(&raw).with_context(|| format!("parsing {}", config_path.display()))?
     } else {
         serde_json::json!({})
     };
@@ -156,8 +163,8 @@ pub fn ensure_installed(home: &Path) -> anyhow::Result<bool> {
 
     mcp_obj.insert("alaya".to_string(), entry);
 
-    let serialized = serde_json::to_string_pretty(&config)
-        .context("serializing updated Claude config")?;
+    let serialized =
+        serde_json::to_string_pretty(&config).context("serializing updated Claude config")?;
     let tmp = config_path.with_extension("json.alaya-tmp");
     std::fs::write(&tmp, &serialized)
         .with_context(|| format!("writing temp config to {}", tmp.display()))?;
@@ -208,7 +215,8 @@ mod tests {
         std::fs::write(
             home.path().join(".claude.json"),
             r#"{"mcpServers":{"alaya":{"type":"stdio","command":"/usr/local/bin/alaya-mcp"}}}"#,
-        ).unwrap();
+        )
+        .unwrap();
         let result = detect_for_agent("claude-code", home.path(), None);
         assert!(result.installed);
         assert_eq!(result.scope, InstallScope::User);
@@ -220,7 +228,8 @@ mod tests {
         std::fs::write(
             home.path().join(".claude.json"),
             r#"{"mcpServers":{"other":{"type":"http","url":"https://example.com"}}}"#,
-        ).unwrap();
+        )
+        .unwrap();
         let result = detect_for_agent("claude-code", home.path(), None);
         assert!(!result.installed);
     }
@@ -246,7 +255,8 @@ mod tests {
         assert!(modified);
         let content: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(home.path().join(".claude.json")).unwrap(),
-        ).unwrap();
+        )
+        .unwrap();
         assert!(content["mcpServers"]["alaya"].is_object());
     }
 
@@ -269,8 +279,12 @@ mod tests {
         ensure_installed(home.path()).unwrap();
         let content: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(home.path().join(".claude.json")).unwrap(),
-        ).unwrap();
-        assert!(content["mcpServers"]["gamma"].is_object(), "existing server preserved");
+        )
+        .unwrap();
+        assert!(
+            content["mcpServers"]["gamma"].is_object(),
+            "existing server preserved"
+        );
         assert!(content["mcpServers"]["alaya"].is_object(), "alaya added");
         assert_eq!(content["numStartups"], 3, "other config keys preserved");
     }
@@ -278,14 +292,19 @@ mod tests {
     #[test]
     fn test_ensure_installed_does_not_overwrite_custom_alaya_entry() {
         let home = setup_home();
-        let custom = r#"{"mcpServers":{"alaya":{"type":"stdio","command":"/my/custom/alaya-mcp"}}}"#;
+        let custom =
+            r#"{"mcpServers":{"alaya":{"type":"stdio","command":"/my/custom/alaya-mcp"}}}"#;
         std::fs::write(home.path().join(".claude.json"), custom).unwrap();
         let modified = ensure_installed(home.path()).unwrap();
         assert!(!modified);
         let content: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(home.path().join(".claude.json")).unwrap(),
-        ).unwrap();
-        assert_eq!(content["mcpServers"]["alaya"]["command"], "/my/custom/alaya-mcp");
+        )
+        .unwrap();
+        assert_eq!(
+            content["mcpServers"]["alaya"]["command"],
+            "/my/custom/alaya-mcp"
+        );
     }
 
     #[test]
@@ -303,7 +322,8 @@ mod tests {
         ensure_installed(home.path()).unwrap();
         let content: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(home.path().join(".claude.json")).unwrap(),
-        ).unwrap();
+        )
+        .unwrap();
         assert!(content["mcpServers"]["alaya"].is_object());
         assert_eq!(content["numStartups"], 1);
     }
@@ -343,7 +363,8 @@ mod tests {
         assert!(modified);
         let content: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(home.path().join(".claude.json")).unwrap(),
-        ).unwrap();
+        )
+        .unwrap();
         assert!(content["mcpServers"]["alaya"].is_object());
     }
 
@@ -395,7 +416,8 @@ mod tests {
         std::fs::write(
             project.path().join(".mcp.json"),
             r#"{"mcpServers":{"other-plugin":{"type":"stdio","command":"other"}}}"#,
-        ).unwrap();
+        )
+        .unwrap();
         let result = detect_for_agent("claude-code", home.path(), Some(project.path()));
         assert!(!result.installed);
     }
@@ -424,7 +446,8 @@ mod tests {
         // Read back and verify the local binary path was used
         let content: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(home.path().join(".claude.json")).unwrap(),
-        ).unwrap();
+        )
+        .unwrap();
         let alaya = &content["mcpServers"]["alaya"];
         assert!(alaya.is_object());
         let command = alaya["command"].as_str().unwrap();

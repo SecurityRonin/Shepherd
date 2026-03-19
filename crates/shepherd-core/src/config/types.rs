@@ -22,11 +22,21 @@ pub struct ShepherdConfig {
     pub cloud: CloudFeaturesConfig,
 }
 
-fn default_port() -> u16 { 7532 }
-fn default_max_agents() -> usize { 10 }
-fn default_permission_mode() -> String { "ask".into() }
-fn default_isolation() -> String { "worktree".into() }
-fn default_agent() -> String { "claude-code".into() }
+fn default_port() -> u16 {
+    7532
+}
+fn default_max_agents() -> usize {
+    10
+}
+fn default_permission_mode() -> String {
+    "ask".into()
+}
+fn default_isolation() -> String {
+    "worktree".into()
+}
+fn default_agent() -> String {
+    "claude-code".into()
+}
 
 impl Default for ShepherdConfig {
     fn default() -> Self {
@@ -54,7 +64,9 @@ pub struct SandboxConfig {
     pub block_network: bool,
 }
 
-fn default_sandbox_enabled() -> bool { true }
+fn default_sandbox_enabled() -> bool {
+    true
+}
 
 impl Default for SandboxConfig {
     fn default() -> Self {
@@ -84,7 +96,9 @@ pub struct EcosystemConfig {
     pub offer_install_on_new_task: bool,
 }
 
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CloudFeaturesConfig {

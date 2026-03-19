@@ -143,7 +143,10 @@ pub async fn execute_phase(
                 Err(CloudError::NotAuthenticated | CloudError::AuthExpired) => {
                     tracing::info!("Cloud auth unavailable, falling back to local LLM");
                 }
-                Err(CloudError::InsufficientCredits { required, available }) => {
+                Err(CloudError::InsufficientCredits {
+                    required,
+                    available,
+                }) => {
                     return Err((
                         StatusCode::PAYMENT_REQUIRED,
                         Json(serde_json::json!({
@@ -153,9 +156,7 @@ pub async fn execute_phase(
                     ));
                 }
                 Err(e) => {
-                    tracing::warn!(
-                        "Cloud northstar generation failed, falling back to local: {e}"
-                    );
+                    tracing::warn!("Cloud northstar generation failed, falling back to local: {e}");
                 }
             }
         }
