@@ -10,6 +10,7 @@ use crate::db;
 use crate::db::models::{Task, TaskStatus};
 use crate::events::{PermissionEvent, ServerEvent, TaskEvent};
 use crate::gates::{self, GateConfig};
+use crate::observability::{self, BudgetConfig, MetricsAccumulator};
 use crate::pty::PtyManager;
 use crate::yolo::{Decision, YoloEngine};
 use anyhow::Result;
@@ -55,8 +56,10 @@ pub struct TaskDispatcher {
     lock_manager: Arc<Mutex<LockManager>>,
     event_tx: broadcast::Sender<ServerEvent>,
     monitors: Arc<Mutex<HashMap<i64, SessionMonitor>>>,
+    metrics_accumulators: Arc<Mutex<HashMap<i64, MetricsAccumulator>>>,
     context: Arc<ContextOrchestrator>,
     gate_config: GateConfig,
+    budget_config: BudgetConfig,
     max_agents: usize,
 }
 
@@ -77,8 +80,10 @@ impl TaskDispatcher {
             lock_manager,
             event_tx,
             monitors: Arc::new(Mutex::new(HashMap::new())),
+            metrics_accumulators: Arc::new(Mutex::new(HashMap::new())),
             context: Arc::new(ContextOrchestrator::new()),
             gate_config: GateConfig::default(),
+            budget_config: BudgetConfig::default(),
             max_agents: usize::MAX,
         }
     }
@@ -92,6 +97,12 @@ impl TaskDispatcher {
     /// Set the quality gate configuration.
     pub fn with_gate_config(mut self, config: GateConfig) -> Self {
         self.gate_config = config;
+        self
+    }
+
+    /// Set the budget configuration for cost control.
+    pub fn with_budget_config(mut self, config: BudgetConfig) -> Self {
+        self.budget_config = config;
         self
     }
 
@@ -187,9 +198,13 @@ impl TaskDispatcher {
             .spawn(task.id, &adapter.agent.command, &args, &task.repo_path)
             .await?;
 
-        // 5. Create SessionMonitor for this task
+        // 5. Create SessionMonitor and MetricsAccumulator for this task
         let monitor = SessionMonitor::new(&adapter.status, &adapter.permissions);
         self.monitors.lock().await.insert(task.id, monitor);
+        self.metrics_accumulators
+            .lock()
+            .await
+            .insert(task.id, MetricsAccumulator::new(task.id, &task.agent_id));
 
         // 6. Update status to Running
         {
@@ -247,6 +262,67 @@ impl TaskDispatcher {
         lm.release(task_id);
     }
 
+    /// Finalize metrics for a completed/errored task, persist to DB,
+    /// emit MetricsUpdate event, and check budget limits.
+    async fn finalize_and_persist_metrics(&self, task_id: i64, status: &str) {
+        let accumulator = self.metrics_accumulators.lock().await.remove(&task_id);
+        let acc = match accumulator {
+            Some(a) => a,
+            None => return, // No accumulator — nothing to do
+        };
+
+        let metrics = acc.finalize(status);
+
+        // Persist to task_metrics table
+        {
+            let conn = self.db.lock().await;
+            if let Err(e) = observability::store::upsert_metrics(&conn, &metrics) {
+                tracing::error!("Failed to persist metrics for task {}: {}", task_id, e);
+            }
+        }
+
+        // Emit MetricsUpdate event
+        let _ = self
+            .event_tx
+            .send(ServerEvent::MetricsUpdate(crate::events::MetricsEvent {
+                task_id: metrics.task_id,
+                agent_id: metrics.agent_id.clone(),
+                model_id: metrics.model_id.clone(),
+                total_input_tokens: metrics.total_input_tokens,
+                total_output_tokens: metrics.total_output_tokens,
+                total_tokens: metrics.total_tokens,
+                total_cost_usd: metrics.total_cost_usd,
+                llm_calls: metrics.llm_calls,
+                duration_secs: metrics.duration_secs,
+            }));
+
+        // Check budgets and emit alerts
+        {
+            let conn = self.db.lock().await;
+            let alerts = observability::check_budgets(
+                &self.budget_config,
+                &conn,
+                metrics.total_cost_usd,
+                &task_id.to_string(),
+                &metrics.agent_id,
+            );
+            for alert in alerts {
+                let _ =
+                    self.event_tx
+                        .send(ServerEvent::BudgetAlert(crate::events::BudgetAlertEvent {
+                            scope: alert.scope.to_string(),
+                            scope_id: alert.scope_id,
+                            status: serde_json::to_string(&alert.status)
+                                .unwrap_or_else(|_| "unknown".into()),
+                            current_cost: alert.current_cost,
+                            limit: alert.limit,
+                            percentage: alert.percentage,
+                            message: alert.message,
+                        }));
+            }
+        }
+    }
+
     /// Handle PTY output for a task — run through SessionMonitor.
     pub async fn handle_pty_output(&self, task_id: i64, output: &str) -> Result<Option<Detection>> {
         let monitors = self.monitors.lock().await;
@@ -289,6 +365,7 @@ impl TaskDispatcher {
             Detection::Error(_) => {
                 drop(monitors);
                 self.release_locks(task_id).await;
+                self.finalize_and_persist_metrics(task_id, "error").await;
                 let conn = self.db.lock().await;
                 let _ = db::update_task_status(&conn, task_id, TaskStatus::Error);
             }
@@ -308,6 +385,9 @@ impl TaskDispatcher {
 
                 // Run quality gates — if all pass: Done, otherwise: Review
                 let all_passed = self.run_post_completion_gates(task_id, &repo_path).await;
+                let final_status = if all_passed { "done" } else { "review" };
+                self.finalize_and_persist_metrics(task_id, final_status)
+                    .await;
                 let status = if all_passed {
                     TaskStatus::Done
                 } else {
@@ -352,9 +432,10 @@ impl TaskDispatcher {
         Ok(())
     }
 
-    /// Remove monitor and release locks for a completed/failed task.
+    /// Remove monitor, metrics accumulator, and release locks for a completed/failed task.
     pub async fn cleanup_task(&self, task_id: i64) {
         self.monitors.lock().await.remove(&task_id);
+        self.metrics_accumulators.lock().await.remove(&task_id);
         self.release_locks(task_id).await;
     }
 }
@@ -1846,5 +1927,368 @@ mod tests {
             }
         }
         assert!(found_gate_event, "Should have emitted a GateResult event");
+    }
+
+    // ── Observability metrics tests ──────────────────────────────────
+
+    #[tokio::test]
+    async fn idle_finalizes_and_persists_metrics() {
+        use crate::observability;
+
+        let (tx, _rx) = broadcast::channel(64);
+        let conn = crate::db::open_memory().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let repo_path = tmp.path().to_string_lossy().to_string();
+
+        conn.execute(
+            "INSERT INTO tasks (id, title, prompt, agent_id, repo_path, branch, isolation_mode, status) VALUES (1, 'Test', '', 'claude-code', ?1, 'main', 'none', 'running')",
+            rusqlite::params![repo_path],
+        ).unwrap();
+
+        let db = Arc::new(Mutex::new(conn));
+        let adapters = Arc::new(AdapterRegistry::new());
+        let pty = Arc::new(PtyManager::new(4, SandboxProfile::disabled()));
+        let yolo = Arc::new(YoloEngine::new(RuleSet {
+            deny: vec![],
+            allow: vec![],
+        }));
+        let locks = Arc::new(Mutex::new(LockManager::new()));
+
+        let gate_config = GateConfig {
+            lint: false,
+            format_check: false,
+            type_check: false,
+            test: false,
+            custom_gates: vec![],
+            timeout_seconds: 5,
+        };
+
+        let dispatcher = TaskDispatcher::new(db.clone(), adapters, pty, yolo, locks, tx)
+            .with_gate_config(gate_config);
+
+        // Insert a monitor
+        let status = StatusSection {
+            working_patterns: vec![],
+            idle_patterns: vec![r"\$\s*$".into()],
+            input_patterns: vec![],
+            error_patterns: vec![],
+        };
+        let perms = PermissionsSection {
+            approve: "y\n".into(),
+            approve_all: "Y\n".into(),
+            deny: "n\n".into(),
+            extraction_patterns: vec![],
+        };
+        dispatcher
+            .monitors
+            .lock()
+            .await
+            .insert(1, SessionMonitor::new(&status, &perms));
+
+        // Insert a metrics accumulator for the task
+        dispatcher
+            .metrics_accumulators
+            .lock()
+            .await
+            .insert(1, observability::MetricsAccumulator::new(1, "claude-code"));
+
+        // Trigger idle detection
+        let result = dispatcher.handle_pty_output(1, "$ ").await.unwrap();
+        assert_eq!(result, Some(Detection::Idle));
+
+        // Verify metrics were persisted to task_metrics table
+        let conn = db.lock().await;
+        let metrics = observability::store::get_task_metrics(&conn, 1).unwrap();
+        assert!(metrics.is_some(), "Metrics should be persisted on idle");
+        let m = metrics.unwrap();
+        assert_eq!(m.agent_id, "claude-code");
+        assert_eq!(m.status, "done");
+        assert!(m.duration_secs.is_some());
+    }
+
+    #[tokio::test]
+    async fn error_finalizes_and_persists_metrics() {
+        use crate::observability;
+
+        let (tx, _rx) = broadcast::channel(64);
+        let conn = crate::db::open_memory().unwrap();
+
+        conn.execute(
+            "INSERT INTO tasks (id, title, prompt, agent_id, repo_path, branch, isolation_mode, status) VALUES (1, 'Test', '', 'claude-code', '/tmp', 'main', 'none', 'running')",
+            [],
+        ).unwrap();
+
+        let db = Arc::new(Mutex::new(conn));
+        let adapters = Arc::new(AdapterRegistry::new());
+        let pty = Arc::new(PtyManager::new(4, SandboxProfile::disabled()));
+        let yolo = Arc::new(YoloEngine::new(RuleSet {
+            deny: vec![],
+            allow: vec![],
+        }));
+        let locks = Arc::new(Mutex::new(LockManager::new()));
+
+        let dispatcher = TaskDispatcher::new(db.clone(), adapters, pty, yolo, locks, tx);
+
+        // Insert a monitor that detects errors
+        let status = StatusSection {
+            working_patterns: vec![],
+            idle_patterns: vec![],
+            input_patterns: vec![],
+            error_patterns: vec![r"Error:".into()],
+        };
+        let perms = PermissionsSection {
+            approve: "y\n".into(),
+            approve_all: "Y\n".into(),
+            deny: "n\n".into(),
+            extraction_patterns: vec![],
+        };
+        dispatcher
+            .monitors
+            .lock()
+            .await
+            .insert(1, SessionMonitor::new(&status, &perms));
+
+        // Insert a metrics accumulator
+        dispatcher
+            .metrics_accumulators
+            .lock()
+            .await
+            .insert(1, observability::MetricsAccumulator::new(1, "claude-code"));
+
+        // Trigger error detection
+        let result = dispatcher
+            .handle_pty_output(1, "Error: something broke")
+            .await
+            .unwrap();
+        assert!(matches!(result, Some(Detection::Error(_))));
+
+        // Verify metrics were persisted with error status
+        let conn = db.lock().await;
+        let metrics = observability::store::get_task_metrics(&conn, 1).unwrap();
+        assert!(metrics.is_some(), "Metrics should be persisted on error");
+        let m = metrics.unwrap();
+        assert_eq!(m.status, "error");
+    }
+
+    #[tokio::test]
+    async fn idle_emits_metrics_update_event() {
+        use crate::observability;
+
+        let (tx, mut rx) = broadcast::channel(64);
+        let conn = crate::db::open_memory().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let repo_path = tmp.path().to_string_lossy().to_string();
+
+        conn.execute(
+            "INSERT INTO tasks (id, title, prompt, agent_id, repo_path, branch, isolation_mode, status) VALUES (1, 'Test', '', 'claude-code', ?1, 'main', 'none', 'running')",
+            rusqlite::params![repo_path],
+        ).unwrap();
+
+        let db = Arc::new(Mutex::new(conn));
+        let adapters = Arc::new(AdapterRegistry::new());
+        let pty = Arc::new(PtyManager::new(4, SandboxProfile::disabled()));
+        let yolo = Arc::new(YoloEngine::new(RuleSet {
+            deny: vec![],
+            allow: vec![],
+        }));
+        let locks = Arc::new(Mutex::new(LockManager::new()));
+
+        let gate_config = GateConfig {
+            lint: false,
+            format_check: false,
+            type_check: false,
+            test: false,
+            custom_gates: vec![],
+            timeout_seconds: 5,
+        };
+
+        let dispatcher = TaskDispatcher::new(db.clone(), adapters, pty, yolo, locks, tx)
+            .with_gate_config(gate_config);
+
+        let status = StatusSection {
+            working_patterns: vec![],
+            idle_patterns: vec![r"\$\s*$".into()],
+            input_patterns: vec![],
+            error_patterns: vec![],
+        };
+        let perms = PermissionsSection {
+            approve: "y\n".into(),
+            approve_all: "Y\n".into(),
+            deny: "n\n".into(),
+            extraction_patterns: vec![],
+        };
+        dispatcher
+            .monitors
+            .lock()
+            .await
+            .insert(1, SessionMonitor::new(&status, &perms));
+        dispatcher
+            .metrics_accumulators
+            .lock()
+            .await
+            .insert(1, observability::MetricsAccumulator::new(1, "claude-code"));
+
+        dispatcher.handle_pty_output(1, "$ ").await.unwrap();
+
+        // Check for MetricsUpdate event
+        let mut found_metrics_event = false;
+        while let Ok(event) = rx.try_recv() {
+            if let ServerEvent::MetricsUpdate(m) = event {
+                assert_eq!(m.task_id, 1);
+                assert_eq!(m.agent_id, "claude-code");
+                found_metrics_event = true;
+                break;
+            }
+        }
+        assert!(
+            found_metrics_event,
+            "Should have emitted a MetricsUpdate event"
+        );
+    }
+
+    #[tokio::test]
+    async fn idle_checks_budgets_and_emits_alerts() {
+        use crate::observability;
+        use crate::observability::BudgetConfig;
+
+        let (tx, mut rx) = broadcast::channel(64);
+        let conn = crate::db::open_memory().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let repo_path = tmp.path().to_string_lossy().to_string();
+
+        conn.execute(
+            "INSERT INTO tasks (id, title, prompt, agent_id, repo_path, branch, isolation_mode, status) VALUES (1, 'Test', '', 'claude-code', ?1, 'main', 'none', 'running')",
+            rusqlite::params![repo_path],
+        ).unwrap();
+
+        // Pre-insert some high cost metrics so budget is already high
+        let mut acc = observability::MetricsAccumulator::new(99, "claude-code");
+        acc.record("claude-sonnet-4", 500_000, 100_000);
+        observability::store::upsert_metrics(&conn, &acc.finalize("done")).unwrap();
+
+        let db = Arc::new(Mutex::new(conn));
+        let adapters = Arc::new(AdapterRegistry::new());
+        let pty = Arc::new(PtyManager::new(4, SandboxProfile::disabled()));
+        let yolo = Arc::new(YoloEngine::new(RuleSet {
+            deny: vec![],
+            allow: vec![],
+        }));
+        let locks = Arc::new(Mutex::new(LockManager::new()));
+
+        let gate_config = GateConfig {
+            lint: false,
+            format_check: false,
+            type_check: false,
+            test: false,
+            custom_gates: vec![],
+            timeout_seconds: 5,
+        };
+
+        // Set a very tight daily budget to trigger an alert
+        let budget_config = BudgetConfig {
+            max_cost_per_task: None,
+            max_cost_per_agent_daily: Some(0.01),
+            max_cost_daily: None,
+            warning_threshold: 0.8,
+        };
+
+        let dispatcher = TaskDispatcher::new(db.clone(), adapters, pty, yolo, locks, tx)
+            .with_gate_config(gate_config)
+            .with_budget_config(budget_config);
+
+        let status = StatusSection {
+            working_patterns: vec![],
+            idle_patterns: vec![r"\$\s*$".into()],
+            input_patterns: vec![],
+            error_patterns: vec![],
+        };
+        let perms = PermissionsSection {
+            approve: "y\n".into(),
+            approve_all: "Y\n".into(),
+            deny: "n\n".into(),
+            extraction_patterns: vec![],
+        };
+        dispatcher
+            .monitors
+            .lock()
+            .await
+            .insert(1, SessionMonitor::new(&status, &perms));
+        dispatcher
+            .metrics_accumulators
+            .lock()
+            .await
+            .insert(1, observability::MetricsAccumulator::new(1, "claude-code"));
+
+        dispatcher.handle_pty_output(1, "$ ").await.unwrap();
+
+        // Check for BudgetAlert event
+        let mut found_budget_alert = false;
+        while let Ok(event) = rx.try_recv() {
+            if matches!(event, ServerEvent::BudgetAlert(_)) {
+                found_budget_alert = true;
+                break;
+            }
+        }
+        assert!(
+            found_budget_alert,
+            "Should have emitted a BudgetAlert event"
+        );
+    }
+
+    #[tokio::test]
+    async fn cleanup_removes_metrics_accumulator() {
+        use crate::observability;
+
+        let (tx, _rx) = broadcast::channel(16);
+        let conn = Connection::open_in_memory().unwrap();
+        let db = Arc::new(Mutex::new(conn));
+        let adapters = Arc::new(AdapterRegistry::new());
+        let pty = Arc::new(PtyManager::new(4, SandboxProfile::disabled()));
+        let yolo = Arc::new(YoloEngine::new(RuleSet {
+            deny: vec![],
+            allow: vec![],
+        }));
+        let locks = Arc::new(Mutex::new(LockManager::new()));
+
+        let dispatcher = TaskDispatcher::new(db, adapters, pty, yolo, locks, tx);
+
+        // Insert both a monitor and metrics accumulator
+        dispatcher.monitors.lock().await.insert(
+            1,
+            SessionMonitor::new(
+                &StatusSection {
+                    working_patterns: vec![],
+                    idle_patterns: vec![],
+                    input_patterns: vec![],
+                    error_patterns: vec![],
+                },
+                &PermissionsSection {
+                    approve: "y\n".into(),
+                    approve_all: "Y\n".into(),
+                    deny: "n\n".into(),
+                    extraction_patterns: vec![],
+                },
+            ),
+        );
+        dispatcher
+            .metrics_accumulators
+            .lock()
+            .await
+            .insert(1, observability::MetricsAccumulator::new(1, "test"));
+
+        assert!(dispatcher
+            .metrics_accumulators
+            .lock()
+            .await
+            .contains_key(&1));
+
+        dispatcher.cleanup_task(1).await;
+
+        assert!(!dispatcher.monitors.lock().await.contains_key(&1));
+        assert!(!dispatcher
+            .metrics_accumulators
+            .lock()
+            .await
+            .contains_key(&1));
     }
 }
