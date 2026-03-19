@@ -54,14 +54,18 @@ This spec covers the work needed to take Shepherd from an engineering prototype 
     └──────────┘
 ```
 
-### Single Binary Model
+### Single Binary Model (Migration from Current Three-Binary Architecture)
 
-`shep` is one binary that does everything:
+**Current state**: The codebase has three separate binaries — `shepherd-cli`, `shepherd-server`, and the Tauri app (which spawns `shepherd-server` as a child process). This means three build targets, three install steps, and child process management complexity.
+
+**Target state**: Consolidate into one binary `shep` that does everything:
 - `shep` (no args) → launches Tauri desktop GUI with embedded server
 - `shep new "task"` → CLI mode, auto-starts daemon if not running
 - `shep status` → CLI mode
 - `shep --headless` → server-only daemon mode (SSH/remote use)
 - `shep stop` → kills daemon
+
+**Migration**: Move CLI subcommands from `shepherd-cli/src/main.rs` into the Tauri binary as a clap subcommand layer. When clap detects subcommands, run in CLI mode (no GUI). When no subcommands, launch Tauri window. The Tauri `lib.rs` changes from spawning `shepherd-server` as a child process to calling `start_server()` in-process on a background Tokio task. `shepherd-cli` and `shepherd-server` binaries become deprecated — kept temporarily for backwards compatibility, then removed.
 
 ## Section 1: Embedded Server & CLI Daemon
 
@@ -114,9 +118,24 @@ User creates task (GUI/CLI/API)
 
 ### Task Lifecycle States
 
+The existing `TaskStatus` enum uses: `Queued`, `Running`, `Input`, `Review`, `Error`, `Done`. We extend it with one new state (`Dispatching`) and map the dispatch loop to existing states:
+
 ```
-pending → dispatching → running → [waiting_approval] → running → completed/failed
+Queued → Dispatching → Running → [Input] → Running → Done/Error
+                                  [Review]
 ```
+
+| Dispatch concept | DB status | Notes |
+|---|---|---|
+| Pending task | `Queued` | Existing state, no change |
+| Being dispatched | `Dispatching` | New state — adapter resolution + PTY spawn in progress |
+| Agent working | `Running` | Existing state |
+| Awaiting permission | `Input` | Existing state — agent needs user approval |
+| Quality gate check | `Review` | Existing state — used for gates |
+| Completed | `Done` | Existing state |
+| Failed | `Error` | Existing state |
+
+Migration: add `Dispatching` variant to `TaskStatus` enum, add `"dispatching"` to `as_str()`/`parse_status()`.
 
 ### SessionMonitor
 
