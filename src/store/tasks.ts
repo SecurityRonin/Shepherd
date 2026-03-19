@@ -1,6 +1,7 @@
 import type { StateCreator } from "zustand";
-import type { Task, TaskStatus, FileDiff } from "../types/task";
+import type { Task, TaskStatus, FileDiff, CreateTask } from "../types/task";
 import type { PermissionEvent, TaskEvent } from "../types/events";
+import { createTask as apiCreateTask, listTasks as apiListTasks } from "../lib/api";
 
 export interface TasksSlice {
   tasks: Record<number, Task>;
@@ -15,6 +16,8 @@ export interface TasksSlice {
   getTasksByStatus: (status: TaskStatus) => Task[];
   getTaskById: (id: number) => Task | undefined;
   getPermissionsForTask: (taskId: number) => PermissionEvent[];
+  createTask: (task: CreateTask) => Promise<Task>;
+  fetchTasks: () => Promise<void>;
 }
 
 function taskEventToTask(event: TaskEvent): Task {
@@ -98,4 +101,19 @@ export const createTasksSlice: StateCreator<TasksSlice, [], [], TasksSlice> = (s
   getTaskById: (id) => get().tasks[id],
   getPermissionsForTask: (taskId) =>
     get().pendingPermissions.filter((p) => p.task_id === taskId),
+  createTask: async (task) => {
+    const created = await apiCreateTask(task);
+    set((state) => ({
+      tasks: { ...state.tasks, [created.id]: created },
+    }));
+    return created;
+  },
+  fetchTasks: async () => {
+    const taskList = await apiListTasks();
+    const tasks: Record<number, Task> = {};
+    for (const t of taskList) {
+      tasks[t.id] = t;
+    }
+    set({ tasks });
+  },
 });

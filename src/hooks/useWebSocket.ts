@@ -5,13 +5,7 @@ import {
   type ConnectionStatus,
 } from "../lib/ws";
 import type { ServerEvent } from "../types";
-
-const DEFAULT_PORT = 9876;
-const WS_PATH = "/ws";
-
-function getServerUrl(): string {
-  return `ws://127.0.0.1:${DEFAULT_PORT}${WS_PATH}`;
-}
+import { getServerPort } from "../lib/tauri";
 
 export function useWebSocket(
   onEvent: (event: ServerEvent) => void,
@@ -24,17 +18,27 @@ export function useWebSocket(
   onStatusRef.current = onStatusChange;
 
   useEffect(() => {
-    const client = createWsClient({
-      url: getServerUrl(),
-      onEvent: (event) => onEventRef.current(event),
-      onStatusChange: (s) => onStatusRef.current(s),
+    let cancelled = false;
+
+    getServerPort().then((port) => {
+      if (cancelled) return;
+      const wsUrl = `ws://127.0.0.1:${port}/ws`;
+      const client = createWsClient({
+        url: wsUrl,
+        onEvent: (event) => onEventRef.current(event),
+        onStatusChange: (s) => onStatusRef.current(s),
+      });
+      clientRef.current = client;
+      client.connect();
+      client.send({ type: "subscribe", data: null });
     });
-    clientRef.current = client;
-    client.connect();
-    client.send({ type: "subscribe", data: null });
+
     return () => {
-      client.disconnect();
-      clientRef.current = null;
+      cancelled = true;
+      if (clientRef.current) {
+        clientRef.current.disconnect();
+        clientRef.current = null;
+      }
     };
   }, []);
 

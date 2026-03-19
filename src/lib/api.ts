@@ -1,9 +1,9 @@
 import type { Task, CreateTask } from "../types/task";
+import { getServerPort } from "./tauri";
 
-const DEFAULT_PORT = 9876;
-
-function getBaseUrl(): string {
-  return `http://127.0.0.1:${DEFAULT_PORT}`;
+async function getBaseUrl(): Promise<string> {
+  const port = await getServerPort();
+  return `http://127.0.0.1:${port}`;
 }
 
 export class ApiError extends Error {
@@ -17,7 +17,7 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const url = `${getBaseUrl()}${path}`;
+  const url = `${await getBaseUrl()}${path}`;
   const response = await fetch(url, {
     ...options,
     headers: { "Content-Type": "application/json", ...options?.headers },
