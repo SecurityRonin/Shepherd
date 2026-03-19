@@ -5,6 +5,7 @@ pub mod config;
 pub mod context;
 pub mod coordination;
 pub mod db;
+pub mod dispatch;
 pub mod ecosystem;
 pub mod events;
 pub mod gates;
