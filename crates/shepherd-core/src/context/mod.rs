@@ -28,7 +28,7 @@ pub use tfidf_provider::TfIdfProvider;
 
 /// The main context orchestrator that combines multiple providers.
 pub struct ContextOrchestrator {
-    providers: Vec<Box<dyn ContextProvider>>,
+    providers: Vec<Box<dyn ContextProvider + Send + Sync>>,
 }
 
 impl ContextOrchestrator {
@@ -42,7 +42,7 @@ impl ContextOrchestrator {
 
     /// Create an orchestrator with custom providers.
     // tarpaulin-start-ignore
-    pub fn with_providers(providers: Vec<Box<dyn ContextProvider>>) -> Self {
+    pub fn with_providers(providers: Vec<Box<dyn ContextProvider + Send + Sync>>) -> Self {
         Self { providers }
     }
     // tarpaulin-stop-ignore

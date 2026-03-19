@@ -1,6 +1,10 @@
 pub mod monitor;
 
+use crate::adapters::protocol::AdapterConfig;
 use crate::adapters::AdapterRegistry;
+use crate::context::{
+    prepare_injection, ContextOrchestrator, ContextRequest, InjectionPayload, InjectionStrategy,
+};
 use crate::coordination::LockManager;
 use crate::db;
 use crate::db::models::{Task, TaskStatus};
@@ -15,6 +19,32 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{broadcast, Mutex};
 
+/// Build context and prepare injection payload for a task.
+///
+/// Pure function — no I/O, no async. Returns an InjectionPayload
+/// whose `extra_args` should be prepended to the agent command args.
+pub fn build_injection_for_task(
+    orchestrator: &ContextOrchestrator,
+    task: &Task,
+    adapter: &AdapterConfig,
+) -> InjectionPayload {
+    let request = ContextRequest {
+        task_id: Some(task.id),
+        task_title: task.title.clone(),
+        task_description: task.prompt.clone(),
+        repo_path: PathBuf::from(&task.repo_path),
+        agent: task.agent_id.clone(),
+        max_files: 20,
+    };
+
+    let package = orchestrator.build_context(&request);
+    prepare_injection(
+        &package,
+        &task.agent_id,
+        adapter.capabilities.supports_prompt_arg,
+    )
+}
+
 /// Manages dispatching queued tasks to agent PTY sessions.
 pub struct TaskDispatcher {
     db: Arc<Mutex<Connection>>,
@@ -24,6 +54,7 @@ pub struct TaskDispatcher {
     lock_manager: Arc<Mutex<LockManager>>,
     event_tx: broadcast::Sender<ServerEvent>,
     monitors: Arc<Mutex<HashMap<i64, SessionMonitor>>>,
+    context: Arc<ContextOrchestrator>,
     max_agents: usize,
 }
 
@@ -44,6 +75,7 @@ impl TaskDispatcher {
             lock_manager,
             event_tx,
             monitors: Arc::new(Mutex::new(HashMap::new())),
+            context: Arc::new(ContextOrchestrator::new()),
             max_agents: usize::MAX,
         }
     }
@@ -127,8 +159,13 @@ impl TaskDispatcher {
             iterm2_session_id: task.iterm2_session_id.clone(),
         }));
 
-        // 3. Build command args — append task prompt as final argument
+        // 3. Build context and prepare injection
+        let injection = build_injection_for_task(&self.context, task, adapter);
+
+        // 4. Build command args — inject context + task prompt
         let mut args = adapter.agent.args.clone();
+        // Prepend context extra_args (e.g. -p "Context: ...")
+        args.extend(injection.extra_args);
         let prompt = if task.prompt.is_empty() {
             task.title.clone()
         } else {
@@ -136,7 +173,7 @@ impl TaskDispatcher {
         };
         args.push(prompt);
 
-        // 4. Spawn PTY session
+        // 5. Spawn PTY session
         self.pty
             .spawn(task.id, &adapter.agent.command, &args, &task.repo_path)
             .await?;
@@ -1411,5 +1448,126 @@ mod tests {
 
         let dispatched = dispatcher.poll_and_dispatch().await.unwrap();
         assert_eq!(dispatched.len(), 0);
+    }
+
+    // ── Context injection tests ──────────────────────────────────
+
+    #[test]
+    fn build_injection_claude_code_uses_claude_md_strategy() {
+        let orchestrator = ContextOrchestrator::new();
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join("src")).unwrap();
+        std::fs::write(tmp.path().join("src/main.rs"), "fn main() {}").unwrap();
+
+        let task = Task {
+            id: 1,
+            title: "Fix auth bug".into(),
+            prompt: "The bug is in src/main.rs".into(),
+            agent_id: "claude-code".into(),
+            repo_path: tmp.path().to_string_lossy().to_string(),
+            branch: "main".into(),
+            isolation_mode: "none".into(),
+            status: TaskStatus::Queued,
+            created_at: String::new(),
+            updated_at: String::new(),
+            iterm2_session_id: None,
+        };
+
+        let adapter = echo_adapter();
+        let payload = build_injection_for_task(&orchestrator, &task, &adapter);
+
+        assert_eq!(payload.strategy, InjectionStrategy::ClaudeMd);
+        // ClaudeMd strategy: content is full markdown, extra_args is empty
+        assert!(payload.content.contains("Shepherd Context"));
+        assert!(payload.extra_args.is_empty());
+    }
+
+    #[test]
+    fn build_injection_prompt_arg_agent_gets_extra_args() {
+        let orchestrator = ContextOrchestrator::new();
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join("src")).unwrap();
+        std::fs::write(tmp.path().join("src/app.py"), "def main(): pass").unwrap();
+
+        let task = Task {
+            id: 2,
+            title: "Fix Python bug".into(),
+            prompt: "Check src/app.py".into(),
+            agent_id: "codex".into(),
+            repo_path: tmp.path().to_string_lossy().to_string(),
+            branch: "main".into(),
+            isolation_mode: "none".into(),
+            status: TaskStatus::Queued,
+            created_at: String::new(),
+            updated_at: String::new(),
+            iterm2_session_id: None,
+        };
+
+        // Adapter with supports_prompt_arg = true
+        let mut adapter = echo_adapter();
+        adapter.capabilities.supports_prompt_arg = true;
+
+        let payload = build_injection_for_task(&orchestrator, &task, &adapter);
+
+        assert_eq!(payload.strategy, InjectionStrategy::PromptArg);
+        assert!(!payload.extra_args.is_empty());
+        assert_eq!(payload.extra_args[0], "-p");
+    }
+
+    #[test]
+    fn build_injection_stdin_agent_no_extra_args() {
+        let orchestrator = ContextOrchestrator::new();
+        let tmp = tempfile::tempdir().unwrap();
+
+        let task = Task {
+            id: 3,
+            title: "Do something".into(),
+            prompt: "".into(),
+            agent_id: "opencode".into(),
+            repo_path: tmp.path().to_string_lossy().to_string(),
+            branch: "main".into(),
+            isolation_mode: "none".into(),
+            status: TaskStatus::Queued,
+            created_at: String::new(),
+            updated_at: String::new(),
+            iterm2_session_id: None,
+        };
+
+        let mut adapter = echo_adapter();
+        adapter.capabilities.supports_prompt_arg = false;
+
+        let payload = build_injection_for_task(&orchestrator, &task, &adapter);
+
+        assert_eq!(payload.strategy, InjectionStrategy::StdinMessage);
+        assert!(payload.extra_args.is_empty());
+        // Content should still be generated
+        assert!(payload.content.contains("Context:"));
+    }
+
+    #[test]
+    fn build_injection_empty_repo_no_crash() {
+        let orchestrator = ContextOrchestrator::new();
+        let tmp = tempfile::tempdir().unwrap();
+
+        let task = Task {
+            id: 4,
+            title: "New task".into(),
+            prompt: "".into(),
+            agent_id: "claude-code".into(),
+            repo_path: tmp.path().to_string_lossy().to_string(),
+            branch: "main".into(),
+            isolation_mode: "none".into(),
+            status: TaskStatus::Queued,
+            created_at: String::new(),
+            updated_at: String::new(),
+            iterm2_session_id: None,
+        };
+
+        let adapter = echo_adapter();
+        let payload = build_injection_for_task(&orchestrator, &task, &adapter);
+
+        // Should produce a valid payload even with empty repo
+        assert_eq!(payload.strategy, InjectionStrategy::ClaudeMd);
+        assert!(payload.content.contains("Shepherd Context"));
     }
 }
