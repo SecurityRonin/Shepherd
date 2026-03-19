@@ -32,8 +32,6 @@ export const PermissionPrompt: React.FC<PermissionPromptProps> = ({ taskId }) =>
     setIsApproving(true);
     try {
       await approveTask(taskId);
-      // TODO: Could also send WS event { type: "task_approve_all", data: null }
-      // for bulk approval when backend supports it
     } catch {
       // Error handled upstream
     } finally {

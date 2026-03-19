@@ -1,0 +1,16 @@
+target/
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/
+.git/
+.github/
+docs/
+e2e/
+playwright-report/
+test-results/
+*.md
+!README.md
+.DS_Store
+landing-page-full.png
+pain-section.png

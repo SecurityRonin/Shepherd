@@ -1,0 +1,7 @@
+#!/usr/bin/env sh
+
+# Rust checks
+cargo fmt --all -- --check || { echo "cargo fmt failed"; exit 1; }
+
+# Frontend type check
+npx tsc --noEmit || { echo "TypeScript check failed"; exit 1; }

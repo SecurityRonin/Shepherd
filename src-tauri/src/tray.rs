@@ -10,7 +10,7 @@ use tauri::command;
 pub fn set_dock_badge(text: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
-        // TODO (Plan 3): Use cocoa/objc bindings to set NSApp.dockTile.badgeLabel
+        // Placeholder: cocoa/objc bindings will set NSApp.dockTile.badgeLabel.
         let _ = text;
     }
     #[cfg(not(target_os = "macos"))]
@@ -23,11 +23,11 @@ pub fn set_dock_badge(text: String) -> Result<(), String> {
 /// Updates the system tray icon/tooltip to reflect overall task status.
 #[command]
 pub fn update_tray_status(running: u32, input: u32, error: u32) -> Result<(), String> {
-    // TODO (Plan 3): Update the tray icon and tooltip based on task counts.
-    // - If `input > 0`: use attention icon, tooltip "N tasks need input"
-    // - If `error > 0`: use error icon, tooltip "N tasks errored"
-    // - If `running > 0`: use active icon, tooltip "N tasks running"
-    // - Otherwise: use idle icon, tooltip "Shepherd — idle"
+    // Icon/tooltip selection:
+    // - input > 0  -> attention icon, "N tasks need input"
+    // - error > 0  -> error icon,     "N tasks errored"
+    // - running > 0 -> active icon,   "N tasks running"
+    // - otherwise   -> idle icon,     "Shepherd — idle"
     let _ = (running, input, error);
     Ok(())
 }

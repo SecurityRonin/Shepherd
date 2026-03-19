@@ -1,0 +1,30 @@
+[default.extend-identifiers]
+# Allow common coding identifiers that aren't real words
+pty = "pty"
+ws = "ws"
+cwd = "cwd"
+
+[default.extend-words]
+# Allow specific words the spell checker might flag
+nono = "nono"
+Kanban = "Kanban"
+kanban = "kanban"
+worktree = "worktree"
+worktrees = "worktrees"
+ACI = "ACI"
+
+[files]
+extend-exclude = [
+    "target/",
+    "node_modules/",
+    "dist/",
+    "*.lock",
+    "package-lock.json",
+    "Cargo.lock",
+    "src-tauri/target/",
+    "src-tauri/gen/",
+    "test-results/",
+    "playwright-report/",
+    # Vendored upstream proto files
+    "crates/shepherd-core/proto/",
+]
