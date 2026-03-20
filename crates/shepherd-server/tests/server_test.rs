@@ -368,3 +368,260 @@ async fn test_logogen_export_invalid_base64() {
         .unwrap()
         .contains("Icon export failed"));
 }
+
+// ── Metrics endpoints ────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_metrics_summary_returns_empty_when_no_tasks() {
+    let (url, _handle) = start_test_server().await;
+    let client = Client::new();
+    let resp = client
+        .get(format!("{url}/api/metrics"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["total_cost_usd"], 0.0);
+    assert_eq!(body["total_tokens"], 0);
+    assert_eq!(body["total_tasks"], 0);
+    assert_eq!(body["total_llm_calls"], 0);
+    assert!(body["by_agent"].as_array().unwrap().is_empty());
+    assert!(body["by_model"].as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn test_metrics_task_not_found() {
+    let (url, _handle) = start_test_server().await;
+    let client = Client::new();
+    let resp = client
+        .get(format!("{url}/api/metrics/99999"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 404);
+    let body: Value = resp.json().await.unwrap();
+    assert!(body["error"]
+        .as_str()
+        .unwrap()
+        .contains("No metrics found for task 99999"));
+}
+
+// ── Sync endpoints (503 when cloud_client: None) ─────────────────────
+
+#[tokio::test]
+async fn test_sync_push_no_cloud_returns_503() {
+    let (url, _handle) = start_test_server().await;
+    let client = Client::new();
+    let resp = client
+        .post(format!("{url}/api/sync/push"))
+        .json(&json!({}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 503);
+    let body: Value = resp.json().await.unwrap();
+    assert!(body["error"].as_str().unwrap().contains("not available"));
+}
+
+#[tokio::test]
+async fn test_sync_pull_no_cloud_returns_503() {
+    let (url, _handle) = start_test_server().await;
+    let client = Client::new();
+    let resp = client
+        .post(format!("{url}/api/sync/pull"))
+        .json(&json!({}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 503);
+    let body: Value = resp.json().await.unwrap();
+    assert!(body["error"].as_str().unwrap().contains("not available"));
+}
+
+#[tokio::test]
+async fn test_sync_now_no_cloud_returns_503() {
+    let (url, _handle) = start_test_server().await;
+    let client = Client::new();
+    let resp = client
+        .post(format!("{url}/api/sync/now"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 503);
+    let body: Value = resp.json().await.unwrap();
+    assert!(body["error"].as_str().unwrap().contains("not available"));
+}
+
+// ── Templates endpoint ───────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_templates_no_cloud_returns_503() {
+    let (url, _handle) = start_test_server().await;
+    let client = Client::new();
+    let resp = client
+        .get(format!("{url}/api/templates"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 503);
+    let body: Value = resp.json().await.unwrap();
+    assert!(body["error"].as_str().unwrap().contains("not available"));
+}
+
+// ── Auth endpoints ───────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_auth_login_no_cloud_returns_503() {
+    let (url, _handle) = start_test_server().await;
+    let client = Client::new();
+    let resp = client
+        .post(format!("{url}/api/auth/login"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 503);
+    let body: Value = resp.json().await.unwrap();
+    assert!(body["error"].as_str().unwrap().contains("not available"));
+}
+
+#[tokio::test]
+async fn test_auth_profile_unauthenticated_returns_401() {
+    let (url, _handle) = start_test_server().await;
+    let client = Client::new();
+    let resp = client
+        .get(format!("{url}/api/auth/profile"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 401);
+    let body: Value = resp.json().await.unwrap();
+    assert!(body["error"]
+        .as_str()
+        .unwrap()
+        .contains("Not authenticated"));
+}
+
+#[tokio::test]
+async fn test_auth_logout_returns_success() {
+    let (url, _handle) = start_test_server().await;
+    let client = Client::new();
+    let resp = client
+        .post(format!("{url}/api/auth/logout"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["success"], true);
+}
+
+// ── Task lifecycle (multi-step) ──────────────────────────────────────
+
+#[tokio::test]
+async fn test_task_full_lifecycle() {
+    let (url, _handle) = start_test_server().await;
+    let client = Client::new();
+
+    // Step 1: Create a task
+    let resp = client
+        .post(format!("{url}/api/tasks"))
+        .json(&json!({
+            "title": "Lifecycle test",
+            "agent_id": "claude-code"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201);
+    let task: Value = resp.json().await.unwrap();
+    let id = task["id"].as_i64().unwrap();
+    assert_eq!(task["title"], "Lifecycle test");
+    assert_eq!(task["status"], "queued");
+
+    // Step 2: List tasks — should have exactly 1
+    let tasks: Vec<Value> = client
+        .get(format!("{url}/api/tasks"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(tasks.len(), 1);
+    assert_eq!(tasks[0]["id"], id);
+
+    // Step 3: Approve the task
+    let resp = client
+        .post(format!("{}/api/tasks/{}/approve", url, id))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["id"], id);
+    assert_eq!(body["status"], "running");
+
+    // Step 4: Delete the task
+    let resp = client
+        .delete(format!("{}/api/tasks/{}", url, id))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["deleted"], id);
+
+    // Step 5: List tasks — should be empty
+    let tasks: Vec<Value> = client
+        .get(format!("{url}/api/tasks"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(tasks.is_empty());
+}
+
+// ── iTerm2 session endpoints ─────────────────────────────────────────
+
+#[tokio::test]
+async fn test_iterm2_sessions_task_not_found() {
+    let (url, _handle) = start_test_server().await;
+    let client = Client::new();
+    let resp = client
+        .get(format!("{url}/api/sessions/99999/claude-sessions"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 404);
+}
+
+#[tokio::test]
+async fn test_iterm2_resume_task_not_found() {
+    let (url, _handle) = start_test_server().await;
+    let client = Client::new();
+    let resp = client
+        .post(format!("{url}/api/sessions/99999/resume"))
+        .json(&json!({}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 404);
+}
+
+// ── WebSocket connectivity ───────────────────────────────────────────
+
+#[tokio::test]
+async fn test_websocket_upgrade_succeeds() {
+    let (url, _handle) = start_test_server().await;
+    let client = Client::new();
+    // A plain GET to /ws without the upgrade headers should not return 404.
+    // The WebSocket handler requires an upgrade, so it should return 400 or similar.
+    let resp = client.get(format!("{url}/ws")).send().await.unwrap();
+    // The endpoint exists — it should NOT be 404 or 405.
+    // Without proper WebSocket upgrade headers, Axum returns 400.
+    assert_ne!(resp.status(), 404);
+    assert_ne!(resp.status(), 405);
+}
