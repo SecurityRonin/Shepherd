@@ -11,6 +11,26 @@ function notify(title: string, body: string): void {
   }
 }
 
+/**
+ * Handle a server-pushed notification event.
+ * Maps the notification `kind` to a sound, then triggers browser notification.
+ */
+export function notifyFromServer(kind: string, title: string, body: string): void {
+  notify(title, body);
+  const soundMap: Record<string, "permission" | "complete" | "error"> = {
+    info: "complete",
+    warning: "permission",
+    error: "error",
+    budget_alert: "permission",
+    gate_failure: "error",
+    task_complete: "complete",
+  };
+  const sound = soundMap[kind];
+  if (sound) {
+    playSound(sound);
+  }
+}
+
 function updateBadge(inputCount: number): void {
   if (typeof document !== "undefined") {
     document.title = inputCount > 0 ? `(${inputCount}) Shepherd` : "Shepherd";
