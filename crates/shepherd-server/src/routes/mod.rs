@@ -9,3 +9,4 @@ pub mod northstar;
 pub mod pr;
 pub mod sync;
 pub mod tasks;
+pub mod templates;

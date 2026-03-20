@@ -126,6 +126,23 @@ export async function getBalance(): Promise<CreditBalanceResponse> {
   return request<CreditBalanceResponse>("/api/cloud/balance");
 }
 
+// ── Templates ────────────────────────────────────────────────────
+
+export interface TemplatesResponse {
+  templates: import("../types").AgentTemplate[];
+}
+
+export async function getTemplates(
+  category?: string,
+  includePremium?: boolean,
+): Promise<TemplatesResponse> {
+  const params = new URLSearchParams();
+  if (category) params.set("category", category);
+  if (includePremium !== undefined) params.set("include_premium", String(includePremium));
+  const query = params.toString();
+  return request<TemplatesResponse>(`/api/templates${query ? `?${query}` : ""}`);
+}
+
 // ── Metrics ──────────────────────────────────────────────────────
 
 export async function getSpendingSummary(): Promise<import("../store/observability").SpendingSummary> {

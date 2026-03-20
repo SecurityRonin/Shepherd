@@ -1,7 +1,7 @@
 import type { StateCreator } from "zustand";
 import type { ConnectionStatus, WsClient } from "../lib/ws";
 
-export type ViewMode = "overview" | "focus" | "observability" | "replay" | "ecosystem" | "cloud";
+export type ViewMode = "overview" | "focus" | "observability" | "replay" | "ecosystem" | "cloud" | "templates";
 
 /** Callback that writes PTY output data to a terminal instance. */
 export type TerminalOutputHandler = (data: string) => void;

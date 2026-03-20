@@ -6,6 +6,7 @@ import { CostDashboard } from "./features/observability/CostDashboard";
 import { ReplayViewer } from "./features/replay/ReplayViewer";
 import { EcosystemManager } from "./features/ecosystem/EcosystemManager";
 import { CloudSettings } from "./features/cloud/CloudSettings";
+import { TemplateGallery } from "./features/templates/TemplateGallery";
 import { CommandPalette } from "./features/palette/CommandPalette";
 import { NewTaskDialog } from "./features/tasks/NewTaskDialog";
 import { useWebSocket } from "./hooks/useWebSocket";
@@ -83,6 +84,7 @@ const App: React.FC = () => {
       case "replay": return <ReplayViewer taskId={focusedTaskId ?? undefined} />;
       case "ecosystem": return <EcosystemManager />;
       case "cloud": return <CloudSettings />;
+      case "templates": return <TemplateGallery />;
       default: return <KanbanBoard />;
     }
   };

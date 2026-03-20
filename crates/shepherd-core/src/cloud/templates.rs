@@ -1,7 +1,7 @@
 use super::CloudClient;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum TemplateCategory {
     Workflow,
@@ -9,14 +9,14 @@ pub enum TemplateCategory {
     Pair,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentRole {
     pub role: String,
     pub agent_type: String,
     pub config: serde_json::Value,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentTemplate {
     pub id: String,
     pub name: String,
@@ -27,7 +27,7 @@ pub struct AgentTemplate {
     pub is_premium: bool,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TemplatesResponse {
     pub templates: Vec<AgentTemplate>,
 }
