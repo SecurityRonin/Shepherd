@@ -108,13 +108,9 @@ export const createObservabilitySlice: StateCreator<ObservabilitySlice, [], [], 
 
   fetchMetrics: async () => {
     try {
-      const { getServerPort } = await import("../lib/tauri");
-      const port = await getServerPort();
-      const resp = await fetch(`http://127.0.0.1:${port}/api/metrics`);
-      if (resp.ok) {
-        const summary: SpendingSummary = await resp.json();
-        set({ spendingSummary: summary });
-      }
+      const { getSpendingSummary } = await import("../lib/api");
+      const summary = await getSpendingSummary();
+      set({ spendingSummary: summary });
     } catch {
       // Silently fail — dashboard will show empty state
     }

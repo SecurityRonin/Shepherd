@@ -1,13 +1,35 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 
+// Mock the api module — CloudSettings now uses typed API helpers, not raw fetch
+vi.mock("../../../lib/api", () => ({
+  getCloudStatus: vi.fn(),
+  getLoginUrl: vi.fn(),
+  getProfile: vi.fn(),
+  getBalance: vi.fn(),
+  logout: vi.fn(),
+}));
+
+import {
+  getCloudStatus,
+  getProfile,
+  getBalance,
+  logout as apiLogout,
+} from "../../../lib/api";
+
 const SAMPLE_PROFILE = {
   user_id: "u-1",
   email: "test@example.com",
-  github_handle: "testuser",
+  display_name: "testuser",
   plan: "pro",
   credits_balance: 42,
-  trial_counts: { logo: 2, name: 1, northstar: 0, scrape: 0, crawl: 1, vision: 2, search: 0 },
+};
+
+const SAMPLE_BALANCE = {
+  plan: "pro",
+  credits_balance: 42,
+  subscription_url: "https://example.com/subscribe",
+  topup_url: "https://example.com/topup",
 };
 
 beforeEach(() => {
@@ -15,19 +37,43 @@ beforeEach(() => {
 });
 
 describe("CloudSettings", () => {
-  it("renders 'Sign in' when unauthenticated (fetch returns 401)", async () => {
-    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({ ok: false, json: () => Promise.resolve(null) })));
+  it("renders 'Sign in' when unauthenticated", async () => {
+    vi.mocked(getCloudStatus).mockResolvedValue({
+      cloud_available: true,
+      authenticated: false,
+      plan: null,
+      credits_balance: null,
+      cloud_generation_enabled: false,
+    });
     const { CloudSettings } = await import("../CloudSettings");
     render(<CloudSettings />);
     await waitFor(() => expect(screen.getByTestId("cloud-unauthenticated")).toBeInTheDocument());
     expect(screen.getByTestId("sign-in-button")).toBeInTheDocument();
   });
 
+  it("renders unavailable when cloud not configured", async () => {
+    vi.mocked(getCloudStatus).mockResolvedValue({
+      cloud_available: false,
+      authenticated: false,
+      plan: null,
+      credits_balance: null,
+      cloud_generation_enabled: false,
+    });
+    const { CloudSettings } = await import("../CloudSettings");
+    render(<CloudSettings />);
+    await waitFor(() => expect(screen.getByTestId("cloud-unavailable")).toBeInTheDocument());
+  });
+
   it("renders email and plan when authenticated", async () => {
-    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({
-      ok: true,
-      json: () => Promise.resolve(SAMPLE_PROFILE),
-    })));
+    vi.mocked(getCloudStatus).mockResolvedValue({
+      cloud_available: true,
+      authenticated: true,
+      plan: "pro",
+      credits_balance: 42,
+      cloud_generation_enabled: true,
+    });
+    vi.mocked(getProfile).mockResolvedValue(SAMPLE_PROFILE);
+    vi.mocked(getBalance).mockResolvedValue(SAMPLE_BALANCE);
     const { CloudSettings } = await import("../CloudSettings");
     render(<CloudSettings />);
     await waitFor(() => expect(screen.getByTestId("cloud-authenticated")).toBeInTheDocument());
@@ -36,10 +82,15 @@ describe("CloudSettings", () => {
   });
 
   it("renders credit balance", async () => {
-    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({
-      ok: true,
-      json: () => Promise.resolve(SAMPLE_PROFILE),
-    })));
+    vi.mocked(getCloudStatus).mockResolvedValue({
+      cloud_available: true,
+      authenticated: true,
+      plan: "pro",
+      credits_balance: 42,
+      cloud_generation_enabled: true,
+    });
+    vi.mocked(getProfile).mockResolvedValue(SAMPLE_PROFILE);
+    vi.mocked(getBalance).mockResolvedValue(SAMPLE_BALANCE);
     const { CloudSettings } = await import("../CloudSettings");
     render(<CloudSettings />);
     await waitFor(() => expect(screen.getByTestId("credit-balance")).toBeInTheDocument());
@@ -47,29 +98,53 @@ describe("CloudSettings", () => {
   });
 
   it("renders trial badges for all features", async () => {
-    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({
-      ok: true,
-      json: () => Promise.resolve(SAMPLE_PROFILE),
-    })));
+    vi.mocked(getCloudStatus).mockResolvedValue({
+      cloud_available: true,
+      authenticated: true,
+      plan: "pro",
+      credits_balance: 42,
+      cloud_generation_enabled: true,
+    });
+    vi.mocked(getProfile).mockResolvedValue(SAMPLE_PROFILE);
+    vi.mocked(getBalance).mockResolvedValue(SAMPLE_BALANCE);
     const { CloudSettings } = await import("../CloudSettings");
     render(<CloudSettings />);
     await waitFor(() => expect(screen.getByTestId("trial-logo")).toBeInTheDocument());
-    // logo: 2 used → 0 remaining
-    expect(screen.getByTestId("trial-count-logo")).toHaveTextContent("0 remaining");
-    // name: 1 used → 1 remaining
-    expect(screen.getByTestId("trial-count-name")).toHaveTextContent("1 remaining");
+    expect(screen.getByTestId("trial-count-logo")).toHaveTextContent("2 remaining");
   });
 
-  it("sign out button clears profile", async () => {
-    const mockFetch = vi.fn()
-      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(SAMPLE_PROFILE) })
-      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(null) });
-    vi.stubGlobal("fetch", mockFetch);
+  it("sign out button returns to unauthenticated", async () => {
+    vi.mocked(getCloudStatus).mockResolvedValue({
+      cloud_available: true,
+      authenticated: true,
+      plan: "pro",
+      credits_balance: 42,
+      cloud_generation_enabled: true,
+    });
+    vi.mocked(getProfile).mockResolvedValue(SAMPLE_PROFILE);
+    vi.mocked(getBalance).mockResolvedValue(SAMPLE_BALANCE);
+    vi.mocked(apiLogout).mockResolvedValue({ success: true });
     const { CloudSettings } = await import("../CloudSettings");
     render(<CloudSettings />);
     await waitFor(() => expect(screen.getByTestId("logout-button")).toBeInTheDocument());
     fireEvent.click(screen.getByTestId("logout-button"));
     await waitFor(() => expect(screen.getByTestId("cloud-unauthenticated")).toBeInTheDocument());
+  });
+
+  it("shows topup link from balance response", async () => {
+    vi.mocked(getCloudStatus).mockResolvedValue({
+      cloud_available: true,
+      authenticated: true,
+      plan: "pro",
+      credits_balance: 42,
+      cloud_generation_enabled: true,
+    });
+    vi.mocked(getProfile).mockResolvedValue(SAMPLE_PROFILE);
+    vi.mocked(getBalance).mockResolvedValue(SAMPLE_BALANCE);
+    const { CloudSettings } = await import("../CloudSettings");
+    render(<CloudSettings />);
+    await waitFor(() => expect(screen.getByTestId("topup-link")).toBeInTheDocument());
+    expect(screen.getByTestId("topup-link")).toHaveAttribute("href", "https://example.com/topup");
   });
 });
 

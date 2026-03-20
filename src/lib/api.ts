@@ -77,6 +77,61 @@ export async function cancelTask(id: number): Promise<{ status: string }> {
   });
 }
 
+// ── Cloud / Auth ─────────────────────────────────────────────────
+
+export interface CloudStatusResponse {
+  cloud_available: boolean;
+  authenticated: boolean;
+  plan: string | null;
+  credits_balance: number | null;
+  cloud_generation_enabled: boolean;
+}
+
+export interface LoginResponse {
+  login_url: string;
+}
+
+export interface ProfileResponse {
+  user_id: string;
+  email: string | null;
+  display_name: string | null;
+  plan: string;
+  credits_balance: number;
+}
+
+export interface CreditBalanceResponse {
+  plan: string;
+  credits_balance: number;
+  subscription_url: string;
+  topup_url: string;
+}
+
+export async function getCloudStatus(): Promise<CloudStatusResponse> {
+  return request<CloudStatusResponse>("/api/cloud/status");
+}
+
+export async function getLoginUrl(): Promise<LoginResponse> {
+  return request<LoginResponse>("/api/auth/login", { method: "POST" });
+}
+
+export async function getProfile(): Promise<ProfileResponse> {
+  return request<ProfileResponse>("/api/auth/profile");
+}
+
+export async function logout(): Promise<{ success: boolean }> {
+  return request<{ success: boolean }>("/api/auth/logout", { method: "POST" });
+}
+
+export async function getBalance(): Promise<CreditBalanceResponse> {
+  return request<CreditBalanceResponse>("/api/cloud/balance");
+}
+
+// ── Metrics ──────────────────────────────────────────────────────
+
+export async function getSpendingSummary(): Promise<import("../store/observability").SpendingSummary> {
+  return request("/api/metrics");
+}
+
 export async function waitForServer(
   timeoutMs: number = 10000,
   intervalMs: number = 500,
