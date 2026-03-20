@@ -7,4 +7,5 @@ pub mod metrics;
 pub mod namegen;
 pub mod northstar;
 pub mod pr;
+pub mod sync;
 pub mod tasks;

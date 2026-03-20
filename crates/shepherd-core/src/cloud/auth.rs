@@ -193,6 +193,35 @@ pub fn is_authenticated() -> bool {
     load_jwt().is_some()
 }
 
+/// Handle an OAuth deep link callback URL.
+///
+/// Parses the callback URL for tokens, stores the JWT, fetches the user
+/// profile from the cloud API, and caches it locally. Returns the profile
+/// on success.
+///
+/// Expected URL format: `shepherd://auth/callback?access_token=...&refresh_token=...`
+pub async fn handle_auth_callback(
+    url: &str,
+    client: &CloudClient,
+) -> Result<CachedProfile, CloudError> {
+    let tokens = CloudClient::parse_callback_url(url)
+        .ok_or_else(|| CloudError::Network("Invalid callback URL: missing tokens".to_string()))?;
+
+    store_jwt(&tokens.access_token)?;
+
+    match client.fetch_profile(&tokens.access_token).await {
+        Ok(profile) => {
+            let _ = save_cached_profile(&profile);
+            Ok(profile)
+        }
+        Err(e) => {
+            // Roll back JWT storage on profile fetch failure
+            let _ = delete_jwt();
+            Err(e)
+        }
+    }
+}
+
 // tarpaulin-stop-ignore
 
 #[cfg(test)]
@@ -567,6 +596,117 @@ mod tests {
         let content = std::fs::read_to_string(&profile_path).ok();
         let result: Option<CachedProfile> = content.and_then(|c| toml::from_str(&c).ok());
         assert!(result.is_none());
+    }
+
+    // ── handle_auth_callback tests ──────────────────────────────────────
+
+    #[tokio::test]
+    async fn handle_auth_callback_invalid_url_returns_error() {
+        let client = test_client();
+
+        // No query string at all
+        let result = super::handle_auth_callback("shepherd://auth/callback", &client).await;
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            super::super::CloudError::Network(msg) => {
+                assert!(msg.contains("Invalid callback URL"), "got: {msg}");
+            }
+            other => panic!("expected Network error, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn handle_auth_callback_missing_refresh_token_returns_error() {
+        let client = test_client();
+
+        // Only access_token, no refresh_token
+        let result =
+            super::handle_auth_callback("shepherd://auth/callback?access_token=abc", &client).await;
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            super::super::CloudError::Network(msg) => {
+                assert!(msg.contains("Invalid callback URL"), "got: {msg}");
+            }
+            other => panic!("expected Network error, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn handle_auth_callback_success_returns_profile() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET)
+                .path("/api/credits/balance")
+                .header("Authorization", "Bearer test-access-token");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "plan": "pro",
+                    "credits_balance": 50,
+                    "trial_logo": 0,
+                    "trial_name": 0,
+                    "trial_northstar": 0,
+                    "trial_scrape": 0,
+                    "trial_crawl": 0,
+                    "trial_vision": 0,
+                    "trial_search": 0,
+                    "email": "callback@example.com",
+                    "github_handle": "cb-user"
+                }));
+        });
+
+        let client = CloudClient::with_config(CloudConfig {
+            api_url: server.base_url(),
+        });
+
+        let url =
+            "shepherd://auth/callback?access_token=test-access-token&refresh_token=test-refresh";
+        let result = super::handle_auth_callback(url, &client).await;
+        assert!(result.is_ok(), "expected Ok, got {:?}", result);
+        let profile = result.unwrap();
+        assert_eq!(profile.plan, Plan::Pro);
+        assert_eq!(profile.credits_balance, 50);
+        assert_eq!(profile.email, Some("callback@example.com".to_string()));
+    }
+
+    #[tokio::test]
+    async fn handle_auth_callback_profile_failure_returns_error() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/api/credits/balance");
+            then.status(401).body("Unauthorized");
+        });
+
+        let client = CloudClient::with_config(CloudConfig {
+            api_url: server.base_url(),
+        });
+
+        let url = "shepherd://auth/callback?access_token=bad-token&refresh_token=ref";
+        let result = super::handle_auth_callback(url, &client).await;
+        assert!(matches!(result, Err(super::super::CloudError::AuthExpired)));
+    }
+
+    #[tokio::test]
+    async fn handle_auth_callback_server_error_returns_api_error() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/api/credits/balance");
+            then.status(500).body("Internal Server Error");
+        });
+
+        let client = CloudClient::with_config(CloudConfig {
+            api_url: server.base_url(),
+        });
+
+        let url = "shepherd://auth/callback?access_token=tok&refresh_token=ref";
+        let result = super::handle_auth_callback(url, &client).await;
+        match result {
+            Err(super::super::CloudError::Api { status, .. }) => assert_eq!(status, 500),
+            other => panic!("expected Api error, got {:?}", other),
+        }
     }
 
     #[tokio::test]

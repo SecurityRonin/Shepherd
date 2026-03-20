@@ -11,7 +11,7 @@ pub struct SyncConfigPayload {
     pub version: u32,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncConfigEntry {
     pub machine_id: String,
     pub config: serde_json::Value,

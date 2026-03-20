@@ -219,6 +219,16 @@ pub async fn start_server(
         }
     });
 
+    // ---- background sync ----
+    if let Some(ref client) = state.cloud_client {
+        let sync_client = client.clone();
+        tokio::spawn(shepherd_core::cloud::sync::background_sync(
+            sync_client,
+            shepherd_core::cloud::sync::SYNC_INTERVAL,
+        ));
+        tracing::info!("Background sync task spawned (interval=5m)");
+    }
+
     // ---- HTTP server ----
     let app = build_router(state.clone());
     let listener = TcpListener::bind(format!("127.0.0.1:{port}"))
