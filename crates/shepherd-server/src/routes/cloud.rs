@@ -91,6 +91,85 @@ pub async fn cloud_balance(
     }))
 }
 
+/// Login response — returns the OAuth login URL.
+#[derive(Debug, Serialize)]
+pub struct LoginResponse {
+    pub login_url: String,
+}
+
+/// POST /api/auth/login — returns the OAuth login URL.
+#[tracing::instrument(skip(state))]
+pub async fn auth_login(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<LoginResponse>, (StatusCode, Json<serde_json::Value>)> {
+    let cloud = state.cloud_client.as_ref().ok_or_else(|| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({
+                "error": "Cloud features not available"
+            })),
+        )
+    })?;
+
+    Ok(Json(LoginResponse {
+        login_url: cloud.login_url(None, None),
+    }))
+}
+
+/// Profile response — user profile information.
+#[derive(Debug, Serialize)]
+pub struct ProfileResponse {
+    pub user_id: String,
+    pub email: Option<String>,
+    pub display_name: Option<String>,
+    pub plan: String,
+    pub credits_balance: u32,
+}
+
+/// GET /api/auth/profile — returns the cached user profile.
+#[tracing::instrument]
+pub async fn auth_profile() -> Result<Json<ProfileResponse>, (StatusCode, Json<serde_json::Value>)>
+{
+    if !cloud::auth::is_authenticated() {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({
+                "error": "Not authenticated"
+            })),
+        ));
+    }
+
+    let profile = cloud::auth::load_cached_profile().ok_or_else(|| {
+        (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({
+                "error": "No cached profile found"
+            })),
+        )
+    })?;
+
+    Ok(Json(ProfileResponse {
+        user_id: profile.user_id,
+        email: profile.email,
+        display_name: profile.github_handle,
+        plan: profile.plan.to_string(),
+        credits_balance: profile.credits_balance,
+    }))
+}
+
+/// Logout response.
+#[derive(Debug, Serialize)]
+pub struct LogoutResponse {
+    pub success: bool,
+}
+
+/// POST /api/auth/logout — clears auth credentials and cached profile.
+#[tracing::instrument]
+pub async fn auth_logout() -> Json<LogoutResponse> {
+    let _ = cloud::auth::logout();
+    Json(LogoutResponse { success: true })
+}
+
 /// Feature cost info for the frontend.
 #[derive(Debug, Serialize)]
 pub struct FeatureCostResponse {
@@ -269,6 +348,69 @@ mod tests {
         assert_eq!(features.len(), 2);
         assert_eq!(features[0]["name"], "logo");
         assert_eq!(features[1]["credits"], 3);
+    }
+
+    #[test]
+    fn auth_login_response_serialize() {
+        let resp = LoginResponse {
+            login_url: "https://api.shepherd.codes/api/auth/login?provider=github".to_string(),
+        };
+        let json = serde_json::to_value(&resp).unwrap();
+        assert_eq!(
+            json["login_url"],
+            "https://api.shepherd.codes/api/auth/login?provider=github"
+        );
+        // Ensure only expected fields are present
+        let obj = json.as_object().unwrap();
+        assert_eq!(obj.len(), 1);
+        assert!(obj.contains_key("login_url"));
+    }
+
+    #[test]
+    fn auth_profile_response_serialize() {
+        let resp = ProfileResponse {
+            user_id: "u-123".to_string(),
+            email: Some("user@example.com".to_string()),
+            display_name: Some("testuser".to_string()),
+            plan: "pro".to_string(),
+            credits_balance: 42,
+        };
+        let json = serde_json::to_value(&resp).unwrap();
+        assert_eq!(json["user_id"], "u-123");
+        assert_eq!(json["email"], "user@example.com");
+        assert_eq!(json["display_name"], "testuser");
+        assert_eq!(json["plan"], "pro");
+        assert_eq!(json["credits_balance"], 42);
+        // Ensure all expected fields are present
+        let obj = json.as_object().unwrap();
+        assert_eq!(obj.len(), 5);
+    }
+
+    #[test]
+    fn auth_profile_response_serialize_with_nulls() {
+        let resp = ProfileResponse {
+            user_id: "u-456".to_string(),
+            email: None,
+            display_name: None,
+            plan: "free".to_string(),
+            credits_balance: 0,
+        };
+        let json = serde_json::to_value(&resp).unwrap();
+        assert_eq!(json["user_id"], "u-456");
+        assert!(json["email"].is_null());
+        assert!(json["display_name"].is_null());
+        assert_eq!(json["plan"], "free");
+        assert_eq!(json["credits_balance"], 0);
+    }
+
+    #[test]
+    fn auth_logout_response_serialize() {
+        let resp = LogoutResponse { success: true };
+        let json = serde_json::to_value(&resp).unwrap();
+        assert!(json["success"].as_bool().unwrap());
+        let obj = json.as_object().unwrap();
+        assert_eq!(obj.len(), 1);
+        assert!(obj.contains_key("success"));
     }
 
     #[test]

@@ -47,6 +47,14 @@ const App: React.FC = () => {
         store.dispatchTerminalOutput(event.data.task_id, event.data.data);
         break;
       case "gate_result":
+        store.handleGateResult(event.data);
+        break;
+      case "metrics_update":
+        store.handleMetricsUpdate(event.data);
+        break;
+      case "budget_alert":
+        store.handleBudgetAlert(event.data);
+        break;
       case "notification":
         break;
     }

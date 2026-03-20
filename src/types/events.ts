@@ -21,6 +21,34 @@ export interface StatusSnapshot {
   pending_permissions: PermissionEvent[];
 }
 
+export interface MetricsUpdateEvent {
+  task_id: number;
+  agent_id: string;
+  model_id: string;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_tokens: number;
+  total_cost_usd: number;
+  llm_calls: number;
+  duration_secs: number | null;
+}
+
+export interface BudgetAlertEvent {
+  scope: string;
+  scope_id: string;
+  status: string;
+  current_cost: number;
+  limit: number;
+  percentage: number;
+  message: string;
+}
+
+export interface GateResultEvent {
+  task_id: number;
+  gate: string;
+  passed: boolean;
+}
+
 export type ServerEvent =
   | { type: "task_created"; data: TaskEvent }
   | { type: "task_updated"; data: TaskEvent }
@@ -28,9 +56,11 @@ export type ServerEvent =
   | { type: "terminal_output"; data: { task_id: number; data: string } }
   | { type: "permission_requested"; data: PermissionEvent }
   | { type: "permission_resolved"; data: PermissionEvent }
-  | { type: "gate_result"; data: { task_id: number; gate: string; passed: boolean } }
+  | { type: "gate_result"; data: GateResultEvent }
   | { type: "notification"; data: { kind: string; title: string; body: string } }
-  | { type: "status_snapshot"; data: StatusSnapshot };
+  | { type: "status_snapshot"; data: StatusSnapshot }
+  | { type: "metrics_update"; data: MetricsUpdateEvent }
+  | { type: "budget_alert"; data: BudgetAlertEvent };
 
 export type ClientEvent =
   | { type: "task_create"; data: { title: string; agent_id: string; repo_path?: string; isolation_mode?: string; prompt?: string } }

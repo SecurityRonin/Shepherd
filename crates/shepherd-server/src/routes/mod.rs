@@ -3,6 +3,7 @@ pub mod gates;
 pub mod health;
 pub mod iterm2;
 pub mod logogen;
+pub mod metrics;
 pub mod namegen;
 pub mod northstar;
 pub mod pr;

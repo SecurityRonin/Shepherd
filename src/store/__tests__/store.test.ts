@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { createTasksSlice, type TasksSlice } from '../tasks';
 import { createSessionsSlice, type SessionsSlice } from '../sessions';
 import { createUiSlice, type UiSlice } from '../ui';
-import type { TaskEvent, PermissionEvent } from '../../types/events';
+import { createObservabilitySlice, type ObservabilitySlice } from '../observability';
+import type { TaskEvent, PermissionEvent, MetricsUpdateEvent, BudgetAlertEvent, GateResultEvent } from '../../types/events';
 
 // Helper to create a standalone slice for testing
 function createTestTasksSlice(): TasksSlice {
@@ -129,6 +130,92 @@ describe('SessionsSlice', () => {
     slice.setSession(2, { id: 2, task_id: 2, pty_pid: 456, terminal_log_path: '/tmp/log2', started_at: '2026-01-01', ended_at: null });
     slice.clearSessions();
     expect(Object.keys(slice.sessions)).toHaveLength(0);
+  });
+});
+
+function createTestObservabilitySlice(): ObservabilitySlice {
+  let state: ObservabilitySlice;
+  const set = (partial: Partial<ObservabilitySlice> | ((s: ObservabilitySlice) => Partial<ObservabilitySlice>)) => {
+    if (typeof partial === 'function') {
+      Object.assign(state, partial(state));
+    } else {
+      Object.assign(state, partial);
+    }
+  };
+  const get = () => state;
+  state = createObservabilitySlice(set as any, get as any, {} as any);
+  return state;
+}
+
+describe('ObservabilitySlice', () => {
+  let slice: ObservabilitySlice;
+  beforeEach(() => { slice = createTestObservabilitySlice(); });
+
+  it('starts with empty state', () => {
+    expect(slice.agentMetrics).toHaveLength(0);
+    expect(slice.spendingSummary).toBeNull();
+    expect(slice.gateResults).toEqual({});
+    expect(slice.budgetAlerts).toHaveLength(0);
+  });
+
+  it('handleMetricsUpdate adds and deduplicates by task_id', () => {
+    const event: MetricsUpdateEvent = {
+      task_id: 1, agent_id: 'claude-code', model_id: 'claude-sonnet-4',
+      total_input_tokens: 5000, total_output_tokens: 2000, total_tokens: 7000,
+      total_cost_usd: 0.05, llm_calls: 3, duration_secs: 12.5,
+    };
+    slice.handleMetricsUpdate(event);
+    expect(slice.agentMetrics).toHaveLength(1);
+    expect(slice.agentMetrics[0].task_id).toBe(1);
+    expect(slice.agentMetrics[0].total_cost_usd).toBe(0.05);
+
+    // Update same task — should replace, not duplicate
+    slice.handleMetricsUpdate({ ...event, total_cost_usd: 0.10 });
+    expect(slice.agentMetrics).toHaveLength(1);
+    expect(slice.agentMetrics[0].total_cost_usd).toBe(0.10);
+  });
+
+  it('handleGateResult accumulates per task', () => {
+    const gate1: GateResultEvent = { task_id: 1, gate: 'lint', passed: true };
+    const gate2: GateResultEvent = { task_id: 1, gate: 'test', passed: false };
+    const gate3: GateResultEvent = { task_id: 2, gate: 'lint', passed: true };
+
+    slice.handleGateResult(gate1);
+    slice.handleGateResult(gate2);
+    slice.handleGateResult(gate3);
+
+    expect(slice.gateResults[1]).toHaveLength(2);
+    expect(slice.gateResults[2]).toHaveLength(1);
+    expect(slice.gateResults[1][0].gate).toBe('lint');
+    expect(slice.gateResults[1][1].passed).toBe(false);
+  });
+
+  it('handleBudgetAlert accumulates alerts', () => {
+    const alert: BudgetAlertEvent = {
+      scope: 'task', scope_id: '1', status: '"exceeded"',
+      current_cost: 5.5, limit: 5.0, percentage: 1.1,
+      message: 'Budget exceeded: $5.50 / $5.00 (110%)',
+    };
+    slice.handleBudgetAlert(alert);
+    expect(slice.budgetAlerts).toHaveLength(1);
+    expect(slice.budgetAlerts[0].scope).toBe('task');
+    expect(slice.budgetAlerts[0].current_cost).toBe(5.5);
+
+    slice.handleBudgetAlert({ ...alert, scope: 'agent_daily' });
+    expect(slice.budgetAlerts).toHaveLength(2);
+  });
+
+  it('setSpendingSummary replaces summary', () => {
+    const summary = {
+      total_cost_usd: 1.23, total_tokens: 50000, total_tasks: 5,
+      total_llm_calls: 15, by_agent: [], by_model: [],
+    };
+    slice.setSpendingSummary(summary);
+    expect(slice.spendingSummary).not.toBeNull();
+    expect(slice.spendingSummary!.total_cost_usd).toBe(1.23);
+
+    slice.setSpendingSummary(null);
+    expect(slice.spendingSummary).toBeNull();
   });
 });
 

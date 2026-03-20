@@ -42,6 +42,11 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             "/api/sessions/:id/fresh",
             post(routes::iterm2::fresh_session),
         )
+        .route("/api/auth/login", post(routes::cloud::auth_login))
+        .route("/api/auth/profile", get(routes::cloud::auth_profile))
+        .route("/api/auth/logout", post(routes::cloud::auth_logout))
+        .route("/api/metrics", get(routes::metrics::spending_summary))
+        .route("/api/metrics/:task_id", get(routes::metrics::task_metrics))
         .route("/api/cloud/status", get(routes::cloud::cloud_status))
         .route("/api/cloud/balance", get(routes::cloud::cloud_balance))
         .route("/api/cloud/costs", get(routes::cloud::cloud_costs))

@@ -1,4 +1,5 @@
 import type { StateCreator } from "zustand";
+import type { MetricsUpdateEvent, BudgetAlertEvent, GateResultEvent } from "../types/events";
 
 export interface TaskMetrics {
   task_id: number;
@@ -53,16 +54,69 @@ export interface ObservabilitySlice {
   agentMetrics: TaskMetrics[];
   spendingSummary: SpendingSummary | null;
   replayEvents: TimelineEvent[];
+  gateResults: Record<number, GateResultEvent[]>;
+  budgetAlerts: BudgetAlertEvent[];
   setAgentMetrics: (m: TaskMetrics[]) => void;
   setSpendingSummary: (s: SpendingSummary | null) => void;
   setReplayEvents: (e: TimelineEvent[]) => void;
+  handleMetricsUpdate: (event: MetricsUpdateEvent) => void;
+  handleGateResult: (event: GateResultEvent) => void;
+  handleBudgetAlert: (event: BudgetAlertEvent) => void;
+  fetchMetrics: () => Promise<void>;
 }
 
 export const createObservabilitySlice: StateCreator<ObservabilitySlice, [], [], ObservabilitySlice> = (set) => ({
   agentMetrics: [],
   spendingSummary: null,
   replayEvents: [],
+  gateResults: {},
+  budgetAlerts: [],
   setAgentMetrics: (m) => set({ agentMetrics: m }),
   setSpendingSummary: (s) => set({ spendingSummary: s }),
   setReplayEvents: (e) => set({ replayEvents: e }),
+
+  handleMetricsUpdate: (event) => {
+    set((state) => {
+      const existing = state.agentMetrics.filter((m) => m.task_id !== event.task_id);
+      const updated: TaskMetrics = {
+        ...event,
+        status: "running",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      return { agentMetrics: [...existing, updated] };
+    });
+  },
+
+  handleGateResult: (event) => {
+    set((state) => {
+      const taskGates = state.gateResults[event.task_id] ?? [];
+      return {
+        gateResults: {
+          ...state.gateResults,
+          [event.task_id]: [...taskGates, event],
+        },
+      };
+    });
+  },
+
+  handleBudgetAlert: (event) => {
+    set((state) => ({
+      budgetAlerts: [...state.budgetAlerts, event],
+    }));
+  },
+
+  fetchMetrics: async () => {
+    try {
+      const { getServerPort } = await import("../lib/tauri");
+      const port = await getServerPort();
+      const resp = await fetch(`http://127.0.0.1:${port}/api/metrics`);
+      if (resp.ok) {
+        const summary: SpendingSummary = await resp.json();
+        set({ spendingSummary: summary });
+      }
+    } catch {
+      // Silently fail — dashboard will show empty state
+    }
+  },
 });
