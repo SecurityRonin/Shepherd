@@ -145,16 +145,6 @@ pub async fn start_server(
     // ---- event bus ----
     let (event_tx, _) = broadcast::channel(256);
 
-    // ---- PTY output forwarding ----
-    let mut pty_rx = pty.subscribe_output();
-    let event_tx_clone = event_tx.clone();
-    tokio::spawn(async move {
-        while let Ok(output) = pty_rx.recv().await {
-            let event = pty_output_to_event(&output);
-            let _ = event_tx_clone.send(event);
-        }
-    });
-
     // ---- iTerm2 manager ----
     let iterm2 = Arc::new(Iterm2Manager::new(default_auth_path()));
 
@@ -179,6 +169,31 @@ pub async fn start_server(
         llm_provider: None,
         iterm2: Some(iterm2.clone()),
         cloud_client,
+    });
+
+    // ---- PTY output forwarding ----
+    let mut pty_rx = pty.subscribe_output();
+    let event_tx_clone = event_tx.clone();
+    let db_replay = db.clone();
+    tokio::spawn(async move {
+        while let Ok(output) = pty_rx.recv().await {
+            let data = String::from_utf8_lossy(&output.data).to_string();
+            let event = pty_output_to_event(&output);
+            let _ = event_tx_clone.send(event);
+
+            // Record to replay timeline (best-effort, don't block on errors)
+            if let Ok(conn) = db_replay.try_lock() {
+                let _ = shepherd_core::replay::record_event(
+                    &conn,
+                    output.task_id,
+                    output.task_id, // session_id = task_id (1:1 mapping)
+                    &shepherd_core::replay::EventType::Output,
+                    "Terminal output",
+                    &data,
+                    None,
+                );
+            }
+        }
     });
 
     // Start iTerm2 session watcher
@@ -466,5 +481,32 @@ mod tests {
         };
         // Should not panic — no monitor for task 99, returns None internally
         super::forward_pty_to_dispatcher(&dispatcher, &output).await;
+    }
+
+    #[tokio::test]
+    async fn pty_output_records_to_replay() {
+        use shepherd_core::db::open_memory;
+        use shepherd_core::replay;
+
+        let conn = open_memory().unwrap();
+
+        // Record an event
+        let id = replay::record_event(
+            &conn,
+            1, // task_id
+            1, // session_id
+            &replay::EventType::Output,
+            "Terminal output",
+            "hello world",
+            None,
+        )
+        .unwrap();
+        assert!(id > 0);
+
+        // Verify it shows in timeline
+        let events = replay::get_timeline(&conn, 1).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].content, "hello world");
+        assert_eq!(events[0].event_type, replay::EventType::Output);
     }
 }
