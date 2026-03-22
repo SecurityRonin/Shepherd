@@ -10,3 +10,7 @@ tarpaulin-report.json
 test-results/
 playwright-report/
 .vercel
+# Loose image assets (screenshots, mockups)
+landing-page-full.png
+pain-section.png
+north-star-advisor/
