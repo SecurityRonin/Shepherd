@@ -345,20 +345,60 @@ impl TaskDispatcher {
                         self.pty.write_to(task_id, &seq).await?;
                     }
                     _ => {
-                        // Emit permission request event for UI (Ask or Deny)
-                        let _ =
-                            self.event_tx
-                                .send(ServerEvent::PermissionRequested(PermissionEvent {
-                                    id: 0,
-                                    task_id,
-                                    tool_name: tool_name.clone(),
-                                    tool_args: tool_args.clone(),
-                                    decision: "pending".into(),
-                                }));
-                        drop(monitors);
-                        // Update task status to Input
-                        let conn = self.db.lock().await;
-                        let _ = db::update_task_status(&conn, task_id, TaskStatus::Input);
+                        // Check automation rules before prompting user
+                        let auto_decision = {
+                            let conn = self.db.lock().await;
+                            // Get repo_path for scope filtering
+                            let repo_path: String = conn
+                                .query_row(
+                                    "SELECT repo_path FROM tasks WHERE id = ?1",
+                                    rusqlite::params![task_id],
+                                    |row| row.get(0),
+                                )
+                                .unwrap_or_default();
+                            crate::automation::AutomationEngine::evaluate(
+                                &conn, tool_name, tool_args, &repo_path,
+                            )
+                            .unwrap_or(None)
+                        };
+
+                        match auto_decision {
+                            Some(crate::automation::AutomationDecision::Approve) => {
+                                let seq = monitor.approve_sequence().to_string();
+                                drop(monitors);
+                                self.pty.write_to(task_id, &seq).await?;
+                            }
+                            Some(crate::automation::AutomationDecision::Reject) => {
+                                // Auto-reject: record as denied, emit event
+                                let _ = self.event_tx.send(ServerEvent::PermissionResolved(
+                                    PermissionEvent {
+                                        id: 0,
+                                        task_id,
+                                        tool_name: tool_name.clone(),
+                                        tool_args: tool_args.clone(),
+                                        decision: "denied".into(),
+                                    },
+                                ));
+                                drop(monitors);
+                                // Don't write to PTY — agent will see permission denied
+                            }
+                            None => {
+                                // No automation rule matched — prompt user
+                                let _ = self.event_tx.send(ServerEvent::PermissionRequested(
+                                    PermissionEvent {
+                                        id: 0,
+                                        task_id,
+                                        tool_name: tool_name.clone(),
+                                        tool_args: tool_args.clone(),
+                                        decision: "pending".into(),
+                                    },
+                                ));
+                                drop(monitors);
+                                // Update task status to Input
+                                let conn = self.db.lock().await;
+                                let _ = db::update_task_status(&conn, task_id, TaskStatus::Input);
+                            }
+                        }
                     }
                 }
             }
@@ -2290,5 +2330,32 @@ mod tests {
             .lock()
             .await
             .contains_key(&1));
+    }
+
+    #[tokio::test]
+    async fn dispatcher_calls_automation_evaluate() {
+        // Create in-memory DB with automation rule
+        let conn = crate::db::open_memory().unwrap();
+        crate::automation::AutomationEngine::create_rule(
+            &conn,
+            "Allow src reads",
+            "auto_approve",
+            "read_file:src/**",
+            None,
+        )
+        .unwrap();
+
+        // Verify AutomationEngine returns Approve for this tool+path
+        let decision = crate::automation::AutomationEngine::evaluate(
+            &conn,
+            "read_file",
+            "src/main.rs",
+            "/project",
+        )
+        .unwrap();
+        assert_eq!(
+            decision,
+            Some(crate::automation::AutomationDecision::Approve)
+        );
     }
 }
