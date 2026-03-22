@@ -68,7 +68,7 @@ test.describe('New Task Dialog', () => {
   });
 
   test('can modify the repo path', async ({ page }) => {
-    const repoInput = page.getByPlaceholder('.');
+    const repoInput = page.getByPlaceholder('.', { exact: true });
     // Default value should be "."
     await expect(repoInput).toHaveValue('.');
 

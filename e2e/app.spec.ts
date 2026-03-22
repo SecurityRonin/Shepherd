@@ -30,9 +30,11 @@ test.describe('App Shell', () => {
     await page.goto('/');
 
     // Without the Axum backend the WebSocket cannot connect. The header
-    // renders a status label; it should eventually settle on Disconnected
-    // (it may briefly show "Connecting..." first).
-    await expect(page.getByText(/disconnected/i)).toBeVisible({ timeout: 10_000 });
+    // renders a status label; with exponential backoff reconnection it may
+    // show Connecting, Reconnecting, or eventually Disconnected.
+    await expect(
+      page.getByText(/disconnected|reconnecting|connecting/i)
+    ).toBeVisible({ timeout: 10_000 });
   });
 
   test('renders without unexpected console errors', async ({ page }) => {
@@ -250,10 +252,12 @@ test.describe('Command Palette', () => {
 
     await page.keyboard.press('Meta+k');
 
-    // The palette organizes actions into categories
-    await expect(page.getByText('Tasks')).toBeVisible();
-    await expect(page.getByText('View')).toBeVisible();
-    await expect(page.getByText('Lifecycle')).toBeVisible();
+    // The palette organizes actions into categories (exact match avoids
+    // collision with kanban "No tasks" text and other substrings)
+    const palette = page.locator('.bg-zinc-900');
+    await expect(palette.getByText('Tasks', { exact: true })).toBeVisible();
+    await expect(palette.getByText('View', { exact: true })).toBeVisible();
+    await expect(palette.getByText('Lifecycle', { exact: true })).toBeVisible();
   });
 
   test('shows built-in actions like Toggle View and New Task', async ({ page }) => {
@@ -262,9 +266,11 @@ test.describe('Command Palette', () => {
 
     await page.keyboard.press('Meta+k');
 
-    await expect(page.getByText('Toggle View')).toBeVisible();
-    await expect(page.getByText('New Task')).toBeVisible();
-    await expect(page.getByText('Approve All')).toBeVisible();
+    // Scope to the palette card to avoid matching the header's "+ New Task" button
+    const palette = page.locator('.bg-zinc-900');
+    await expect(palette.getByText('Toggle View')).toBeVisible();
+    await expect(palette.getByText('New Task', { exact: true })).toBeVisible();
+    await expect(palette.getByText('Approve All')).toBeVisible();
   });
 
   test('filters actions based on search input', async ({ page }) => {
@@ -279,12 +285,13 @@ test.describe('Command Palette', () => {
     // Type a query that should narrow down the results
     await searchInput.fill('new');
 
-    // "New Task" should still be visible
-    await expect(page.getByText('New Task')).toBeVisible();
+    // "New Task" should still be visible (scope to palette to avoid header button)
+    const palette = page.locator('.bg-zinc-900');
+    await expect(palette.getByText('New Task', { exact: true })).toBeVisible();
 
     // Unrelated actions should be filtered out
     // (Logo Generator shouldn't match "new")
-    await expect(page.getByText('Logo Generator')).not.toBeVisible();
+    await expect(palette.getByText('Logo Generator')).not.toBeVisible();
   });
 
   test('shows "No matching commands" for impossible search', async ({ page }) => {

@@ -48,11 +48,13 @@ test.describe('Command Palette', () => {
   test('displays all default action categories', async ({ page }) => {
     await page.keyboard.press('Meta+k');
 
-    // Category headers
-    await expect(page.getByText('Approve')).toBeVisible();
-    await expect(page.getByText('Tasks')).toBeVisible();
-    await expect(page.getByText('View')).toBeVisible();
-    await expect(page.getByText('Lifecycle')).toBeVisible();
+    // Category headers — scope to palette card and use exact match
+    // to avoid collision with kanban "No tasks" text
+    const palette = page.locator('.bg-zinc-900');
+    await expect(palette.getByText('Approve', { exact: true })).toBeVisible();
+    await expect(palette.getByText('Tasks', { exact: true })).toBeVisible();
+    await expect(palette.getByText('View', { exact: true })).toBeVisible();
+    await expect(palette.getByText('Lifecycle', { exact: true })).toBeVisible();
   });
 
   test('displays shortcut hints on actions', async ({ page }) => {
@@ -102,7 +104,9 @@ test.describe('Command Palette', () => {
 
     // Search for "New Task" and press Enter to execute it
     await searchInput.fill('New Task');
-    await expect(page.getByText('New Task')).toBeVisible();
+    // Scope to palette to avoid matching header's "+ New Task" button
+    const palette = page.locator('.bg-zinc-900');
+    await expect(palette.getByText('New Task', { exact: true })).toBeVisible();
 
     await page.keyboard.press('Enter');
 

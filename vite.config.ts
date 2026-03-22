@@ -25,6 +25,6 @@ export default defineConfig(async () => ({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
-    exclude: ["**/node_modules/**", "**/dist/**", "**/.worktrees/**", "**/e2e/**"],
+    exclude: ["**/node_modules/**", "**/dist/**", "**/.worktrees/**", "**/.claude/worktrees/**", "**/e2e/**"],
   },
 }));
