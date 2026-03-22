@@ -64,6 +64,21 @@ pub async fn delete_task(
     Ok(Json(serde_json::json!({ "deleted": id })))
 }
 
+#[tracing::instrument(skip(state))]
+pub async fn get_task(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let db = state.db.lock().await;
+    let task = queries::get_task(&db, id).map_err(|e| {
+        (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": format!("Task not found: {}", e) })),
+        )
+    })?;
+    Ok(Json(serde_json::to_value(task).unwrap()))
+}
+
 /// Approve a pending permission for a task — sends the approve keystroke to PTY
 /// and transitions task status from "input" back to "running".
 #[tracing::instrument(skip(state))]

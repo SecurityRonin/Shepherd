@@ -4,7 +4,7 @@ pub mod state;
 pub mod ws;
 
 use axum::{
-    routing::{delete, get, post},
+    routing::{get, post},
     Router,
 };
 use state::AppState;
@@ -16,7 +16,10 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/api/health", get(routes::health::health))
         .route("/api/tasks", get(routes::tasks::list_tasks))
         .route("/api/tasks", post(routes::tasks::create_task))
-        .route("/api/tasks/:id", delete(routes::tasks::delete_task))
+        .route(
+            "/api/tasks/:id",
+            get(routes::tasks::get_task).delete(routes::tasks::delete_task),
+        )
         .route("/api/namegen", post(routes::namegen::generate_names))
         .route("/api/logogen", post(routes::logogen::generate_logo))
         .route("/api/logogen/export", post(routes::logogen::export_icons))

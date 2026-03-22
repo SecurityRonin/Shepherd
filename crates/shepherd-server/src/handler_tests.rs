@@ -133,6 +133,40 @@ mod tests {
         assert_eq!(body.as_array().unwrap().len(), 0);
     }
 
+    #[tokio::test]
+    async fn handler_get_task() {
+        let state = test_state();
+        let app = crate::build_router(state.clone());
+        let resp = app
+            .oneshot(json_post(
+                "/api/tasks",
+                serde_json::json!({"title": "Fetch me", "agent_id": "claude-code"}),
+            ))
+            .await
+            .unwrap();
+        let body = body_json(resp).await;
+        let id = body["id"].as_i64().unwrap();
+        let app = crate::build_router(state);
+        let resp = app
+            .oneshot(get(&format!("/api/tasks/{}", id)))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = body_json(resp).await;
+        assert_eq!(body["title"], "Fetch me");
+        assert_eq!(body["id"], id);
+    }
+
+    #[tokio::test]
+    async fn handler_get_task_not_found() {
+        let state = test_state();
+        let app = crate::build_router(state);
+        let resp = app.oneshot(get("/api/tasks/99999")).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+        let body = body_json(resp).await;
+        assert!(body["error"].as_str().unwrap().contains("not found"));
+    }
+
     // -- Logogen handler tests ------------------------------------------------
 
     #[tokio::test]
@@ -384,6 +418,36 @@ mod tests {
         let result = crate::routes::tasks::delete_task(State(state), Path(99999i64)).await;
         let Json(body) = result.unwrap();
         assert_eq!(body["deleted"], 99999);
+    }
+
+    #[tokio::test]
+    async fn direct_get_task() {
+        let state = test_state();
+        let input = shepherd_core::db::models::CreateTask {
+            title: "Direct get".to_string(),
+            agent_id: "claude-code".to_string(),
+            prompt: None,
+            repo_path: None,
+            isolation_mode: None,
+            iterm2_session_id: None,
+        };
+        let (_, Json(created)) =
+            crate::routes::tasks::create_task(State(state.clone()), Json(input))
+                .await
+                .unwrap();
+        let id = created["id"].as_i64().unwrap();
+        let result = crate::routes::tasks::get_task(State(state), Path(id)).await;
+        let Json(body) = result.unwrap();
+        assert_eq!(body["title"], "Direct get");
+    }
+
+    #[tokio::test]
+    async fn direct_get_task_not_found() {
+        let state = test_state();
+        let result = crate::routes::tasks::get_task(State(state), Path(99999i64)).await;
+        assert!(result.is_err());
+        let (status, _) = result.unwrap_err();
+        assert_eq!(status, StatusCode::NOT_FOUND);
     }
 
     // -- Direct: Logogen ------------------------------------------------------
