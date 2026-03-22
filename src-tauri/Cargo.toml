@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-tauri = { version = "2", features = ["devtools"] }
+tauri = { version = "2", features = ["devtools", "tray-icon"] }
 tauri-plugin-shell = "2"
 tauri-plugin-deep-link = "2"
 tauri-plugin-notification = "2"

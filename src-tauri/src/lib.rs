@@ -1,4 +1,5 @@
 use tauri::{Emitter, Manager};
+use tauri::tray::TrayIconBuilder;
 use tauri_plugin_deep_link::DeepLinkExt;
 
 mod tray;
@@ -88,6 +89,14 @@ pub fn run() {
                     }
                 }
             });
+
+            // System tray icon with tooltip
+            TrayIconBuilder::with_id("main")
+                .icon(app.default_window_icon().cloned().unwrap_or_else(|| {
+                    tauri::image::Image::new(&[], 0, 0) // fallback empty icon
+                }))
+                .tooltip("Shepherd — idle")
+                .build(app)?;
 
             // Start embedded Axum server on a background Tokio task
             tauri::async_runtime::spawn(async move {

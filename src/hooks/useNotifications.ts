@@ -38,12 +38,13 @@ export function notifyFromServer(kind: string, title: string, body: string): voi
   }
 }
 
-function updateBadge(inputCount: number): void {
+function updateBadge(running: number, input: number, error: number): void {
   if (typeof document !== "undefined") {
-    document.title = inputCount > 0 ? `(${inputCount}) Shepherd` : "Shepherd";
+    document.title = input > 0 ? `(${input}) Shepherd` : "Shepherd";
   }
   if (isTauri) {
-    invoke("set_dock_badge", { text: inputCount > 0 ? String(inputCount) : "" }).catch(() => {});
+    invoke("set_dock_badge", { text: input > 0 ? String(input) : "" }).catch(() => {});
+    invoke("update_tray_status", { running, input, error }).catch(() => {});
   }
 }
 
@@ -81,11 +82,12 @@ export function useNotifications(): void {
         }
       }
 
-      // Update badge with count of tasks needing input
-      const inputCount = Object.values(currentTasks).filter(
-        (t) => t.status === "input",
-      ).length;
-      updateBadge(inputCount);
+      // Update badge and tray with task counts
+      const tasks = Object.values(currentTasks);
+      const inputCount = tasks.filter((t) => t.status === "input").length;
+      const runningCount = tasks.filter((t) => t.status === "running").length;
+      const errorCount = tasks.filter((t) => t.status === "error").length;
+      updateBadge(runningCount, inputCount, errorCount);
 
       // Snapshot current state for next comparison
       prevTasksRef.current = { ...currentTasks };
