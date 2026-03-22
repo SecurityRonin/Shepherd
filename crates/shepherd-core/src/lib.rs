@@ -1,4 +1,5 @@
 pub mod adapters;
+pub mod automation;
 pub mod cloud;
 pub mod config;
 pub mod context;

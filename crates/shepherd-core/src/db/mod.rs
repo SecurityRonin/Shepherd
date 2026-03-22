@@ -108,6 +108,19 @@ fn migrate(conn: &Connection) -> Result<()> {
         );",
     )?;
 
+    // Automation rules table
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS automation_rules (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            rule_type TEXT NOT NULL CHECK(rule_type IN ('auto_approve', 'auto_reject')),
+            pattern TEXT NOT NULL,
+            scope TEXT,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );",
+    )?;
+
     Ok(())
 }
 
@@ -158,12 +171,12 @@ mod tests {
         let conn = open_memory().unwrap();
         let count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('tasks', 'sessions', 'permissions', 'diffs', 'profiles', 'gate_results', 'context_packages', 'context_feedback', 'task_metrics', 'file_index', 'session_events', 'trigger_dismissals')",
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('tasks', 'sessions', 'permissions', 'diffs', 'profiles', 'gate_results', 'context_packages', 'context_feedback', 'task_metrics', 'file_index', 'session_events', 'trigger_dismissals', 'automation_rules')",
                 [],
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(count, 12);
+        assert_eq!(count, 13);
     }
 
     #[test]
