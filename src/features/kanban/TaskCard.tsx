@@ -12,12 +12,13 @@ export interface TaskCardProps {
   onClick?: () => void;
 }
 
-export const TaskCard: React.FC<TaskCardProps> = ({
+export const TaskCard: React.FC<TaskCardProps> = React.memo(({
   task,
   pendingPermissions = [],
   onClick,
 }) => {
   const [approving, setApproving] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const isActive = task.status === "running" || task.status === "input";
   const stalenessLevel = useTaskStaleness(task.updated_at, isActive);
 
@@ -36,6 +37,23 @@ export const TaskCard: React.FC<TaskCardProps> = ({
       }
     },
     [task.id, approving],
+  );
+
+  const handleCancel = useCallback(
+    async (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (cancelling) return;
+      setCancelling(true);
+      try {
+        const { cancelTask } = await import("../../lib/api");
+        await cancelTask(task.id);
+      } catch (err) {
+        console.error("Failed to cancel task:", err);
+      } finally {
+        setCancelling(false);
+      }
+    },
+    [task.id, cancelling],
   );
 
   const isError = task.status === "error";
@@ -113,16 +131,36 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         </div>
       )}
 
-      {/* Row 4: Approve button (input status only) */}
+      {/* Row 4: Action buttons */}
       {isInput && (
+        <div className="mt-2 flex gap-2">
+          <button
+            className="flex-1 rounded bg-orange-600 px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-orange-500 disabled:opacity-50"
+            onClick={handleApprove}
+            disabled={approving}
+          >
+            {approving ? "Approving..." : "Approve"}
+          </button>
+          <button
+            className="flex-1 rounded bg-red-700 px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-red-600 disabled:opacity-50"
+            onClick={handleCancel}
+            disabled={cancelling}
+            data-testid="cancel-task-btn"
+          >
+            {cancelling ? "Cancelling..." : "Cancel"}
+          </button>
+        </div>
+      )}
+      {task.status === "running" && (
         <button
-          className="mt-2 w-full rounded bg-orange-600 px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-orange-500 disabled:opacity-50"
-          onClick={handleApprove}
-          disabled={approving}
+          className="mt-2 w-full rounded bg-red-700 px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-red-600 disabled:opacity-50"
+          onClick={handleCancel}
+          disabled={cancelling}
+          data-testid="cancel-task-btn"
         >
-          {approving ? "Approving..." : "Approve"}
+          {cancelling ? "Cancelling..." : "Cancel"}
         </button>
       )}
     </div>
   );
-};
+});

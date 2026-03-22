@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { Task } from "../../../types/task";
 import { useStore } from "../../../store";
@@ -193,10 +193,9 @@ describe("FocusView", () => {
 
     // SessionSidebar is present (has Sessions heading)
     expect(screen.getByText("Sessions")).toBeInTheDocument();
-    // Terminal component (rendered with toolbar label)
-    expect(screen.getByText("Terminal")).toBeInTheDocument();
-    // DiffViewer shows empty state when no diffs
-    expect(screen.getByText("No file changes yet")).toBeInTheDocument();
+    // Terminal and DiffViewer are lazy-loaded — wait for them to resolve
+    await waitFor(() => expect(screen.getByText("Terminal")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("No file changes yet")).toBeInTheDocument());
   });
 
   it("renders status dot for the focused task", async () => {
@@ -225,6 +224,46 @@ describe("FocusView", () => {
     render(<FocusView />);
 
     expect(screen.getByText("feat/my-branch")).toBeInTheDocument();
+  });
+
+  it("shows cancel button in focus header for running task", async () => {
+    const task = makeTask({ id: 1, title: "Running task", status: "running" });
+    useStore.setState({
+      tasks: { 1: task },
+      focusedTaskId: 1,
+    });
+
+    const { FocusView } = await import("../FocusView");
+    render(<FocusView />);
+
+    expect(screen.getByTestId("focus-cancel-btn")).toBeInTheDocument();
+    expect(screen.getByTestId("focus-cancel-btn")).toHaveTextContent("Cancel");
+  });
+
+  it("shows cancel button in focus header for input task", async () => {
+    const task = makeTask({ id: 1, title: "Input task", status: "input" });
+    useStore.setState({
+      tasks: { 1: task },
+      focusedTaskId: 1,
+    });
+
+    const { FocusView } = await import("../FocusView");
+    render(<FocusView />);
+
+    expect(screen.getByTestId("focus-cancel-btn")).toBeInTheDocument();
+  });
+
+  it("does not show cancel button in focus header for done task", async () => {
+    const task = makeTask({ id: 1, title: "Done task", status: "done" });
+    useStore.setState({
+      tasks: { 1: task },
+      focusedTaskId: 1,
+    });
+
+    const { FocusView } = await import("../FocusView");
+    render(<FocusView />);
+
+    expect(screen.queryByTestId("focus-cancel-btn")).not.toBeInTheDocument();
   });
 });
 

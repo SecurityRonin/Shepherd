@@ -1,7 +1,17 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import type { Task } from "../../../types/task";
 import { useStore } from "../../../store";
+
+// Mock cancelTask so we can verify it's called without hitting the network
+vi.mock("../../../lib/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../lib/api")>();
+  return {
+    ...actual,
+    cancelTask: vi.fn().mockResolvedValue({ status: "cancelled" }),
+  };
+});
 
 // --- Test helpers ---
 
@@ -291,5 +301,46 @@ describe("TaskCard", () => {
     expect(screen.getByText("tests")).toBeInTheDocument();
     expect(screen.getByText("pass")).toBeInTheDocument();
     expect(screen.getByText("fail")).toBeInTheDocument();
+  });
+
+  it("shows cancel button for running tasks", async () => {
+    const { TaskCard } = await import("../TaskCard");
+    const task = makeTask({ status: "running" });
+    render(<TaskCard task={task} />);
+    expect(screen.getByTestId("cancel-task-btn")).toBeInTheDocument();
+    expect(screen.getByTestId("cancel-task-btn")).toHaveTextContent("Cancel");
+  });
+
+  it("shows cancel button for input tasks", async () => {
+    const { TaskCard } = await import("../TaskCard");
+    const task = makeTask({ status: "input" });
+    render(<TaskCard task={task} />);
+    expect(screen.getByTestId("cancel-task-btn")).toBeInTheDocument();
+  });
+
+  it("does not show cancel button for done tasks", async () => {
+    const { TaskCard } = await import("../TaskCard");
+    const task = makeTask({ status: "done" });
+    render(<TaskCard task={task} />);
+    expect(screen.queryByTestId("cancel-task-btn")).not.toBeInTheDocument();
+  });
+
+  it("does not show cancel button for error tasks", async () => {
+    const { TaskCard } = await import("../TaskCard");
+    const task = makeTask({ status: "error" });
+    render(<TaskCard task={task} />);
+    expect(screen.queryByTestId("cancel-task-btn")).not.toBeInTheDocument();
+  });
+
+  it("calls cancelTask API when cancel button is clicked", async () => {
+    const { TaskCard } = await import("../TaskCard");
+    const { cancelTask } = await import("../../../lib/api");
+    const task = makeTask({ id: 42, status: "running" });
+    render(<TaskCard task={task} />);
+
+    const cancelBtn = screen.getByTestId("cancel-task-btn");
+    await userEvent.click(cancelBtn);
+
+    expect(cancelTask).toHaveBeenCalledWith(42);
   });
 });

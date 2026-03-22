@@ -132,6 +132,18 @@ export const FocusView: React.FC = () => {
           <span className="text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded bg-shepherd-border text-shepherd-muted">
             {task.status}
           </span>
+          {(task.status === "running" || task.status === "input") && (
+            <button
+              className="ml-2 rounded bg-red-700 px-2 py-0.5 text-[10px] font-medium text-white transition-colors hover:bg-red-600"
+              onClick={async () => {
+                const { cancelTask } = await import("../../lib/api");
+                await cancelTask(task.id).catch(console.error);
+              }}
+              data-testid="focus-cancel-btn"
+            >
+              Cancel
+            </button>
+          )}
         </div>
 
         {/* Content area: Terminal + DiffViewer side by side */}
