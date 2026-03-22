@@ -9,3 +9,4 @@ target/
 tarpaulin-report.json
 test-results/
 playwright-report/
+.vercel
