@@ -57,6 +57,10 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/api/sync/push", post(routes::sync::sync_push))
         .route("/api/sync/pull", post(routes::sync::sync_pull))
         .route("/api/sync/now", post(routes::sync::sync_now_handler))
+        .route(
+            "/api/replay/task/:taskId",
+            get(routes::replay::replay_events),
+        )
         .route("/api/templates", get(routes::templates::list_templates))
         .route(
             "/api/plugins/detected",

@@ -838,4 +838,81 @@ mod tests {
             assert!(item.is_string());
         }
     }
+
+    // -- Replay handler tests -------------------------------------------------
+
+    #[tokio::test]
+    async fn handler_replay_empty_for_new_task() {
+        let state = test_state();
+        let app = crate::build_router(state.clone());
+        let resp = app
+            .oneshot(json_post(
+                "/api/tasks",
+                serde_json::json!({"title": "Replay test", "agent_id": "claude-code"}),
+            ))
+            .await
+            .unwrap();
+        let body = body_json(resp).await;
+        let id = body["id"].as_i64().unwrap();
+
+        let app = crate::build_router(state);
+        let resp = app
+            .oneshot(get(&format!("/api/replay/task/{}", id)))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = body_json(resp).await;
+        assert_eq!(body.as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn handler_replay_returns_events_in_order() {
+        let state = test_state();
+        {
+            let db = state.db.lock().await;
+            shepherd_core::replay::record_event(
+                &db,
+                1,
+                1,
+                &shepherd_core::replay::EventType::SessionStart,
+                "Started",
+                "",
+                None,
+            )
+            .unwrap();
+            shepherd_core::replay::record_event(
+                &db,
+                1,
+                1,
+                &shepherd_core::replay::EventType::ToolCall,
+                "Running cargo test",
+                "cargo test",
+                None,
+            )
+            .unwrap();
+            shepherd_core::replay::record_event(
+                &db,
+                1,
+                1,
+                &shepherd_core::replay::EventType::SessionEnd,
+                "Done",
+                "",
+                None,
+            )
+            .unwrap();
+        }
+
+        let app = crate::build_router(state);
+        let resp = app.oneshot(get("/api/replay/task/1")).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = body_json(resp).await;
+        let events = body.as_array().unwrap();
+        assert_eq!(events.len(), 3);
+        assert_eq!(events[0]["event_type"], "session_start");
+        assert_eq!(events[2]["event_type"], "session_end");
+        assert!(events[0]["id"].is_number());
+        assert!(events[0]["task_id"].is_number());
+        assert!(events[0]["summary"].is_string());
+        assert!(events[0]["timestamp"].is_string());
+    }
 }

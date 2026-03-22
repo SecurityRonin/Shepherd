@@ -8,6 +8,7 @@ pub mod namegen;
 pub mod northstar;
 pub mod plugins;
 pub mod pr;
+pub mod replay;
 pub mod sync;
 pub mod tasks;
 pub mod templates;
