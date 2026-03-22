@@ -1,3 +1,4 @@
+pub mod automation;
 pub mod cloud;
 pub mod gates;
 pub mod health;

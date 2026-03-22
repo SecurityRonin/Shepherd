@@ -4,7 +4,7 @@ pub mod state;
 pub mod ws;
 
 use axum::{
-    routing::{get, post},
+    routing::{delete, get, post},
     Router,
 };
 use state::AppState;
@@ -73,6 +73,14 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route(
             "/api/triggers/dismiss",
             post(routes::triggers::dismiss_trigger),
+        )
+        .route(
+            "/api/automation-rules",
+            get(routes::automation::list_rules).post(routes::automation::create_rule),
+        )
+        .route(
+            "/api/automation-rules/:id",
+            delete(routes::automation::delete_rule),
         )
         .route("/ws", get(ws::ws_handler))
         .layer(CorsLayer::permissive())

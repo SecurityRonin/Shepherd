@@ -927,6 +927,60 @@ mod tests {
         assert!(!suggestions.iter().any(|s| s["id"] == "namegen_untitled"));
     }
 
+    // -- Automation handler tests ---------------------------------------------
+
+    #[tokio::test]
+    async fn handler_automation_rules_crud() {
+        let state = test_state();
+
+        // List rules — should be empty
+        let app = crate::build_router(state.clone());
+        let resp = app.oneshot(get("/api/automation-rules")).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = body_json(resp).await;
+        assert_eq!(body.as_array().unwrap().len(), 0);
+
+        // Create a rule
+        let app = crate::build_router(state.clone());
+        let resp = app
+            .oneshot(json_post(
+                "/api/automation-rules",
+                serde_json::json!({
+                    "name": "Allow src reads",
+                    "rule_type": "auto_approve",
+                    "pattern": "read_file:src/**"
+                }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+        let body = body_json(resp).await;
+        let rule_id = body["id"].as_i64().unwrap();
+        assert_eq!(body["name"], "Allow src reads");
+
+        // List again — should have 1
+        let app = crate::build_router(state.clone());
+        let resp = app.oneshot(get("/api/automation-rules")).await.unwrap();
+        let body = body_json(resp).await;
+        assert_eq!(body.as_array().unwrap().len(), 1);
+
+        // Delete the rule
+        let app = crate::build_router(state.clone());
+        let resp = app
+            .oneshot(delete(&format!("/api/automation-rules/{}", rule_id)))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = body_json(resp).await;
+        assert_eq!(body["deleted"], true);
+
+        // List again — should be empty
+        let app = crate::build_router(state);
+        let resp = app.oneshot(get("/api/automation-rules")).await.unwrap();
+        let body = body_json(resp).await;
+        assert_eq!(body.as_array().unwrap().len(), 0);
+    }
+
     // -- Replay handler tests -------------------------------------------------
 
     #[tokio::test]
