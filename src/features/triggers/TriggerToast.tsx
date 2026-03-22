@@ -55,7 +55,7 @@ export function TriggerToast({ projectDir, onNavigate }: TriggerToastProps) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ trigger_id: id, project_dir: projectDir }),
-    }).catch(() => {});
+    }).catch((err) => console.error("Failed to dismiss trigger:", err));
   }, [projectDir]);
 
   const activeSuggestion = suggestions.find(s => s.id === visible);

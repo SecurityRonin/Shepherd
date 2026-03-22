@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>One screen. Every agent. Full control.</strong><br/>
-  The missing command center for developers running Claude Code, Codex, AdaL, OpenCode, Gemini CLI, Aider, Goose, and more — simultaneously.
+  The missing command center for developers running Claude Code, Codex, AdaL, OpenCode, Gemini CLI, Aider, Mistral Vibe, Goose, and more — simultaneously.
 </p>
 
 <p align="center">
@@ -68,7 +68,7 @@ That's it. The GUI opens. What happens next depends on how you work:
 
 Shepherd finds them automatically. No config, no restart, no flags.
 
-Every iTerm2 pane running a known agent (Claude Code, Codex, AdaL, Aider, Gemini CLI, OpenCode, Goose, Plandex, gptme) appears on the Kanban board within seconds. Click any card to see the terminal, approve permissions, or review diffs.
+Every iTerm2 pane running a known agent (Claude Code, Codex, AdaL, Aider, Gemini CLI, OpenCode, Mistral Vibe, Goose, Plandex, gptme) appears on the Kanban board within seconds. Click any card to see the terminal, approve permissions, or review diffs.
 
 Shepherd connects to iTerm2's native WebSocket API to discover sessions — no bridge scripts or manual setup required. It reads your iTerm2 auth cookie automatically.
 
@@ -150,7 +150,7 @@ No single tool combines Kanban + rules engine + quality gates + multi-agent + on
 
 ### Agent-agnostic from day one
 
-Nine agents supported out of the box, plus iTerm2 session adoption for agents already running in your terminal. Drop a TOML file to add any other terminal-based agent.
+Ten agents supported out of the box, plus iTerm2 session adoption for agents already running in your terminal. Drop a TOML file to add any other terminal-based agent.
 
 | Agent | Hook Protocol | iTerm2 Adoption |
 |-------|---------------|-----------------|
@@ -160,6 +160,7 @@ Nine agents supported out of the box, plus iTerm2 session adoption for agents al
 | OpenCode | Output parsing | ✓ |
 | Gemini CLI | Output parsing | ✓ |
 | Aider | Output parsing | ✓ |
+| Mistral Vibe | Output parsing | ✓ |
 | Goose | Output parsing | ✓ |
 | Plandex | Output parsing | ✓ |
 | gptme | Output parsing | ✓ |
@@ -322,7 +323,7 @@ BACKEND (Rust · localhost)
 ├── LLM Client       — OpenAI, Anthropic, Ollama (provider-agnostic)
 ├── Lifecycle Tools  — name gen, logo gen, North Star PMF, wizard
 ├── Ecosystem        — Superpowers + context-mode + Alaya MCP auto-install
-├── iTerm2 Manager   — session adoption, jobName detection, 9 agents
+├── iTerm2 Manager   — session adoption, jobName detection, 10 agents
 ├── Triggers         — contextual suggestions (name, logo, strategy)
 ├── PR Pipeline      — stage, commit, rebase, gates, push, gh pr create
 └── State (SQLite)   — tasks, sessions, permissions, diffs, gate results
@@ -331,8 +332,8 @@ BACKEND (Rust · localhost)
 AGENTS (your existing tools, unchanged)
 ├── Claude Code    ├── Codex CLI    ├── AdaL
 ├── OpenCode       ├── Gemini CLI   ├── Aider
-├── Goose          ├── Plandex      ├── gptme
-└── community adapters (TOML)
+├── Mistral Vibe   ├── Goose        ├── Plandex
+├── gptme          └── community adapters (TOML)
 ```
 
 **Why Tauri over Electron**: ~600KB vs ~150MB. Native performance. Rust backend. No bundled Chromium.
@@ -420,7 +421,7 @@ Restart Shepherd. Your agent shows up in the New Task dropdown.
 
 | | Shepherd | Vibe Kanban | Clorch | Claude Squad | Emdash | JetBrains Air |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|
-| Multi-agent (6+ providers) | ✓ (9 adapters) | ✓ | Claude only | 5 agents | 20+ agents | 4 agents |
+| Multi-agent (6+ providers) | ✓ (10 adapters) | ✓ | Claude only | 5 agents | 20+ agents | 4 agents |
 | Kanban board | ✓ | ✓ | ✗ | ✗ | ✓ | ✗ |
 | YOLO rules engine | ✓ | YOLO only | ✓ | ✗ | ✗ | 4-level |
 | Quality gates | ✓ | Plugin | ✗ | ✗ | ✗ | ✗ |
@@ -436,7 +437,7 @@ Restart Shepherd. Your agent shows up in the New Task dropdown.
 
 ## Roadmap
 
-**v0.1.0-alpha** (current): Core engine with embedded Axum server, task dispatch loop (polls every 2s), PTY agent execution via portable-pty, session monitoring with regex pattern detection, YOLO rules engine (YAML deny/allow), Kanban board (React + Zustand + xterm.js), WebSocket real-time events (14 event types), REST + WebSocket approve/deny, CLI with auto-server-spawn and shell completions, 9 agent adapters (TOML-defined), iTerm2 session adoption via WebSocket API, quality gates (auto-detect + custom scripts), PR pipeline (diff/commit/push/gh-pr-create), name/logo generators, North Star PMF wizard, nono.sh sandbox integration. 1,500+ tests. CI with fmt, clippy, cargo-deny, typos, Codecov, Vitest, and Playwright.
+**v0.1.0-alpha** (current): Core engine with embedded Axum server, task dispatch loop (polls every 2s), PTY agent execution via portable-pty, session monitoring with regex pattern detection, YOLO rules engine (YAML deny/allow), Kanban board (React + Zustand + xterm.js), WebSocket real-time events (14 event types), REST + WebSocket approve/deny, CLI with auto-server-spawn and shell completions, 10 agent adapters (TOML-defined, incl. Mistral Vibe), iTerm2 session adoption via WebSocket API, quality gates (auto-detect + custom scripts), PR pipeline (diff/commit/push/gh-pr-create), name/logo generators, North Star PMF wizard, nono.sh sandbox integration. 1,500+ tests. CI with fmt, clippy, cargo-deny, typos, Codecov, Vitest, and Playwright.
 
 **v0.2**: Docker isolation mode. Homebrew tap + winget package. shepherd-bridge auto-registration script. Inline diff viewer with comments.
 
@@ -461,7 +462,7 @@ cargo test --workspace          # 1,500+ Rust tests
 # Frontend
 npm install
 npx tsc --noEmit                # type check
-npx vitest run                  # 187 unit tests
+npx vitest run                  # 226 unit tests
 npx playwright test             # 8 e2e browser tests
 
 # Run the desktop app in dev mode

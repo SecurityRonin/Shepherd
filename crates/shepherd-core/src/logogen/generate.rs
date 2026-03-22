@@ -178,7 +178,7 @@ mod tests {
         #[async_trait::async_trait]
         impl LlmProvider for MockImageProvider {
             async fn chat(&self, _request: &LlmRequest) -> anyhow::Result<LlmResponse> {
-                unimplemented!()
+                anyhow::bail!("chat not supported by image-only mock")
             }
             async fn generate_image(
                 &self,
@@ -225,7 +225,7 @@ mod tests {
         #[async_trait::async_trait]
         impl LlmProvider for FailImageProvider {
             async fn chat(&self, _request: &LlmRequest) -> anyhow::Result<LlmResponse> {
-                unimplemented!()
+                anyhow::bail!("chat not supported by image-only mock")
             }
             async fn generate_image(
                 &self,

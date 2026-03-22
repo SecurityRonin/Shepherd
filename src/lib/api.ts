@@ -126,6 +126,29 @@ export async function getBalance(): Promise<CreditBalanceResponse> {
   return request<CreditBalanceResponse>("/api/cloud/balance");
 }
 
+// ── Sessions (iTerm2 / Claude Code) ─────────────────────────────
+
+export interface ClaudeSessionsResponse {
+  sessions: string[];
+}
+
+export async function getClaudeSessions(taskId: number): Promise<ClaudeSessionsResponse> {
+  return request<ClaudeSessionsResponse>(`/api/sessions/${taskId}/claude-sessions`);
+}
+
+export async function resumeClaudeSession(taskId: number, claudeSessionId: string): Promise<{ status: string }> {
+  return request<{ status: string }>(`/api/sessions/${taskId}/resume`, {
+    method: "POST",
+    body: JSON.stringify({ claude_session_id: claudeSessionId }),
+  });
+}
+
+export async function startFreshSession(taskId: number): Promise<{ status: string }> {
+  return request<{ status: string }>(`/api/sessions/${taskId}/fresh`, {
+    method: "POST",
+  });
+}
+
 // ── Templates ────────────────────────────────────────────────────
 
 export interface TemplatesResponse {
@@ -141,6 +164,22 @@ export async function getTemplates(
   if (includePremium !== undefined) params.set("include_premium", String(includePremium));
   const query = params.toString();
   return request<TemplatesResponse>(`/api/templates${query ? `?${query}` : ""}`);
+}
+
+// ── Plugins ─────────────────────────────────────────────────────
+
+export interface DetectedPluginsResponse {
+  detected: string[];
+}
+
+export async function getDetectedPlugins(): Promise<DetectedPluginsResponse> {
+  return request<DetectedPluginsResponse>("/api/plugins/detected");
+}
+
+// ── Replay ──────────────────────────────────────────────────────
+
+export async function getReplayEvents(taskId: number): Promise<import("../store/observability").TimelineEvent[]> {
+  return request(`/api/replay/task/${taskId}`);
 }
 
 // ── Metrics ──────────────────────────────────────────────────────

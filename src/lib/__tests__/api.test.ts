@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { listTasks, createTask, deleteTask, checkHealth, approveTask, ApiError } from '../api';
+import { listTasks, createTask, deleteTask, checkHealth, approveTask, getReplayEvents, getDetectedPlugins, getClaudeSessions, resumeClaudeSession, startFreshSession, ApiError } from '../api';
 
 // Mock fetch globally
 const mockFetch = vi.fn();
@@ -67,6 +67,75 @@ describe('REST API client', () => {
     });
     await expect(listTasks()).rejects.toThrow(ApiError);
     await expect(listTasks()).rejects.toThrow(); // reset needed
+  });
+
+  it('getReplayEvents sends GET to /api/replay/task/:id', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true, status: 200,
+      json: async () => ([
+        { id: 1, task_id: 42, session_id: 1, event_type: "tool_call", summary: "test", content: "", metadata: null, timestamp: "2026-03-20T00:00:00Z" },
+      ]),
+    });
+    const events = await getReplayEvents(42);
+    expect(events).toHaveLength(1);
+    expect(events[0].task_id).toBe(42);
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/api/replay/task/42'),
+      expect.objectContaining({ headers: expect.objectContaining({ 'Content-Type': 'application/json' }) }),
+    );
+  });
+
+  it('getClaudeSessions sends GET to /api/sessions/:id/claude-sessions', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true, status: 200,
+      json: async () => ({ sessions: ["sess-abc", "sess-def"] }),
+    });
+    const result = await getClaudeSessions(7);
+    expect(result.sessions).toEqual(["sess-abc", "sess-def"]);
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/api/sessions/7/claude-sessions'),
+      expect.any(Object),
+    );
+  });
+
+  it('resumeClaudeSession sends POST to /api/sessions/:id/resume', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true, status: 200,
+      json: async () => ({ status: 'resumed' }),
+    });
+    await resumeClaudeSession(3, 'sess-xyz');
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/api/sessions/3/resume'),
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ claude_session_id: 'sess-xyz' }),
+      }),
+    );
+  });
+
+  it('startFreshSession sends POST to /api/sessions/:id/fresh', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true, status: 200,
+      json: async () => ({ status: 'started' }),
+    });
+    await startFreshSession(5);
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/api/sessions/5/fresh'),
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  it('getDetectedPlugins sends GET to /api/plugins/detected', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true, status: 200,
+      json: async () => ({ detected: ["claude-code", "aider", "playwright"] }),
+    });
+    const result = await getDetectedPlugins();
+    expect(result.detected).toEqual(["claude-code", "aider", "playwright"]);
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/api/plugins/detected'),
+      expect.any(Object),
+    );
   });
 
   it('ApiError has status and body', async () => {

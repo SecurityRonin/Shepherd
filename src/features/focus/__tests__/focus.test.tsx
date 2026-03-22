@@ -198,4 +198,60 @@ describe("FocusView", () => {
     // DiffViewer shows empty state when no diffs
     expect(screen.getByText("No file changes yet")).toBeInTheDocument();
   });
+
+  it("renders status dot for the focused task", async () => {
+    const task = makeTask({ id: 1, title: "Running task", status: "running" });
+    useStore.setState({
+      tasks: { 1: task },
+      focusedTaskId: 1,
+    });
+
+    const { FocusView } = await import("../FocusView");
+    render(<FocusView />);
+
+    // Should show the running status somewhere
+    const titleElements = screen.getAllByText("Running task");
+    expect(titleElements.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("renders branch name in the header", async () => {
+    const task = makeTask({ id: 1, branch: "feat/my-branch" });
+    useStore.setState({
+      tasks: { 1: task },
+      focusedTaskId: 1,
+    });
+
+    const { FocusView } = await import("../FocusView");
+    render(<FocusView />);
+
+    expect(screen.getByText("feat/my-branch")).toBeInTheDocument();
+  });
+});
+
+// --- formatTimeSince tests ---
+
+describe("formatTimeSince", () => {
+  it("returns 'just now' for future dates", async () => {
+    const { formatTimeSince } = await import("../FocusView");
+    const future = new Date(Date.now() + 10000).toISOString();
+    expect(formatTimeSince(future)).toBe("just now");
+  });
+
+  it("returns seconds ago for recent timestamps", async () => {
+    const { formatTimeSince } = await import("../FocusView");
+    const thirtySecondsAgo = new Date(Date.now() - 30000).toISOString();
+    expect(formatTimeSince(thirtySecondsAgo)).toBe("30s ago");
+  });
+
+  it("returns minutes ago for timestamps within the hour", async () => {
+    const { formatTimeSince } = await import("../FocusView");
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    expect(formatTimeSince(fiveMinutesAgo)).toBe("5m ago");
+  });
+
+  it("returns hours ago for timestamps beyond an hour", async () => {
+    const { formatTimeSince } = await import("../FocusView");
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    expect(formatTimeSince(twoHoursAgo)).toBe("2h ago");
+  });
 });

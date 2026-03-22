@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
 import type { Task } from "../../../types/task";
 import { useStore } from "../../../store";
 
@@ -145,6 +145,34 @@ describe("KanbanBoard", () => {
     const reviewHeader = screen.getByText("Review");
     expect(reviewHeader).toBeInTheDocument();
   });
+
+  it("fades old done tasks (>24h) with reduced opacity", async () => {
+    const oldDate = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
+    const recentDate = new Date().toISOString();
+    useStore.setState({
+      tasks: {
+        1: makeTask({ id: 1, title: "Old done task", status: "done", updated_at: oldDate }),
+        2: makeTask({ id: 2, title: "Recent done task", status: "done", updated_at: recentDate }),
+      },
+      pendingPermissions: [],
+    });
+    const { KanbanBoard } = await import("../KanbanBoard");
+    render(<KanbanBoard />);
+    // Both tasks should be visible but old one should have opacity-40
+    expect(screen.getByText("Recent done task")).toBeInTheDocument();
+    expect(screen.getByText("Old done task")).toBeInTheDocument();
+    const oldCard = screen.getByText("Old done task").closest(".opacity-40");
+    expect(oldCard).toBeInTheDocument();
+  });
+
+  it("renders empty board with no tasks", async () => {
+    useStore.setState({ tasks: {}, pendingPermissions: [] });
+    const { KanbanBoard } = await import("../KanbanBoard");
+    render(<KanbanBoard />);
+    // All columns should still render
+    expect(screen.getByText("Queued")).toBeInTheDocument();
+    expect(screen.getByText("Done")).toBeInTheDocument();
+  });
 });
 
 // --- TaskCard tests ---
@@ -195,5 +223,73 @@ describe("TaskCard", () => {
     render(<TaskCard task={task} />);
     // The staleness indicator should be present as a dot element
     expect(screen.getByTestId("staleness-indicator")).toBeInTheDocument();
+  });
+
+  it("does not show staleness indicator for non-active tasks", async () => {
+    const { TaskCard } = await import("../TaskCard");
+    const task = makeTask({ status: "done" });
+    render(<TaskCard task={task} />);
+    expect(screen.queryByTestId("staleness-indicator")).not.toBeInTheDocument();
+  });
+
+  it("calls onClick handler when clicked", async () => {
+    const { TaskCard } = await import("../TaskCard");
+    const onClick = vi.fn();
+    const task = makeTask({ title: "Clickable task" });
+    render(<TaskCard task={task} onClick={onClick} />);
+    fireEvent.click(screen.getByText("Clickable task").closest("[role='button']")!);
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders branch name", async () => {
+    const { TaskCard } = await import("../TaskCard");
+    const task = makeTask({ branch: "feat/my-feature" });
+    render(<TaskCard task={task} />);
+    expect(screen.getByText("feat/my-feature")).toBeInTheDocument();
+  });
+
+  it("shows iTerm2 badge when task has iterm2_session_id", async () => {
+    const { TaskCard } = await import("../TaskCard");
+    const task = makeTask({ iterm2_session_id: "session-123" });
+    render(<TaskCard task={task} />);
+    expect(screen.getByText(/iTerm2/i)).toBeInTheDocument();
+  });
+
+  it("does not show iTerm2 badge when no iterm2_session_id", async () => {
+    const { TaskCard } = await import("../TaskCard");
+    const task = makeTask();
+    render(<TaskCard task={task} />);
+    expect(screen.queryByText(/iTerm2/i)).not.toBeInTheDocument();
+  });
+
+  it("shows error styling for error status", async () => {
+    const { TaskCard } = await import("../TaskCard");
+    const task = makeTask({ status: "error" });
+    const { container } = render(<TaskCard task={task} />);
+    const card = container.firstElementChild;
+    expect(card?.className).toContain("border-shepherd-red");
+  });
+
+  it("shows 'Ready for review' text for review status", async () => {
+    const { TaskCard } = await import("../TaskCard");
+    const task = makeTask({ status: "review" });
+    render(<TaskCard task={task} />);
+    expect(screen.getByText("Ready for review")).toBeInTheDocument();
+  });
+
+  it("shows gate results for review tasks", async () => {
+    const { TaskCard } = await import("../TaskCard");
+    const task = makeTask({
+      status: "review",
+      gate_results: [
+        { gate: "lint", passed: true },
+        { gate: "tests", passed: false },
+      ],
+    });
+    render(<TaskCard task={task} />);
+    expect(screen.getByText("lint")).toBeInTheDocument();
+    expect(screen.getByText("tests")).toBeInTheDocument();
+    expect(screen.getByText("pass")).toBeInTheDocument();
+    expect(screen.getByText("fail")).toBeInTheDocument();
   });
 });

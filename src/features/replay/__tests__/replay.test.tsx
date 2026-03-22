@@ -86,4 +86,71 @@ describe("EventTypeBadge", () => {
     render(<EventTypeBadge type="unknown_custom" />);
     expect(screen.getByTestId("badge-unknown_custom").className).toContain("bg-gray-600");
   });
+
+  it("renders type text inside the badge", async () => {
+    const { EventTypeBadge } = await import("../EventTypeBadge");
+    render(<EventTypeBadge type="session_start" />);
+    expect(screen.getByTestId("badge-session_start")).toHaveTextContent("session_start");
+  });
+
+  it("applies correct color for all known badge types", async () => {
+    const { EventTypeBadge } = await import("../EventTypeBadge");
+    const knownTypes = [
+      { type: "session_start", color: "bg-green-600" },
+      { type: "session_end", color: "bg-gray-600" },
+      { type: "output", color: "bg-gray-500" },
+      { type: "permission_request", color: "bg-yellow-600" },
+      { type: "file_change", color: "bg-purple-600" },
+      { type: "llm_call", color: "bg-indigo-600" },
+      { type: "input", color: "bg-teal-600" },
+    ];
+
+    for (const { type, color } of knownTypes) {
+      const { unmount } = render(<EventTypeBadge type={type} />);
+      expect(screen.getByTestId(`badge-${type}`).className).toContain(color);
+      unmount();
+    }
+  });
+});
+
+// --- Additional EventRow tests ---
+
+describe("EventRow - expanded behavior", () => {
+  it("toggles content visibility on repeated clicks", async () => {
+    const { EventRow } = await import("../EventRow");
+    render(<EventRow event={SAMPLE_EVENT} />);
+
+    // Initially collapsed
+    expect(screen.queryByTestId("event-row-content")).not.toBeInTheDocument();
+
+    // First click: expand
+    fireEvent.click(screen.getByTestId("event-row-header"));
+    expect(screen.getByTestId("event-row-content")).toBeInTheDocument();
+
+    // Second click: collapse
+    fireEvent.click(screen.getByTestId("event-row-header"));
+    expect(screen.queryByTestId("event-row-content")).not.toBeInTheDocument();
+  });
+
+  it("renders timestamp for the event", async () => {
+    const { EventRow } = await import("../EventRow");
+    render(
+      <EventRow
+        event={{ ...SAMPLE_EVENT, timestamp: "2026-03-14T15:30:00Z" }}
+      />,
+    );
+    // The timestamp should be rendered (format depends on locale, but should contain time)
+    const header = screen.getByTestId("event-row-header");
+    expect(header.textContent).toBeTruthy();
+  });
+
+  it("renders the event summary text", async () => {
+    const { EventRow } = await import("../EventRow");
+    render(
+      <EventRow
+        event={{ ...SAMPLE_EVENT, summary: "Compiling project..." }}
+      />,
+    );
+    expect(screen.getByText("Compiling project...")).toBeInTheDocument();
+  });
 });

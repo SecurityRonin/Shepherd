@@ -7,6 +7,7 @@ import { DiffViewer } from "./DiffViewer";
 import { PermissionPrompt } from "./PermissionPrompt";
 import { SessionPicker } from "../iterm2/SessionPicker";
 import { SetupPrompt } from "../iterm2/SetupPrompt";
+import { getClaudeSessions, resumeClaudeSession, startFreshSession } from "../../lib/api";
 
 const STATUS_COLORS: Record<string, string> = {
   queued: "bg-shepherd-muted",
@@ -43,13 +44,13 @@ export const FocusView: React.FC = () => {
   // iTerm2 session picker state
   const [claudeSessions, setClaudeSessions] = useState<string[]>([]);
   const [setupDismissed, setSetupDismissed] = useState(false);
+  const [sessionError, setSessionError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!task?.iterm2_session_id) return;
-    fetch(`/api/sessions/${task.id}/claude-sessions`)
-      .then(r => r.json())
-      .then(data => setClaudeSessions(data.sessions ?? []))
-      .catch(() => {});
+    getClaudeSessions(task.id)
+      .then(data => { setSessionError(null); setClaudeSessions(data.sessions ?? []); })
+      .catch((err) => setSessionError(err instanceof Error ? err.message : "Failed to load sessions"));
   }, [task?.id, task?.iterm2_session_id]);
 
   // Resizable right panel state
@@ -136,19 +137,14 @@ export const FocusView: React.FC = () => {
                 {!setupDismissed && claudeSessions.length === 0 && (
                   <SetupPrompt onDismiss={() => setSetupDismissed(true)} />
                 )}
+                {sessionError && (
+                  <p className="text-xs text-shepherd-red">{sessionError}</p>
+                )}
                 <SessionPicker
                   taskId={task.id}
                   sessions={claudeSessions}
-                  onResume={sessionId =>
-                    fetch(`/api/sessions/${task.id}/resume`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ claude_session_id: sessionId }),
-                    })
-                  }
-                  onFresh={() =>
-                    fetch(`/api/sessions/${task.id}/fresh`, { method: 'POST' })
-                  }
+                  onResume={sessionId => resumeClaudeSession(task.id, sessionId)}
+                  onFresh={() => startFreshSession(task.id)}
                 />
               </div>
             )}

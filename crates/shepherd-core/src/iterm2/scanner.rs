@@ -8,6 +8,7 @@ const KNOWN_AGENTS: &[(&str, &str)] = &[
     ("codex", "codex"),
     ("adal", "adal"),
     ("aider", "aider"),
+    ("mistral-vibe", "mistral-vibe"),
     ("gemini", "gemini-cli"),
     ("opencode", "opencode"),
     ("goose", "goose"),
@@ -427,6 +428,11 @@ mod tests {
     }
 
     #[test]
+    fn test_detect_agent_mistral_vibe() {
+        assert_eq!(detect_agent("mistral-vibe"), Some("mistral-vibe"));
+    }
+
+    #[test]
     fn test_detect_agent_gemini() {
         assert_eq!(detect_agent("gemini"), Some("gemini-cli"));
     }
@@ -685,6 +691,24 @@ mod tests {
         };
         let ids = collect_session_ids(&[window]);
         assert!(ids.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_scan_finds_mistral_vibe_session() {
+        make_agent_mock!(
+            MockMistralVibe,
+            "sess-mistral-vibe",
+            "mistral-vibe",
+            "/src/ml-project"
+        );
+        let mut scanner = Scanner::new(std::collections::HashSet::new());
+        let candidates = scanner
+            .scan(&mut MockMistralVibe { calls: 0 })
+            .await
+            .unwrap();
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].agent_name, "mistral-vibe");
+        assert_eq!(candidates[0].cwd, "/src/ml-project");
     }
 
     #[tokio::test]

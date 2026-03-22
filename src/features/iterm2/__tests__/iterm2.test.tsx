@@ -106,4 +106,52 @@ describe('SetupPrompt', () => {
     fireEvent.click(btn);
     expect(onDismiss).toHaveBeenCalled();
   });
+
+  it('renders the setup title', () => {
+    render(<SetupPrompt onDismiss={vi.fn()} />);
+    expect(screen.getByText('Enable iTerm2 Integration')).toBeTruthy();
+  });
+
+  it('renders three numbered steps', () => {
+    render(<SetupPrompt onDismiss={vi.fn()} />);
+    const listItems = screen.getAllByRole('listitem');
+    expect(listItems.length).toBe(3);
+  });
+
+  it('mentions AutoLaunch directory in setup instructions', () => {
+    render(<SetupPrompt onDismiss={vi.fn()} />);
+    expect(screen.getByText(/AutoLaunch/)).toBeTruthy();
+  });
+});
+
+// --- Additional Iterm2Badge tests ---
+
+describe('Iterm2Badge - styling', () => {
+  it('renders as an inline badge with correct styling classes', () => {
+    const { container } = render(<Iterm2Badge />);
+    const badge = container.firstElementChild;
+    expect(badge?.className).toContain('rounded-full');
+    expect(badge?.className).toContain('text-xs');
+  });
+});
+
+// --- Additional SessionPicker tests ---
+
+describe('SessionPicker - selection change', () => {
+  it('changes selected session when dropdown value changes', () => {
+    const onResume = vi.fn();
+    render(
+      <SessionPicker
+        taskId={1}
+        sessions={['session-abc', 'session-def']}
+        onResume={onResume}
+        onFresh={vi.fn()}
+      />
+    );
+    // Change the select to second option
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'session-def' } });
+    // Click resume - should call with the newly selected session
+    fireEvent.click(screen.getByRole('button', { name: /resume/i }));
+    expect(onResume).toHaveBeenCalledWith('session-def');
+  });
 });

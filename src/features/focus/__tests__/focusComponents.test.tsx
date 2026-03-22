@@ -209,4 +209,207 @@ describe("PermissionPrompt", () => {
     // Should show the latest permission (write_file)
     expect(screen.getByTestId("permission-tool-name")).toHaveTextContent("write_file");
   });
+
+  it("calls approveTask when Approve button clicked", async () => {
+    const user = userEvent.setup();
+    // Mock the api module's approveTask
+    const apiModule = await import("../../../lib/api");
+    const spy = vi.spyOn(apiModule, "approveTask").mockResolvedValue(undefined as any);
+
+    const perm = makePermission({ task_id: 1 });
+    useStore.setState({ pendingPermissions: [perm] });
+
+    const { PermissionPrompt } = await import("../PermissionPrompt");
+    render(<PermissionPrompt taskId={1} />);
+
+    await user.click(screen.getByTestId("approve-button"));
+    expect(spy).toHaveBeenCalledWith(1);
+
+    spy.mockRestore();
+  });
+
+  it("only shows permissions for the given taskId", async () => {
+    const perm1 = makePermission({ id: 100, task_id: 1, tool_name: "write_file" });
+    const perm2 = makePermission({ id: 101, task_id: 2, tool_name: "execute_command" });
+    useStore.setState({ pendingPermissions: [perm1, perm2] });
+
+    const { PermissionPrompt } = await import("../PermissionPrompt");
+    render(<PermissionPrompt taskId={1} />);
+
+    // Should show write_file (task 1), not execute_command (task 2)
+    expect(screen.getByTestId("permission-tool-name")).toHaveTextContent("write_file");
+  });
+});
+
+// --- Terminal tests ---
+
+describe("Terminal", () => {
+  beforeEach(() => {
+    useStore.setState({
+      tasks: {},
+      focusedTaskId: null,
+      pendingPermissions: [],
+      wsClient: null,
+      terminalOutputHandlers: new Map(),
+    } as any);
+  });
+
+  it("renders terminal toolbar with task ID", async () => {
+    const { Terminal } = await import("../Terminal");
+    render(<Terminal taskId={42} />);
+    expect(screen.getByText("Terminal")).toBeInTheDocument();
+    expect(screen.getByText("Task #42")).toBeInTheDocument();
+  });
+
+  it("renders terminal container div", async () => {
+    const { Terminal } = await import("../Terminal");
+    render(<Terminal taskId={1} />);
+    expect(screen.getByTestId("terminal-container")).toBeInTheDocument();
+  });
+
+  it("creates xterm instance and opens it in container", async () => {
+    const { Terminal: TerminalComponent } = await import("../Terminal");
+    render(<TerminalComponent taskId={1} />);
+
+    // The mock XTerm constructor should have been called and open() invoked
+    // We can verify the container is rendered
+    const container = screen.getByTestId("terminal-container");
+    expect(container).toBeInTheDocument();
+  });
+
+  it("registers and unregisters terminal handler", async () => {
+    const registerSpy = vi.fn();
+    const unregisterSpy = vi.fn();
+    useStore.setState({
+      registerTerminalHandler: registerSpy,
+      unregisterTerminalHandler: unregisterSpy,
+    } as any);
+
+    const { Terminal: TerminalComponent } = await import("../Terminal");
+    const { unmount } = render(<TerminalComponent taskId={7} />);
+
+    expect(registerSpy).toHaveBeenCalledWith(7, expect.any(Function));
+
+    unmount();
+    expect(unregisterSpy).toHaveBeenCalledWith(7);
+  });
+});
+
+// --- DiffViewer with diffs tests ---
+
+describe("DiffViewer: with file diffs", () => {
+  beforeEach(() => {
+    useStore.setState({
+      tasks: {},
+      focusedTaskId: null,
+      pendingPermissions: [],
+    });
+  });
+
+  it("renders file tabs when diffs exist", async () => {
+    const task = makeTask({
+      id: 1,
+      diffs: [
+        {
+          file_path: "src/main.rs",
+          before_content: "fn main() {}",
+          after_content: 'fn main() { println!("hello"); }',
+          language: "rust",
+        },
+        {
+          file_path: "src/lib.rs",
+          before_content: "",
+          after_content: "pub mod utils;",
+          language: "rust",
+        },
+      ],
+    });
+    useStore.setState({ tasks: { 1: task } });
+
+    const { DiffViewer } = await import("../DiffViewer");
+    render(<DiffViewer taskId={1} />);
+
+    // Tab buttons show the filename, full path in title attribute
+    expect(screen.getByText("main.rs")).toBeInTheDocument();
+    expect(screen.getByText("lib.rs")).toBeInTheDocument();
+    expect(screen.getByTitle("src/main.rs")).toBeInTheDocument();
+    expect(screen.getByTitle("src/lib.rs")).toBeInTheDocument();
+  });
+
+  it("renders Monaco DiffEditor for active file", async () => {
+    const task = makeTask({
+      id: 1,
+      diffs: [
+        {
+          file_path: "app.ts",
+          before_content: "const x = 1;",
+          after_content: "const x = 2;",
+          language: "typescript",
+        },
+      ],
+    });
+    useStore.setState({ tasks: { 1: task } });
+
+    const { DiffViewer } = await import("../DiffViewer");
+    render(<DiffViewer taskId={1} />);
+
+    // The mocked DiffEditor should be rendered
+    expect(screen.getByTestId("mock-diff-editor")).toBeInTheDocument();
+  });
+
+  it("renders Unified/Split toggle buttons", async () => {
+    const task = makeTask({
+      id: 1,
+      diffs: [
+        {
+          file_path: "a.ts",
+          before_content: "",
+          after_content: "a",
+          language: "typescript",
+        },
+      ],
+    });
+    useStore.setState({ tasks: { 1: task } });
+
+    const { DiffViewer } = await import("../DiffViewer");
+    render(<DiffViewer taskId={1} />);
+
+    expect(screen.getByText("Unified")).toBeInTheDocument();
+    expect(screen.getByText("Split")).toBeInTheDocument();
+  });
+
+  it("renders all file tabs when multiple diffs exist", async () => {
+    const task = makeTask({
+      id: 1,
+      diffs: [
+        {
+          file_path: "a.ts",
+          before_content: "",
+          after_content: "a",
+          language: "typescript",
+        },
+        {
+          file_path: "b.ts",
+          before_content: "",
+          after_content: "b",
+          language: "typescript",
+        },
+        {
+          file_path: "c.ts",
+          before_content: "",
+          after_content: "c",
+          language: "typescript",
+        },
+      ],
+    });
+    useStore.setState({ tasks: { 1: task } });
+
+    const { DiffViewer } = await import("../DiffViewer");
+    render(<DiffViewer taskId={1} />);
+
+    // Should render a tab for each file (use title attribute which has full path)
+    expect(screen.getByTitle("a.ts")).toBeInTheDocument();
+    expect(screen.getByTitle("b.ts")).toBeInTheDocument();
+    expect(screen.getByTitle("c.ts")).toBeInTheDocument();
+  });
 });

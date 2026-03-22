@@ -1,0 +1,25 @@
+[agent]
+name = "Mistral Vibe"
+command = "mistral-vibe"
+args = ["--auto-approve"]
+args_interactive = []
+version_check = "mistral-vibe --version"
+icon = "mistral-vibe"
+
+[status]
+working_patterns = ["Thinking", "Running", "Writing", "Editing"]
+idle_patterns = ["> ", "vibe> "]
+input_patterns = ["[y/n", "approve?", "Allow?"]
+error_patterns = ["Error:", "error:", "FAILED", "Traceback"]
+
+[permissions]
+approve = "y\n"
+approve_all = "y\n"
+deny = "n\n"
+
+[capabilities]
+supports_hooks = false
+supports_prompt_arg = true
+supports_resume = false
+supports_mcp = false
+supports_worktree = true

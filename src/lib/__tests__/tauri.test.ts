@@ -65,4 +65,47 @@ describe('tauri.ts', () => {
       expect(mockInvoke).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe('listen', () => {
+    it('returns a no-op unlisten when Tauri is not available', async () => {
+      const { listen } = await import('../tauri');
+      const handler = vi.fn();
+      const unlisten = await listen('some-event', handler);
+      expect(typeof unlisten).toBe('function');
+      // Calling unlisten should not throw
+      unlisten();
+    });
+
+    it('calls Tauri listen when __TAURI__ is present', async () => {
+      const mockUnlisten = vi.fn();
+      const mockListen = vi.fn().mockResolvedValue(mockUnlisten);
+      (window as any).__TAURI__ = {};
+
+      vi.doMock('@tauri-apps/api/event', () => ({
+        listen: mockListen,
+      }));
+
+      const { listen } = await import('../tauri');
+      const handler = vi.fn();
+      const unlisten = await listen('auth-callback-success', handler);
+
+      expect(mockListen).toHaveBeenCalledWith('auth-callback-success', handler);
+      expect(unlisten).toBe(mockUnlisten);
+    });
+
+    it('returns no-op unlisten if Tauri listen throws', async () => {
+      (window as any).__TAURI__ = {};
+
+      vi.doMock('@tauri-apps/api/event', () => ({
+        listen: vi.fn().mockRejectedValue(new Error('event system unavailable')),
+      }));
+
+      const { listen } = await import('../tauri');
+      const handler = vi.fn();
+      const unlisten = await listen('broken-event', handler);
+      expect(typeof unlisten).toBe('function');
+      // Should not throw
+      unlisten();
+    });
+  });
 });
