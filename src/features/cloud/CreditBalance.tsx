@@ -5,7 +5,7 @@ interface CreditBalanceProps {
   topupUrl: string;
 }
 
-export const CreditBalance: React.FC<CreditBalanceProps> = ({ balance, topupUrl }) => {
+export const CreditBalance: React.FC<CreditBalanceProps> = React.memo(({ balance, topupUrl }) => {
   return (
     <div className="text-center py-4">
       <div className="text-4xl font-bold text-yellow-400 font-mono" data-testid="credit-balance">
@@ -23,4 +23,4 @@ export const CreditBalance: React.FC<CreditBalanceProps> = ({ balance, topupUrl 
       </a>
     </div>
   );
-};
+});

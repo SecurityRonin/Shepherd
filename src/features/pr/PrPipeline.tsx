@@ -1,10 +1,7 @@
 import React, { useState } from "react";
-
-interface StepResult {
-  name: string;
-  status: string;
-  output: string;
-}
+import { createPr } from "../../lib/api";
+import type { PrStepResult } from "../../lib/api";
+import { ErrorDisplay } from "../shared/ErrorDisplay";
 
 export interface PrPipelineProps {
   taskId: number;
@@ -25,7 +22,7 @@ export const PrPipeline: React.FC<PrPipelineProps> = ({
   taskTitle,
   branch,
 }) => {
-  const [steps, setSteps] = useState<StepResult[]>([]);
+  const [steps, setSteps] = useState<PrStepResult[]>([]);
   const [prUrl, setPrUrl] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,22 +35,12 @@ export const PrPipeline: React.FC<PrPipelineProps> = ({
     setPrUrl(null);
 
     try {
-      const res = await fetch(`/api/tasks/${taskId}/pr`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          base_branch: baseBranch,
-          auto_commit_message: true,
-          run_gates: true,
-        }),
+      const data = await createPr(taskId, {
+        base_branch: baseBranch,
+        auto_commit_message: true,
+        run_gates: true,
       });
 
-      if (!res.ok) {
-        const errBody = await res.json();
-        throw new Error(errBody.error || `HTTP ${res.status}`);
-      }
-
-      const data = await res.json();
       setSteps(data.steps ?? []);
       setPrUrl(data.pr_url ?? null);
 
@@ -128,14 +115,7 @@ export const PrPipeline: React.FC<PrPipelineProps> = ({
         </div>
       )}
 
-      {error && (
-        <div
-          className="p-3 rounded bg-red-900/30 border border-red-700 text-sm text-red-300"
-          data-testid="pr-error"
-        >
-          {error}
-        </div>
-      )}
+      <ErrorDisplay message={error} testId="pr-error" variant="dark" />
 
       {prUrl && (
         <div

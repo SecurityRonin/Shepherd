@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { Task } from "../../../types/task";
 import type { PermissionEvent } from "../../../types/events";
@@ -226,6 +226,35 @@ describe("PermissionPrompt", () => {
     expect(spy).toHaveBeenCalledWith(1);
 
     spy.mockRestore();
+  });
+
+  it("shows error when approve fails", async () => {
+    const user = userEvent.setup();
+    const apiModule = await import("../../../lib/api");
+    const spy = vi.spyOn(apiModule, "approveTask").mockRejectedValue(new Error("Task already resolved"));
+
+    const perm = makePermission({ task_id: 1 });
+    useStore.setState({ pendingPermissions: [perm] });
+
+    const { PermissionPrompt } = await import("../PermissionPrompt");
+    render(<PermissionPrompt taskId={1} />);
+
+    await user.click(screen.getByTestId("approve-button"));
+    await waitFor(() => expect(screen.getByTestId("permission-error")).toHaveTextContent("Task already resolved"));
+
+    spy.mockRestore();
+  });
+
+  it("custom input has accessible aria-label", async () => {
+    const user = userEvent.setup();
+    const perm = makePermission({ task_id: 1 });
+    useStore.setState({ pendingPermissions: [perm] });
+
+    const { PermissionPrompt } = await import("../PermissionPrompt");
+    render(<PermissionPrompt taskId={1} />);
+
+    await user.click(screen.getByTestId("custom-toggle-button"));
+    expect(screen.getByRole("textbox", { name: /custom response/i })).toBeInTheDocument();
   });
 
   it("only shows permissions for the given taskId", async () => {

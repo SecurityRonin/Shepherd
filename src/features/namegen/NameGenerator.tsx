@@ -1,4 +1,7 @@
 import React, { useState, useCallback } from "react";
+import { generateNames } from "../../lib/api";
+import type { NameCandidate } from "../../lib/api";
+import { ErrorDisplay } from "../shared/ErrorDisplay";
 
 // ── Constants ────────────────────────────────────────────────────────
 
@@ -30,30 +33,6 @@ const STATUS_STYLES: Record<
   conflicted: { bg: "bg-red-100", text: "text-red-800", label: "Conflicted" },
   pending: { bg: "bg-gray-100", text: "text-gray-600", label: "Pending" },
 };
-
-// ── Types ────────────────────────────────────────────────────────────
-
-interface DomainResponse {
-  tld: string;
-  domain: string;
-  available: boolean | null;
-}
-
-interface CandidateResponse {
-  name: string;
-  tagline: string | null;
-  reasoning: string;
-  status: string;
-  domains: DomainResponse[];
-  npm_available: boolean | null;
-  pypi_available: boolean | null;
-  github_available: boolean | null;
-  negative_associations: string[];
-}
-
-interface NameGenApiResponse {
-  candidates: CandidateResponse[];
-}
 
 // ── Sub-components ───────────────────────────────────────────────────
 
@@ -91,7 +70,7 @@ function AvailabilityDot({
 export const NameGenerator: React.FC = () => {
   const [description, setDescription] = useState("");
   const [selectedVibes, setSelectedVibes] = useState<Set<Vibe>>(new Set());
-  const [candidates, setCandidates] = useState<CandidateResponse[]>([]);
+  const [candidates, setCandidates] = useState<NameCandidate[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedName, setSelectedName] = useState<string | null>(null);
@@ -117,25 +96,11 @@ export const NameGenerator: React.FC = () => {
     setSelectedName(null);
 
     try {
-      const response = await fetch("/api/namegen", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          description: description.trim(),
-          vibes: Array.from(selectedVibes),
-          count: 20,
-        }),
+      const data = await generateNames({
+        description: description.trim(),
+        vibes: Array.from(selectedVibes),
+        count: 20,
       });
-
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        throw new Error(
-          (body as { error?: string }).error ||
-            `Request failed with status ${response.status}`,
-        );
-      }
-
-      const data: NameGenApiResponse = await response.json();
       setCandidates(data.candidates);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
@@ -199,12 +164,7 @@ export const NameGenerator: React.FC = () => {
         {loading ? "Generating..." : "Generate Names"}
       </button>
 
-      {/* Error Display */}
-      {error && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-          {error}
-        </div>
-      )}
+      <ErrorDisplay message={error} />
 
       {/* Results Table */}
       {candidates.length > 0 && (
@@ -248,7 +208,6 @@ export const NameGenerator: React.FC = () => {
                       <tr
                         className={`${isConflicted ? "opacity-50" : ""} ${isSelected ? "bg-blue-50" : "hover:bg-gray-50"} transition-colors`}
                       >
-                        {/* Name */}
                         <td className="px-4 py-3">
                           <div
                             className={`font-medium text-gray-900 ${isConflicted ? "line-through" : ""}`}
@@ -261,8 +220,6 @@ export const NameGenerator: React.FC = () => {
                             </div>
                           )}
                         </td>
-
-                        {/* Status Badge */}
                         <td className="px-4 py-3">
                           <span
                             className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${style.bg} ${style.text}`}
@@ -270,8 +227,6 @@ export const NameGenerator: React.FC = () => {
                             {style.label}
                           </span>
                         </td>
-
-                        {/* Domains */}
                         <td className="px-4 py-3">
                           <div className="flex gap-2">
                             {candidate.domains.map((d) => (
@@ -285,29 +240,15 @@ export const NameGenerator: React.FC = () => {
                             ))}
                           </div>
                         </td>
-
-                        {/* npm */}
                         <td className="px-4 py-3 text-center">
-                          <AvailabilityDot
-                            available={candidate.npm_available}
-                          />
+                          <AvailabilityDot available={candidate.npm_available} />
                         </td>
-
-                        {/* PyPI */}
                         <td className="px-4 py-3 text-center">
-                          <AvailabilityDot
-                            available={candidate.pypi_available}
-                          />
+                          <AvailabilityDot available={candidate.pypi_available} />
                         </td>
-
-                        {/* GitHub */}
                         <td className="px-4 py-3 text-center">
-                          <AvailabilityDot
-                            available={candidate.github_available}
-                          />
+                          <AvailabilityDot available={candidate.github_available} />
                         </td>
-
-                        {/* Action */}
                         <td className="px-4 py-3 text-right">
                           <button
                             type="button"
@@ -319,8 +260,6 @@ export const NameGenerator: React.FC = () => {
                           </button>
                         </td>
                       </tr>
-
-                      {/* Negative Associations Warning */}
                       {candidate.negative_associations.length > 0 && (
                         <tr className="bg-red-50">
                           <td colSpan={7} className="px-4 py-2">
@@ -344,7 +283,6 @@ export const NameGenerator: React.FC = () => {
         </div>
       )}
 
-      {/* Apply Button */}
       {selectedName && (
         <div className="flex items-center gap-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
           <span className="text-sm text-blue-800">

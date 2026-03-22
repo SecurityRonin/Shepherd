@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from "react";
 import { useStore } from "../../store";
 import { approveTask } from "../../lib/api";
+import { ErrorDisplay } from "../shared/ErrorDisplay";
 
 interface PermissionPromptProps {
   taskId: number;
@@ -14,15 +15,17 @@ export const PermissionPrompt: React.FC<PermissionPromptProps> = ({ taskId }) =>
   const [showCustomInput, setShowCustomInput] = useState(false);
   const [customText, setCustomText] = useState("");
   const [isApproving, setIsApproving] = useState(false);
+  const [approveError, setApproveError] = useState<string | null>(null);
 
   const latestPermission = taskPermissions[taskPermissions.length - 1];
 
   const handleApprove = useCallback(async () => {
     setIsApproving(true);
+    setApproveError(null);
     try {
       await approveTask(taskId);
-    } catch {
-      // Error handled upstream
+    } catch (err) {
+      setApproveError(err instanceof Error ? err.message : "Approval failed");
     } finally {
       setIsApproving(false);
     }
@@ -30,10 +33,11 @@ export const PermissionPrompt: React.FC<PermissionPromptProps> = ({ taskId }) =>
 
   const handleApproveAll = useCallback(async () => {
     setIsApproving(true);
+    setApproveError(null);
     try {
       await approveTask(taskId);
-    } catch {
-      // Error handled upstream
+    } catch (err) {
+      setApproveError(err instanceof Error ? err.message : "Approval failed");
     } finally {
       setIsApproving(false);
     }
@@ -121,6 +125,8 @@ export const PermissionPrompt: React.FC<PermissionPromptProps> = ({ taskId }) =>
         </div>
       </div>
 
+      <ErrorDisplay message={approveError} testId="permission-error" variant="dark" />
+
       {/* Custom input */}
       {showCustomInput && (
         <div className="mt-2 flex items-center gap-2" data-testid="custom-input-area">
@@ -138,6 +144,7 @@ export const PermissionPrompt: React.FC<PermissionPromptProps> = ({ taskId }) =>
               }
             }}
             placeholder="Type custom response..."
+            aria-label="Custom response"
             className="flex-1 px-3 py-1.5 text-xs rounded bg-shepherd-bg border border-shepherd-border text-shepherd-text placeholder:text-shepherd-muted focus:outline-none focus:border-shepherd-accent"
             autoFocus
             data-testid="custom-input"

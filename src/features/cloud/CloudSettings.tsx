@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { TrialBadge } from "./TrialBadge";
 import { CreditBalance } from "./CreditBalance";
+import { ErrorDisplay } from "../shared/ErrorDisplay";
 import {
   getCloudStatus,
   getLoginUrl,
@@ -22,6 +23,7 @@ type CloudState =
 
 export const CloudSettings: React.FC = () => {
   const [state, setState] = useState<CloudState>({ phase: "loading" });
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const loadCloudState = useCallback(async () => {
     try {
@@ -53,20 +55,22 @@ export const CloudSettings: React.FC = () => {
   }, [loadCloudState]);
 
   const handleLogin = async () => {
+    setActionError(null);
     try {
       const { login_url } = await getLoginUrl();
       window.open(login_url, "_blank");
-    } catch {
-      // Silently fail
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Login failed");
     }
   };
 
   const handleLogout = async () => {
+    setActionError(null);
     try {
       await apiLogout();
       setState({ phase: "unauthenticated" });
-    } catch {
-      // Silently fail
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Logout failed");
     }
   };
 
@@ -97,6 +101,7 @@ export const CloudSettings: React.FC = () => {
         >
           Sign in with GitHub
         </button>
+        <ErrorDisplay message={actionError} testId="cloud-error" />
       </div>
     );
   }
@@ -116,6 +121,8 @@ export const CloudSettings: React.FC = () => {
           Sign out
         </button>
       </div>
+
+      <ErrorDisplay message={actionError} testId="cloud-error" />
 
       <div className="text-sm text-gray-300">
         <span data-testid="user-email">{profile.email ?? profile.display_name ?? "Unknown user"}</span>

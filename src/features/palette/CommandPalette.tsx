@@ -285,6 +285,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
             ref={inputRef}
             type="text"
             placeholder="Search commands..."
+            aria-label="Search commands"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="flex-1 bg-transparent text-sm text-white placeholder-zinc-500 outline-none"

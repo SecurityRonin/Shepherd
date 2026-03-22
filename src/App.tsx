@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect } from "react";
+import { ErrorBoundary } from "./features/shared/ErrorBoundary";
 import { Layout } from "./features/shared/Layout";
 import { KanbanBoard } from "./features/kanban/KanbanBoard";
 import { FocusView } from "./features/focus/FocusView";
@@ -92,17 +93,19 @@ const App: React.FC = () => {
   };
 
   return (
-    <Layout>
-      {renderView()}
-      <CommandPalette
-        isOpen={isCommandPaletteOpen}
-        onClose={() => setCommandPaletteOpen(false)}
-      />
-      <NewTaskDialog
-        isOpen={isNewTaskDialogOpen}
-        onClose={() => setNewTaskDialogOpen(false)}
-      />
-    </Layout>
+    <ErrorBoundary>
+      <Layout>
+        {renderView()}
+        <CommandPalette
+          isOpen={isCommandPaletteOpen}
+          onClose={() => setCommandPaletteOpen(false)}
+        />
+        <NewTaskDialog
+          isOpen={isNewTaskDialogOpen}
+          onClose={() => setNewTaskDialogOpen(false)}
+        />
+      </Layout>
+    </ErrorBoundary>
   );
 };
 

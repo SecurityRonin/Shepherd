@@ -233,6 +233,40 @@ describe("CloudSettings", () => {
     expect(screen.getByTestId("topup-link")).toHaveAttribute("href", "https://example.com/topup");
   });
 
+  it("shows error when login fails", async () => {
+    vi.mocked(getCloudStatus).mockResolvedValue({
+      cloud_available: true,
+      authenticated: false,
+      plan: null,
+      credits_balance: null,
+      cloud_generation_enabled: false,
+    });
+    vi.mocked(getLoginUrl).mockRejectedValue(new Error("OAuth unavailable"));
+    const { CloudSettings } = await import("../CloudSettings");
+    render(<CloudSettings />);
+    await waitFor(() => expect(screen.getByTestId("sign-in-button")).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId("sign-in-button"));
+    await waitFor(() => expect(screen.getByTestId("cloud-error")).toHaveTextContent("OAuth unavailable"));
+  });
+
+  it("shows error when logout fails", async () => {
+    vi.mocked(getCloudStatus).mockResolvedValue({
+      cloud_available: true,
+      authenticated: true,
+      plan: "pro",
+      credits_balance: 42,
+      cloud_generation_enabled: true,
+    });
+    vi.mocked(getProfile).mockResolvedValue(SAMPLE_PROFILE);
+    vi.mocked(getBalance).mockResolvedValue(SAMPLE_BALANCE);
+    vi.mocked(apiLogout).mockRejectedValue(new Error("Session expired"));
+    const { CloudSettings } = await import("../CloudSettings");
+    render(<CloudSettings />);
+    await waitFor(() => expect(screen.getByTestId("logout-button")).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId("logout-button"));
+    await waitFor(() => expect(screen.getByTestId("cloud-error")).toHaveTextContent("Session expired"));
+  });
+
   it("falls back to unauthenticated when profile fails", async () => {
     vi.mocked(getCloudStatus).mockResolvedValue({
       cloud_available: true,

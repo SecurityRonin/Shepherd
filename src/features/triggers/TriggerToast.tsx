@@ -1,13 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-
-interface TriggerSuggestion {
-  id: string;
-  tool: string;
-  message: string;
-  action_label: string;
-  action_route: string;
-  priority: 'low' | 'medium' | 'high';
-}
+import { checkTriggers, dismissTrigger } from '../../lib/api';
+import type { TriggerSuggestion } from '../../lib/api';
 
 interface TriggerToastProps {
   projectDir: string;
@@ -20,23 +13,17 @@ export function TriggerToast({ projectDir, onNavigate }: TriggerToastProps) {
   const [visible, setVisible] = useState<string | null>(null);
 
   useEffect(() => {
-    const checkTriggers = async () => {
+    const poll = async () => {
       try {
-        const resp = await fetch('/api/triggers/check', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ project_dir: projectDir }),
-        });
-        if (!resp.ok) return;
-        const data: TriggerSuggestion[] = await resp.json();
+        const data = await checkTriggers(projectDir);
         setSuggestions(data.filter(s => !dismissed.has(s.id)));
       } catch {
-        // Silently fail — triggers are non-critical
+        // Triggers are non-critical — fail silently
       }
     };
 
-    checkTriggers();
-    const interval = setInterval(checkTriggers, 30000);
+    poll();
+    const interval = setInterval(poll, 30000);
     return () => clearInterval(interval);
   }, [projectDir, dismissed]);
 
@@ -51,11 +38,9 @@ export function TriggerToast({ projectDir, onNavigate }: TriggerToastProps) {
   const dismiss = useCallback((id: string) => {
     setDismissed(prev => new Set([...prev, id]));
     setVisible(null);
-    fetch('/api/triggers/dismiss', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ trigger_id: id, project_dir: projectDir }),
-    }).catch((err) => console.error("Failed to dismiss trigger:", err));
+    dismissTrigger(id, projectDir).catch((err) =>
+      console.error("Failed to dismiss trigger:", err),
+    );
   }, [projectDir]);
 
   const activeSuggestion = suggestions.find(s => s.id === visible);

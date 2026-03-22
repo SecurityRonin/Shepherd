@@ -61,6 +61,12 @@ describe("CommandPalette", () => {
     expect(screen.getByText(/no matching/i)).toBeInTheDocument();
   });
 
+  it("search input has accessible aria-label", async () => {
+    const { CommandPalette } = await import("../CommandPalette");
+    render(<CommandPalette isOpen={true} onClose={() => {}} />);
+    expect(screen.getByRole("textbox", { name: /search commands/i })).toBeInTheDocument();
+  });
+
   it("does not render when closed", async () => {
     const { CommandPalette } = await import("../CommandPalette");
     const { container } = render(

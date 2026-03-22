@@ -1,27 +1,9 @@
 import React, { useState, useEffect, useCallback } from "react";
+import { getNorthStarPhases, executeNorthStarPhase } from "../../lib/api";
+import type { PhaseInfo, ExecutePhaseResponse } from "../../lib/api";
+import { ErrorDisplay } from "../shared/ErrorDisplay";
 
 // ── Types ────────────────────────────────────────────────────────────
-
-interface PhaseInfo {
-  id: number;
-  name: string;
-  description: string;
-  document_count: number;
-}
-
-interface DocumentResponse {
-  title: string;
-  filename: string;
-  doc_type: string;
-}
-
-interface ExecutePhaseResponse {
-  phase_id: number;
-  phase_name: string;
-  status: string;
-  output: string;
-  documents: DocumentResponse[];
-}
 
 interface PhaseState {
   info: PhaseInfo;
@@ -60,14 +42,9 @@ export const NorthStarWizard: React.FC = () => {
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch phases on mount
   useEffect(() => {
-    const fetchPhases = async () => {
-      try {
-        const response = await fetch("/api/northstar/phases");
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data: { phases: PhaseInfo[]; total: number } =
-          await response.json();
+    getNorthStarPhases()
+      .then((data) => {
         setPhases(
           data.phases.map((info) => ({
             info,
@@ -75,14 +52,12 @@ export const NorthStarWizard: React.FC = () => {
             result: null,
           })),
         );
-      } catch (err) {
+      })
+      .catch((err) => {
         setError(
           err instanceof Error ? err.message : "Failed to load phases",
         );
-      }
-    };
-
-    fetchPhases();
+      });
   }, []);
 
   const startAnalysis = useCallback(async () => {
@@ -91,7 +66,6 @@ export const NorthStarWizard: React.FC = () => {
     setAnalyzing(true);
     setError(null);
 
-    // Reset all phases to pending
     setPhases((prev) =>
       prev.map((p) => ({ ...p, status: "pending" as const, result: null })),
     );
@@ -101,7 +75,6 @@ export const NorthStarWizard: React.FC = () => {
     for (let i = 0; i < phases.length; i++) {
       const phase = phases[i];
 
-      // Mark current phase as running
       setPhases((prev) =>
         prev.map((p, idx) =>
           idx === i ? { ...p, status: "running" as const } : p,
@@ -109,28 +82,13 @@ export const NorthStarWizard: React.FC = () => {
       );
 
       try {
-        const response = await fetch("/api/northstar/phase", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            product_name: productName.trim(),
-            product_description: productDescription.trim(),
-            phase_id: phase.info.id,
-            previous_context: previousContext || undefined,
-          }),
+        const result = await executeNorthStarPhase({
+          product_name: productName.trim(),
+          product_description: productDescription.trim(),
+          phase_id: phase.info.id,
+          previous_context: previousContext || undefined,
         });
 
-        if (!response.ok) {
-          const body = await response.json().catch(() => ({}));
-          throw new Error(
-            (body as Record<string, string>).error ||
-              `HTTP ${response.status}`,
-          );
-        }
-
-        const result: ExecutePhaseResponse = await response.json();
-
-        // Mark phase as completed
         setPhases((prev) =>
           prev.map((p, idx) =>
             idx === i
@@ -139,11 +97,9 @@ export const NorthStarWizard: React.FC = () => {
           ),
         );
 
-        // Build context for next phase (first 2000 chars)
         const snippet = result.output.slice(0, 2000);
         previousContext += `\n\n## Phase ${result.phase_id}: ${result.phase_name}\n${snippet}`;
       } catch (err) {
-        // Mark phase as failed
         setPhases((prev) =>
           prev.map((p, idx) =>
             idx === i ? { ...p, status: "failed" as const } : p,
@@ -219,12 +175,7 @@ export const NorthStarWizard: React.FC = () => {
         </button>
       </div>
 
-      {/* Error */}
-      {error && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-          {error}
-        </div>
-      )}
+      <ErrorDisplay message={error} />
 
       {/* Progress Counter */}
       {(analyzing || completedPhases.length > 0) && (
@@ -257,7 +208,6 @@ export const NorthStarWizard: React.FC = () => {
                       </span>
                     </div>
 
-                    {/* Document list for completed phases */}
                     {phase.status === "completed" &&
                       phase.result &&
                       phase.result.documents.length > 0 && (

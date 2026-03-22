@@ -1,4 +1,7 @@
 import React, { useState, useCallback } from "react";
+import { generateLogo, exportLogo } from "../../lib/api";
+import type { LogoVariant, ExportedFile } from "../../lib/api";
+import { ErrorDisplay } from "../shared/ErrorDisplay";
 
 // ── Constants ────────────────────────────────────────────────────────
 
@@ -11,29 +14,6 @@ const STYLES = [
 
 type StyleId = (typeof STYLES)[number]["id"];
 
-// ── Types ────────────────────────────────────────────────────────────
-
-interface VariantResponse {
-  index: number;
-  image_data: string;
-  is_url: boolean;
-}
-
-interface LogoGenApiResponse {
-  variants: VariantResponse[];
-}
-
-interface ExportedFileResponse {
-  path: string;
-  format: string;
-  size_bytes: number;
-  dimensions: [number, number] | null;
-}
-
-interface ExportApiResponse {
-  files: ExportedFileResponse[];
-}
-
 // ── Component ────────────────────────────────────────────────────────
 
 export const LogoGenerator: React.FC = () => {
@@ -41,9 +21,9 @@ export const LogoGenerator: React.FC = () => {
   const [description, setDescription] = useState("");
   const [selectedStyle, setSelectedStyle] = useState<StyleId>("minimal");
   const [colors, setColors] = useState<[string, string]>(["#3B82F6", "#1E293B"]);
-  const [variants, setVariants] = useState<VariantResponse[]>([]);
+  const [variants, setVariants] = useState<LogoVariant[]>([]);
   const [selectedVariant, setSelectedVariant] = useState<number | null>(null);
-  const [exportedFiles, setExportedFiles] = useState<ExportedFileResponse[]>([]);
+  const [exportedFiles, setExportedFiles] = useState<ExportedFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,25 +49,12 @@ export const LogoGenerator: React.FC = () => {
     setExportedFiles([]);
 
     try {
-      const response = await fetch("/api/logogen", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          product_name: productName.trim(),
-          product_description: description.trim() || undefined,
-          style: selectedStyle,
-          colors: [...colors],
-        }),
+      const data = await generateLogo({
+        product_name: productName.trim(),
+        product_description: description.trim() || undefined,
+        style: selectedStyle,
+        colors: [...colors],
       });
-
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        throw new Error(
-          (body as Record<string, string>).error || `HTTP ${response.status}`,
-        );
-      }
-
-      const data: LogoGenApiResponse = await response.json();
       setVariants(data.variants);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Generation failed");
@@ -96,7 +63,7 @@ export const LogoGenerator: React.FC = () => {
     }
   }, [productName, description, selectedStyle, colors]);
 
-  const exportIcons = useCallback(async () => {
+  const doExport = useCallback(async () => {
     if (selectedVariant === null) return;
 
     const variant = variants.find((v) => v.index === selectedVariant);
@@ -107,23 +74,10 @@ export const LogoGenerator: React.FC = () => {
     setExportedFiles([]);
 
     try {
-      const response = await fetch("/api/logogen/export", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          image_base64: variant.image_data,
-          product_name: productName.trim(),
-        }),
+      const data = await exportLogo({
+        image_base64: variant.image_data,
+        product_name: productName.trim(),
       });
-
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        throw new Error(
-          (body as Record<string, string>).error || `HTTP ${response.status}`,
-        );
-      }
-
-      const data: ExportApiResponse = await response.json();
       setExportedFiles(data.files);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Export failed");
@@ -212,12 +166,7 @@ export const LogoGenerator: React.FC = () => {
         {loading ? "Generating..." : "Generate Logo"}
       </button>
 
-      {/* Error */}
-      {error && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-          {error}
-        </div>
-      )}
+      <ErrorDisplay message={error} />
 
       {/* Variant Grid */}
       {variants.length > 0 && (
@@ -274,7 +223,7 @@ export const LogoGenerator: React.FC = () => {
       {/* Export Button */}
       {selectedVariant !== null && (
         <button
-          onClick={exportIcons}
+          onClick={doExport}
           disabled={exporting}
           className="w-full py-3 px-4 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
