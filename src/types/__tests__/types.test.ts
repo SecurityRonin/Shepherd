@@ -7,8 +7,8 @@ import type { ServerEvent, ClientEvent, StatusSnapshot, TaskEvent, PermissionEve
 
 describe('Task types', () => {
   it('TaskStatus has all 6 values', () => {
-    const statuses: TaskStatus[] = ['queued', 'running', 'input', 'review', 'error', 'done'];
-    expect(statuses).toHaveLength(6);
+    const statuses: TaskStatus[] = ['queued', 'running', 'input', 'review', 'error', 'done', 'cancelled'];
+    expect(statuses).toHaveLength(7);
   });
 
   it('Task has required fields', () => {

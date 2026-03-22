@@ -10,6 +10,7 @@ pub enum TaskStatus {
     Review,
     Error,
     Done,
+    Cancelled,
 }
 
 impl TaskStatus {
@@ -22,6 +23,7 @@ impl TaskStatus {
             Self::Review => "review",
             Self::Error => "error",
             Self::Done => "done",
+            Self::Cancelled => "cancelled",
         }
     }
 
@@ -34,6 +36,7 @@ impl TaskStatus {
             "review" => Some(Self::Review),
             "error" => Some(Self::Error),
             "done" => Some(Self::Done),
+            "cancelled" => Some(Self::Cancelled),
             _ => None,
         }
     }
@@ -87,6 +90,7 @@ mod tests {
         assert_eq!(TaskStatus::Review.as_str(), "review");
         assert_eq!(TaskStatus::Error.as_str(), "error");
         assert_eq!(TaskStatus::Done.as_str(), "done");
+        assert_eq!(TaskStatus::Cancelled.as_str(), "cancelled");
     }
 
     #[test]
@@ -100,6 +104,10 @@ mod tests {
         assert_eq!(TaskStatus::parse_status("review"), Some(TaskStatus::Review));
         assert_eq!(TaskStatus::parse_status("error"), Some(TaskStatus::Error));
         assert_eq!(TaskStatus::parse_status("done"), Some(TaskStatus::Done));
+        assert_eq!(
+            TaskStatus::parse_status("cancelled"),
+            Some(TaskStatus::Cancelled)
+        );
     }
 
     #[test]
@@ -120,6 +128,7 @@ mod tests {
             TaskStatus::Review,
             TaskStatus::Error,
             TaskStatus::Done,
+            TaskStatus::Cancelled,
         ];
         for status in statuses {
             let json = serde_json::to_string(&status).unwrap();
@@ -218,5 +227,18 @@ mod tests {
         assert_eq!(json, r#""dispatching""#);
         let parsed: TaskStatus = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, TaskStatus::Dispatching);
+    }
+
+    #[test]
+    fn test_task_status_cancelled_variant() {
+        assert_eq!(TaskStatus::Cancelled.as_str(), "cancelled");
+        assert_eq!(
+            TaskStatus::parse_status("cancelled"),
+            Some(TaskStatus::Cancelled)
+        );
+        let json = serde_json::to_string(&TaskStatus::Cancelled).unwrap();
+        assert_eq!(json, r#""cancelled""#);
+        let parsed: TaskStatus = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, TaskStatus::Cancelled);
     }
 }

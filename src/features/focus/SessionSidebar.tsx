@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { useStore } from "../../store";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -8,6 +8,7 @@ const STATUS_COLORS: Record<string, string> = {
   review: "bg-shepherd-purple",
   error: "bg-shepherd-red",
   done: "bg-shepherd-green",
+  cancelled: "bg-shepherd-muted",
 };
 
 export const SessionSidebar: React.FC = () => {
@@ -16,7 +17,7 @@ export const SessionSidebar: React.FC = () => {
   const enterFocus = useStore((s) => s.enterFocus);
   const exitFocus = useStore((s) => s.exitFocus);
 
-  const taskList = Object.values(tasks);
+  const taskList = useMemo(() => Object.values(tasks), [tasks]);
 
   return (
     <div className="w-[180px] min-w-[180px] bg-shepherd-bg border-r border-shepherd-border flex flex-col h-full">

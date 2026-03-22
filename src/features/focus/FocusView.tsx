@@ -1,13 +1,19 @@
-import React, { useState, useCallback, useRef, useEffect } from "react";
+import React, { useState, useCallback, useRef, useEffect, Suspense } from "react";
 import { useStore } from "../../store";
 import { AgentBadge } from "../shared/AgentBadge";
+import { LazyFallback } from "../shared/LazyFallback";
 import { SessionSidebar } from "./SessionSidebar";
-import { Terminal } from "./Terminal";
-import { DiffViewer } from "./DiffViewer";
 import { PermissionPrompt } from "./PermissionPrompt";
 import { SessionPicker } from "../iterm2/SessionPicker";
 import { SetupPrompt } from "../iterm2/SetupPrompt";
 import { getClaudeSessions, resumeClaudeSession, startFreshSession } from "../../lib/api";
+
+const Terminal = React.lazy(() =>
+  import("./Terminal").then((m) => ({ default: m.Terminal })),
+);
+const DiffViewer = React.lazy(() =>
+  import("./DiffViewer").then((m) => ({ default: m.DiffViewer })),
+);
 
 const STATUS_COLORS: Record<string, string> = {
   queued: "bg-shepherd-muted",
@@ -16,6 +22,7 @@ const STATUS_COLORS: Record<string, string> = {
   review: "bg-shepherd-purple",
   error: "bg-shepherd-red",
   done: "bg-shepherd-green",
+  cancelled: "bg-shepherd-muted",
 };
 
 export function formatTimeSince(dateStr: string): string {
@@ -149,8 +156,10 @@ export const FocusView: React.FC = () => {
               </div>
             )}
 
-            {/* Terminal */}
-            <Terminal taskId={task.id} />
+            {/* Terminal (lazy-loaded — xterm ~500KB) */}
+            <Suspense fallback={<LazyFallback label="Loading terminal..." testId="terminal-loading" />}>
+              <Terminal taskId={task.id} />
+            </Suspense>
 
             {/* Permission prompt area (shown when task.status === "input") */}
             {hasPermissionPrompt && (
@@ -169,7 +178,9 @@ export const FocusView: React.FC = () => {
             style={{ width: rightPanelWidth }}
             className="flex-shrink-0 flex flex-col border-l border-shepherd-border min-h-0"
           >
-            <DiffViewer taskId={task.id} />
+            <Suspense fallback={<LazyFallback label="Loading diff viewer..." testId="diff-loading" />}>
+              <DiffViewer taskId={task.id} />
+            </Suspense>
           </div>
         </div>
       </div>

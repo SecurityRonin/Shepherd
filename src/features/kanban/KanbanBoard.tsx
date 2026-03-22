@@ -30,6 +30,7 @@ function groupAndSortTasks(
     review: [],
     error: [],
     done: [],
+    cancelled: [],
   };
 
   for (const task of Object.values(tasks)) {
@@ -63,6 +64,20 @@ export const KanbanBoard: React.FC = () => {
 
   const [queuedOrder, setQueuedOrder] = useState<number[] | null>(null);
 
+  // Pre-compute permission lookup to avoid O(n*m) filtering per card
+  const permissionsByTask = useMemo(() => {
+    const map = new Map<number, typeof pendingPermissions>();
+    for (const p of pendingPermissions) {
+      const existing = map.get(p.task_id);
+      if (existing) {
+        existing.push(p);
+      } else {
+        map.set(p.task_id, [p]);
+      }
+    }
+    return map;
+  }, [pendingPermissions]);
+
   const grouped = useMemo(() => {
     const result = groupAndSortTasks(tasks);
 
@@ -91,6 +106,30 @@ export const KanbanBoard: React.FC = () => {
     setQueuedOrder(newOrder);
   }, []);
 
+  const renderCard = useCallback(
+    (task: Task) => {
+      const taskPerms = permissionsByTask.get(task.id) ?? [];
+      const isDoneFaded =
+        task.status === "done" &&
+        Date.now() - new Date(task.updated_at).getTime() >
+          TWENTY_FOUR_HOURS_MS;
+
+      return (
+        <div
+          key={task.id}
+          className={isDoneFaded ? "opacity-40" : undefined}
+        >
+          <TaskCard
+            task={task}
+            pendingPermissions={taskPerms}
+            onClick={() => enterFocus(task.id)}
+          />
+        </div>
+      );
+    },
+    [permissionsByTask, enterFocus],
+  );
+
   return (
     <div className="flex h-full gap-3 overflow-x-auto p-4">
       {COLUMNS.map((col) => {
@@ -104,28 +143,7 @@ export const KanbanBoard: React.FC = () => {
             accentColor={col.accentColor}
             isDraggable={col.status === "queued"}
             onReorder={col.status === "queued" ? handleQueuedReorder : undefined}
-            renderCard={(task) => {
-              const taskPerms = pendingPermissions.filter(
-                (p) => p.task_id === task.id,
-              );
-              const isDoneFaded =
-                task.status === "done" &&
-                Date.now() - new Date(task.updated_at).getTime() >
-                  TWENTY_FOUR_HOURS_MS;
-
-              return (
-                <div
-                  key={task.id}
-                  className={isDoneFaded ? "opacity-40" : undefined}
-                >
-                  <TaskCard
-                    task={task}
-                    pendingPermissions={taskPerms}
-                    onClick={() => enterFocus(task.id)}
-                  />
-                </div>
-              );
-            }}
+            renderCard={renderCard}
           />
         );
       })}

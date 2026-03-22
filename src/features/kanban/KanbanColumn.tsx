@@ -19,6 +19,7 @@ const COLUMN_BG: Record<TaskStatus, string> = {
   review: "border-shepherd-purple/30",
   done: "border-shepherd-green/30",
   error: "border-shepherd-red/30",
+  cancelled: "border-shepherd-muted/30",
 };
 
 export const KanbanColumn: React.FC<KanbanColumnProps> = ({

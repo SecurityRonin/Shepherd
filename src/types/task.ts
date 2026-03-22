@@ -1,4 +1,4 @@
-export type TaskStatus = "queued" | "running" | "input" | "review" | "error" | "done";
+export type TaskStatus = "queued" | "running" | "input" | "review" | "error" | "done" | "cancelled";
 
 export interface FileDiff {
   file_path: string;
