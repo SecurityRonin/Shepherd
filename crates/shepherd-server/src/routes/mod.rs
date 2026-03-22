@@ -12,3 +12,4 @@ pub mod replay;
 pub mod sync;
 pub mod tasks;
 pub mod templates;
+pub mod triggers;

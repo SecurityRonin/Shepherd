@@ -839,6 +839,94 @@ mod tests {
         }
     }
 
+    // -- Trigger handler tests ------------------------------------------------
+
+    #[tokio::test]
+    async fn handler_trigger_check_returns_suggestions() {
+        let state = test_state();
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("package.json"), r#"{"name": "untitled"}"#).unwrap();
+        std::fs::create_dir(tmp.path().join(".git")).unwrap();
+        let app = crate::build_router(state);
+        let resp = app
+            .oneshot(json_post(
+                "/api/triggers/check",
+                serde_json::json!({ "project_dir": tmp.path().to_str().unwrap() }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = body_json(resp).await;
+        let suggestions = body.as_array().unwrap();
+        assert!(!suggestions.is_empty());
+        assert!(suggestions[0]["id"].is_string());
+        assert!(suggestions[0]["tool"].is_string());
+    }
+
+    #[tokio::test]
+    async fn handler_trigger_check_rejects_nonexistent_dir() {
+        let state = test_state();
+        let app = crate::build_router(state);
+        let resp = app
+            .oneshot(json_post(
+                "/api/triggers/check",
+                serde_json::json!({ "project_dir": "/nonexistent/path/xyz" }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn handler_trigger_check_rejects_non_git_dir() {
+        let state = test_state();
+        let tmp = tempfile::tempdir().unwrap();
+        let app = crate::build_router(state);
+        let resp = app
+            .oneshot(json_post(
+                "/api/triggers/check",
+                serde_json::json!({ "project_dir": tmp.path().to_str().unwrap() }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        let body = body_json(resp).await;
+        assert!(body["error"].as_str().unwrap().contains("git"));
+    }
+
+    #[tokio::test]
+    async fn handler_trigger_dismiss_and_recheck() {
+        let state = test_state();
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("package.json"), r#"{"name": "untitled"}"#).unwrap();
+        std::fs::create_dir(tmp.path().join(".git")).unwrap();
+        let dir = tmp.path().to_str().unwrap();
+
+        let app = crate::build_router(state.clone());
+        let resp = app
+            .oneshot(json_post(
+                "/api/triggers/dismiss",
+                serde_json::json!({ "trigger_id": "namegen_untitled", "project_dir": dir }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = body_json(resp).await;
+        assert_eq!(body["success"], true);
+
+        let app = crate::build_router(state);
+        let resp = app
+            .oneshot(json_post(
+                "/api/triggers/check",
+                serde_json::json!({ "project_dir": dir }),
+            ))
+            .await
+            .unwrap();
+        let body = body_json(resp).await;
+        let suggestions = body.as_array().unwrap();
+        assert!(!suggestions.iter().any(|s| s["id"] == "namegen_untitled"));
+    }
+
     // -- Replay handler tests -------------------------------------------------
 
     #[tokio::test]

@@ -97,6 +97,17 @@ fn migrate(conn: &Connection) -> Result<()> {
     // Session replay tables
     crate::replay::migrate(conn)?;
 
+    // Trigger dismissals table
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS trigger_dismissals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            trigger_id TEXT NOT NULL,
+            project_dir TEXT NOT NULL,
+            dismissed_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(trigger_id, project_dir)
+        );",
+    )?;
+
     Ok(())
 }
 
@@ -147,12 +158,22 @@ mod tests {
         let conn = open_memory().unwrap();
         let count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('tasks', 'sessions', 'permissions', 'diffs', 'profiles', 'gate_results', 'context_packages', 'context_feedback', 'task_metrics', 'file_index', 'session_events')",
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('tasks', 'sessions', 'permissions', 'diffs', 'profiles', 'gate_results', 'context_packages', 'context_feedback', 'task_metrics', 'file_index', 'session_events', 'trigger_dismissals')",
                 [],
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(count, 11);
+        assert_eq!(count, 12);
+    }
+
+    #[test]
+    fn test_trigger_dismissals_table_exists() {
+        let conn = open_memory().unwrap();
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='trigger_dismissals'",
+            [], |row| row.get(0),
+        ).unwrap();
+        assert_eq!(count, 1);
     }
 
     #[test]

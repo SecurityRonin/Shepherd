@@ -66,6 +66,14 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             "/api/plugins/detected",
             get(routes::plugins::detected_plugins),
         )
+        .route(
+            "/api/triggers/check",
+            post(routes::triggers::check_triggers),
+        )
+        .route(
+            "/api/triggers/dismiss",
+            post(routes::triggers::dismiss_trigger),
+        )
         .route("/ws", get(ws::ws_handler))
         .layer(CorsLayer::permissive())
         .with_state(state)
