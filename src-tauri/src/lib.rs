@@ -1,10 +1,6 @@
 use tauri::{Emitter, Manager};
 use tauri_plugin_deep_link::DeepLinkExt;
 
-// Plan 3 integration: tray.rs contains set_dock_badge and update_tray_status commands.
-// Once tauri-plugin-notification is added to Cargo.toml, register them here:
-//   .invoke_handler(tauri::generate_handler![get_server_port, tray::set_dock_badge, tray::update_tray_status])
-#[allow(unused)]
 mod tray;
 
 /// Stores the embedded server port for the frontend to discover.
@@ -55,9 +51,12 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
             get_server_port,
-            handle_auth_callback_cmd
+            handle_auth_callback_cmd,
+            tray::set_dock_badge,
+            tray::update_tray_status
         ])
         .setup(|app| {
             // Load config from ~/.shepherd/config.toml (or defaults)

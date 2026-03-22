@@ -1,13 +1,20 @@
 import { useEffect, useRef } from "react";
 import { useStore } from "../store";
 import { playSound } from "../lib/sounds";
+import { invoke } from "../lib/tauri";
 import type { Task, TaskStatus } from "../types/task";
+
+const isTauri = typeof window !== "undefined" && "__TAURI__" in window;
 
 function notify(title: string, body: string): void {
   if (typeof window !== "undefined" && "Notification" in window) {
     if (Notification.permission === "granted") {
       new Notification(title, { body });
     }
+  }
+  // Tauri native notification (system notification center, sounds)
+  if (isTauri) {
+    invoke("plugin:notification|notify", { title, body }).catch(() => {});
   }
 }
 
@@ -35,13 +42,14 @@ function updateBadge(inputCount: number): void {
   if (typeof document !== "undefined") {
     document.title = inputCount > 0 ? `(${inputCount}) Shepherd` : "Shepherd";
   }
+  if (isTauri) {
+    invoke("set_dock_badge", { text: inputCount > 0 ? String(inputCount) : "" }).catch(() => {});
+  }
 }
 
 /**
  * Watches the Zustand store for task status transitions and triggers
  * browser notifications, sounds, and document title badge updates.
- *
- * Tauri-native notifications, tray, and dock badge will be wired in Plan 3.
  */
 export function useNotifications(): void {
   const prevTasksRef = useRef<Record<number, Task>>({});
