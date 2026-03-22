@@ -173,6 +173,61 @@ pub async fn approve_all(
     Ok(Json(serde_json::json!({ "approved": count })))
 }
 
+/// Cancel a running or queued task — kills the PTY process and sets status to "cancelled".
+#[tracing::instrument(skip(state))]
+pub async fn cancel_task(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let task = {
+        let db = state.db.lock().await;
+        queries::get_task(&db, id).map_err(|e| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({ "error": format!("Task not found: {}", e) })),
+            )
+        })?
+    };
+
+    // Reject if task already finished
+    match task.status {
+        TaskStatus::Done | TaskStatus::Error | TaskStatus::Cancelled => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": "Task already finished" })),
+            ));
+        }
+        _ => {}
+    }
+
+    // Kill the PTY process (TOCTOU: process may have already exited — treat as success)
+    let _ = state.pty.kill(id).await;
+
+    // Update status in DB
+    {
+        let db = state.db.lock().await;
+        queries::update_task_status(&db, id, &TaskStatus::Cancelled).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+        })?;
+    }
+
+    // Broadcast status update
+    let _ = state.event_tx.send(ServerEvent::TaskUpdated(TaskEvent {
+        id: task.id,
+        title: task.title,
+        agent_id: task.agent_id,
+        status: "cancelled".into(),
+        branch: task.branch,
+        repo_path: task.repo_path,
+        iterm2_session_id: task.iterm2_session_id,
+    }));
+
+    Ok(Json(serde_json::json!({ "status": "cancelled" })))
+}
+
 /// Graceful server shutdown — kills all agents and signals exit.
 #[tracing::instrument(skip(state))]
 pub async fn shutdown_server(State(state): State<Arc<AppState>>) -> Json<Value> {

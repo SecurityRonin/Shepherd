@@ -713,6 +713,66 @@ mod tests {
         assert_eq!(body["approved"], 0);
     }
 
+    // -- Cancel handler tests -------------------------------------------------
+
+    #[tokio::test]
+    async fn handler_cancel_running_task() {
+        let state = test_state();
+        {
+            let db = state.db.lock().await;
+            db.execute(
+                "INSERT INTO tasks (id, title, prompt, agent_id, repo_path, branch, isolation_mode, status) VALUES (1, 'Running task', '', 'claude-code', '/tmp', 'main', 'none', 'running')",
+                [],
+            ).unwrap();
+        }
+        let app = crate::build_router(state.clone());
+        let resp = app
+            .oneshot(json_post("/api/tasks/1/cancel", serde_json::json!({})))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = body_json(resp).await;
+        assert_eq!(body["status"], "cancelled");
+        let db = state.db.lock().await;
+        let status: String = db
+            .query_row("SELECT status FROM tasks WHERE id = 1", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(status, "cancelled");
+    }
+
+    #[tokio::test]
+    async fn handler_cancel_finished_task_returns_400() {
+        let state = test_state();
+        {
+            let db = state.db.lock().await;
+            db.execute(
+                "INSERT INTO tasks (id, title, prompt, agent_id, repo_path, branch, isolation_mode, status) VALUES (1, 'Done task', '', 'claude-code', '/tmp', 'main', 'none', 'done')",
+                [],
+            ).unwrap();
+        }
+        let app = crate::build_router(state);
+        let resp = app
+            .oneshot(json_post("/api/tasks/1/cancel", serde_json::json!({})))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        let body = body_json(resp).await;
+        assert!(body["error"].as_str().unwrap().contains("already finished"));
+    }
+
+    #[tokio::test]
+    async fn handler_cancel_nonexistent_returns_404() {
+        let state = test_state();
+        let app = crate::build_router(state);
+        let resp = app
+            .oneshot(json_post("/api/tasks/99999/cancel", serde_json::json!({})))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
     // -- Shutdown handler tests -----------------------------------------------
 
     #[tokio::test]
