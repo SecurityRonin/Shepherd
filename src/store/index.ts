@@ -18,3 +18,8 @@ export const usePendingPermissions = () => useStore((s) => s.pendingPermissions)
 export const useViewMode = () => useStore((s) => s.viewMode);
 export const useFocusedTaskId = () => useStore((s) => s.focusedTaskId);
 export const useConnectionStatus = () => useStore((s) => s.connectionStatus);
+
+// Expose store for Playwright E2E tests in development
+if (import.meta.env.DEV) {
+  (window as any).__STORE__ = useStore;
+}

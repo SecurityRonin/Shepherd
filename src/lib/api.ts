@@ -182,6 +182,190 @@ export async function getReplayEvents(taskId: number): Promise<import("../store/
   return request(`/api/replay/task/${taskId}`);
 }
 
+// ── Triggers ─────────────────────────────────────────────────────
+
+export interface TriggerSuggestion {
+  id: string;
+  tool: string;
+  message: string;
+  action_label: string;
+  action_route: string;
+  priority: "low" | "medium" | "high";
+}
+
+export async function checkTriggers(projectDir: string): Promise<TriggerSuggestion[]> {
+  return request<TriggerSuggestion[]>("/api/triggers/check", {
+    method: "POST",
+    body: JSON.stringify({ project_dir: projectDir }),
+  });
+}
+
+export async function dismissTrigger(triggerId: string, projectDir: string): Promise<{ success: boolean }> {
+  return request<{ success: boolean }>("/api/triggers/dismiss", {
+    method: "POST",
+    body: JSON.stringify({ trigger_id: triggerId, project_dir: projectDir }),
+  });
+}
+
+// ── PR Pipeline ──────────────────────────────────────────────────
+
+export interface CreatePrRequest {
+  base_branch: string;
+  auto_commit_message: boolean;
+  run_gates: boolean;
+}
+
+export interface PrStepResult {
+  name: string;
+  status: string;
+  output: string;
+}
+
+export interface CreatePrResponse {
+  success: boolean;
+  pr_url: string | null;
+  steps: PrStepResult[];
+}
+
+export async function createPr(taskId: number, params: CreatePrRequest): Promise<CreatePrResponse> {
+  return request<CreatePrResponse>(`/api/tasks/${taskId}/pr`, {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+}
+
+// ── Logo Generation ──────────────────────────────────────────────
+
+export interface GenerateLogoRequest {
+  product_name: string;
+  product_description?: string;
+  style: string;
+  colors: string[];
+}
+
+export interface LogoVariant {
+  index: number;
+  image_data: string;
+  is_url: boolean;
+}
+
+export interface GenerateLogoResponse {
+  variants: LogoVariant[];
+}
+
+export async function generateLogo(params: GenerateLogoRequest): Promise<GenerateLogoResponse> {
+  return request<GenerateLogoResponse>("/api/logogen", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+}
+
+export interface ExportLogoRequest {
+  image_base64: string;
+  product_name: string;
+}
+
+export interface ExportedFile {
+  path: string;
+  format: string;
+  size_bytes: number;
+  dimensions: [number, number] | null;
+}
+
+export interface ExportLogoResponse {
+  files: ExportedFile[];
+}
+
+export async function exportLogo(params: ExportLogoRequest): Promise<ExportLogoResponse> {
+  return request<ExportLogoResponse>("/api/logogen/export", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+}
+
+// ── Name Generation ──────────────────────────────────────────────
+
+export interface GenerateNamesRequest {
+  description: string;
+  vibes: string[];
+  count: number;
+}
+
+export interface DomainResult {
+  tld: string;
+  domain: string;
+  available: boolean | null;
+}
+
+export interface NameCandidate {
+  name: string;
+  tagline: string | null;
+  reasoning: string;
+  status: string;
+  domains: DomainResult[];
+  npm_available: boolean | null;
+  pypi_available: boolean | null;
+  github_available: boolean | null;
+  negative_associations: string[];
+}
+
+export interface GenerateNamesResponse {
+  candidates: NameCandidate[];
+}
+
+export async function generateNames(params: GenerateNamesRequest): Promise<GenerateNamesResponse> {
+  return request<GenerateNamesResponse>("/api/namegen", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+}
+
+// ── North Star ───────────────────────────────────────────────────
+
+export interface PhaseInfo {
+  id: number;
+  name: string;
+  description: string;
+  document_count: number;
+}
+
+export interface NorthStarPhasesResponse {
+  phases: PhaseInfo[];
+  total: number;
+}
+
+export async function getNorthStarPhases(): Promise<NorthStarPhasesResponse> {
+  return request<NorthStarPhasesResponse>("/api/northstar/phases");
+}
+
+export interface ExecutePhaseRequest {
+  product_name: string;
+  product_description: string;
+  phase_id: number;
+  previous_context?: string;
+}
+
+export interface DocumentResult {
+  title: string;
+  filename: string;
+  doc_type: string;
+}
+
+export interface ExecutePhaseResponse {
+  phase_id: number;
+  phase_name: string;
+  status: string;
+  output: string;
+  documents: DocumentResult[];
+}
+
+export async function executeNorthStarPhase(params: ExecutePhaseRequest): Promise<ExecutePhaseResponse> {
+  return request<ExecutePhaseResponse>("/api/northstar/phase", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+}
+
 // ── Metrics ──────────────────────────────────────────────────────
 
 export async function getSpendingSummary(): Promise<import("../store/observability").SpendingSummary> {

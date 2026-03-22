@@ -24,7 +24,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
     url,
     onEvent,
     onStatusChange,
-    maxReconnectAttempts = 0,
+    maxReconnectAttempts = 10,
     initialReconnectDelay = 1000,
   } = options;
 

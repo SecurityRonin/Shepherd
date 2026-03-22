@@ -141,6 +141,37 @@ describe('createWsClient', () => {
     // We can verify the reconnecting status eventually appears
   });
 
+  it('stops reconnecting after default max attempts', async () => {
+    const statuses: ConnectionStatus[] = [];
+    // Use a mock that always fails to connect (throws on construction)
+    const FailingWs = function () { throw new Error('Connection refused'); } as any;
+    FailingWs.OPEN = 1; FailingWs.CONNECTING = 0; FailingWs.CLOSING = 2; FailingWs.CLOSED = 3;
+    (globalThis as any).WebSocket = FailingWs;
+
+    const client = createWsClient({
+      url: 'ws://localhost:9876/ws',
+      onEvent: vi.fn(),
+      onStatusChange: (s) => statuses.push(s),
+      initialReconnectDelay: 100,
+    });
+
+    client.connect();
+
+    // Advance through enough time to exhaust all default retry attempts
+    // With default 10 attempts at 100ms base with 2^n backoff:
+    // 100, 200, 400, 800, 1600, 3200, 6400, 12800, 25600, 30000 (capped)
+    for (let i = 0; i < 15; i++) {
+      await vi.advanceTimersByTimeAsync(30000);
+    }
+
+    // Should eventually give up and stop at disconnected
+    const lastStatus = statuses[statuses.length - 1];
+    expect(lastStatus).toBe('disconnected');
+    // Should not have infinite reconnecting statuses
+    const reconnectCount = statuses.filter(s => s === 'reconnecting').length;
+    expect(reconnectCount).toBeLessThanOrEqual(10);
+  });
+
   it('does not reconnect after intentional disconnect', async () => {
     const statuses: ConnectionStatus[] = [];
     const client = createWsClient({
