@@ -15,6 +15,10 @@ shepherd-server = { path = "../crates/shepherd-server" }
 shepherd-core = { path = "../crates/shepherd-core" }
 tracing = "0.1"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+cocoa = "0.26"
+objc = "0.2"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
