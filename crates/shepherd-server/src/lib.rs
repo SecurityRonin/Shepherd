@@ -58,6 +58,10 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/api/sync/pull", post(routes::sync::sync_pull))
         .route("/api/sync/now", post(routes::sync::sync_now_handler))
         .route("/api/templates", get(routes::templates::list_templates))
+        .route(
+            "/api/plugins/detected",
+            get(routes::plugins::detected_plugins),
+        )
         .route("/ws", get(ws::ws_handler))
         .layer(CorsLayer::permissive())
         .with_state(state)

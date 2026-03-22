@@ -6,6 +6,7 @@ pub mod logogen;
 pub mod metrics;
 pub mod namegen;
 pub mod northstar;
+pub mod plugins;
 pub mod pr;
 pub mod sync;
 pub mod tasks;

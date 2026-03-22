@@ -813,4 +813,29 @@ mod tests {
         let Json(body) = crate::routes::tasks::shutdown_server(State(state)).await;
         assert_eq!(body["status"], "shutting_down");
     }
+
+    // -- Plugins handler tests ------------------------------------------------
+
+    #[tokio::test]
+    async fn handler_plugins_detected_returns_valid_shape() {
+        let state = test_state();
+        let app = crate::build_router(state);
+        let resp = app.oneshot(get("/api/plugins/detected")).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = body_json(resp).await;
+        let detected = body["detected"].as_array().unwrap();
+        for item in detected {
+            assert!(item.is_string());
+        }
+    }
+
+    #[tokio::test]
+    async fn direct_detected_plugins() {
+        let result = crate::routes::plugins::detected_plugins().await;
+        let Json(body) = result.unwrap();
+        let detected = body["detected"].as_array().unwrap();
+        for item in detected {
+            assert!(item.is_string());
+        }
+    }
 }
