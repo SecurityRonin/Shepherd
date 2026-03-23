@@ -14,6 +14,7 @@ import { useWebSocket } from "./hooks/useWebSocket";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useNotifications, notifyFromServer } from "./hooks/useNotifications";
 import { useAuthCallback } from "./hooks/useAuthCallback";
+import { useCloudSync } from "./hooks/useCloudSync";
 import { useStore } from "./store";
 import type { ServerEvent } from "./types";
 import type { ConnectionStatus } from "./lib/ws";
@@ -72,6 +73,7 @@ const App: React.FC = () => {
   useKeyboardShortcuts(wsRef);
   useNotifications();
   useAuthCallback();
+  useCloudSync();
 
   // Sync the wsClient ref into the store whenever connection status changes.
   // The wsRef.current is set before onStatusChange fires, so it's safe to read here.

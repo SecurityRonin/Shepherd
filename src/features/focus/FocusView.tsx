@@ -7,6 +7,7 @@ import { PermissionPrompt } from "./PermissionPrompt";
 import { SessionPicker } from "../iterm2/SessionPicker";
 import { SetupPrompt } from "../iterm2/SetupPrompt";
 import { getClaudeSessions, resumeClaudeSession, startFreshSession } from "../../lib/api";
+import { TaskSummary } from "./TaskSummary";
 
 const Terminal = React.lazy(() =>
   import("./Terminal").then((m) => ({ default: m.Terminal })),
@@ -145,6 +146,9 @@ export const FocusView: React.FC = () => {
             </button>
           )}
         </div>
+
+        {/* AI summary (only rendered for done tasks) */}
+        <TaskSummary taskId={task.id} taskStatus={task.status} />
 
         {/* Content area: Terminal + DiffViewer side by side */}
         <div className="flex-1 flex min-h-0">

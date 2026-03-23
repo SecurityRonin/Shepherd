@@ -10,6 +10,7 @@ pub mod northstar;
 pub mod plugins;
 pub mod pr;
 pub mod replay;
+pub mod summaries;
 pub mod sync;
 pub mod tasks;
 pub mod templates;
