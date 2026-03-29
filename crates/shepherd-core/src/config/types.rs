@@ -93,7 +93,14 @@ pub struct EcosystemConfig {
     #[serde(default = "default_true")]
     pub auto_detect_context_hub: bool,
     #[serde(default = "default_true")]
+    pub auto_detect_rtk: bool,
+    #[serde(default = "default_true")]
     pub offer_install_on_new_task: bool,
+    /// Disable non-essential telemetry (Statsig, Sentry, RTK analytics)
+    /// in spawned agents.  Defaults to `false` — telemetry stays enabled
+    /// unless the user explicitly opts out.
+    #[serde(default)]
+    pub disable_agent_telemetry: bool,
 }
 
 fn default_true() -> bool {
@@ -135,7 +142,9 @@ impl Default for EcosystemConfig {
             auto_detect_ralph_loop: true,
             auto_detect_frontend_design: true,
             auto_detect_context_hub: true,
+            auto_detect_rtk: true,
             offer_install_on_new_task: true,
+            disable_agent_telemetry: false,
         }
     }
 }

@@ -29,6 +29,10 @@ pub struct PtyManager {
     output_tx: broadcast::Sender<PtyOutput>,
     max_agents: usize,
     sandbox: SandboxProfile,
+    /// When `true`, inject env vars that disable non-essential telemetry
+    /// in spawned agents (Claude Code, RTK).  Defaults to `false` so
+    /// telemetry remains enabled unless the user opts out.
+    disable_agent_telemetry: bool,
 }
 
 impl PtyManager {
@@ -45,7 +49,14 @@ impl PtyManager {
             output_tx,
             max_agents,
             sandbox,
+            disable_agent_telemetry: false,
         }
+    }
+
+    /// Opt in to disabling non-essential telemetry in spawned agents.
+    pub fn with_disable_telemetry(mut self, disable: bool) -> Self {
+        self.disable_agent_telemetry = disable;
+        self
     }
 
     pub fn subscribe_output(&self) -> broadcast::Receiver<PtyOutput> {
@@ -82,6 +93,12 @@ impl PtyManager {
         let mut cmd = CommandBuilder::new(&actual_cmd);
         cmd.args(&actual_args);
         cmd.cwd(cwd);
+
+        if self.disable_agent_telemetry {
+            for (key, value) in cost_saving_env_vars() {
+                cmd.env(key, value);
+            }
+        }
 
         let child = pair
             .slave
@@ -213,6 +230,19 @@ impl PtyManager {
     }
 }
 
+/// Environment variables injected into every spawned agent to reduce
+/// unnecessary network traffic and telemetry token overhead.
+fn cost_saving_env_vars() -> &'static [(&'static str, &'static str)] {
+    &[
+        // Disables Statsig telemetry, Sentry error reporting, and surveys
+        // in Claude Code.  No functional impact on the coding agent.
+        ("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1"),
+        // Disables RTK's own anonymous usage telemetry when RTK is
+        // installed as a CLI proxy.  No-op if RTK is absent.
+        ("RTK_TELEMETRY_DISABLED", "1"),
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -340,5 +370,37 @@ mod tests {
         if !sandbox::SandboxProfile::is_available() {
             assert!(!mgr.sandbox.enabled);
         }
+    }
+
+    #[test]
+    fn test_cost_saving_env_vars_present() {
+        let vars = cost_saving_env_vars();
+        assert!(vars.len() >= 2);
+        let keys: Vec<&str> = vars.iter().map(|(k, _)| *k).collect();
+        assert!(keys.contains(&"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"));
+        assert!(keys.contains(&"RTK_TELEMETRY_DISABLED"));
+        for (_, v) in vars {
+            assert_eq!(*v, "1");
+        }
+    }
+
+    #[test]
+    fn test_disable_telemetry_defaults_false() {
+        let mgr = PtyManager::new(4, sandbox::SandboxProfile::disabled());
+        assert!(!mgr.disable_agent_telemetry);
+    }
+
+    #[test]
+    fn test_disable_telemetry_opt_in() {
+        let mgr =
+            PtyManager::new(4, sandbox::SandboxProfile::disabled()).with_disable_telemetry(true);
+        assert!(mgr.disable_agent_telemetry);
+    }
+
+    #[test]
+    fn test_disable_telemetry_opt_in_false() {
+        let mgr =
+            PtyManager::new(4, sandbox::SandboxProfile::disabled()).with_disable_telemetry(false);
+        assert!(!mgr.disable_agent_telemetry);
     }
 }

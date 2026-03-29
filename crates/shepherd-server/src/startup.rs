@@ -135,7 +135,8 @@ pub async fn start_server(
             .extend(cfg.sandbox.extra_blocked_paths.iter().cloned());
         profile
     };
-    let pty = PtyManager::new(max_agents, sandbox);
+    let pty = PtyManager::new(max_agents, sandbox)
+        .with_disable_telemetry(cfg.ecosystem.disable_agent_telemetry);
 
     // ---- Arc-wrap shared components ----
     let adapters = Arc::new(adapters);

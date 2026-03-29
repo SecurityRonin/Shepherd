@@ -8,6 +8,7 @@ pub mod ffmpeg;
 pub mod frontend_design;
 pub mod playwright;
 pub mod ralph_loop;
+pub mod rtk;
 pub mod serena;
 pub mod sourcegraph;
 pub mod superpowers;
@@ -32,6 +33,111 @@ pub struct PluginInstallConfig {
     pub target_path: PathBuf,
     pub config_content: String,
 }
+
+impl PluginInstallConfig {
+    /// Resolve `~` in `target_path` to the given home directory.
+    pub fn resolve_path(&self, home: &Path) -> PathBuf {
+        let s = self.target_path.to_string_lossy();
+        if s.starts_with("~/") {
+            home.join(&s[2..])
+        } else {
+            self.target_path.clone()
+        }
+    }
+
+    /// Write the plugin config into the target settings file.
+    ///
+    /// For JSON files (`.json`): deep-merges `config_content` into the
+    /// existing file, preserving other keys.  Creates the file and parent
+    /// directories if they don't exist.
+    ///
+    /// Returns the resolved path that was written to.
+    pub fn apply_install(&self, home: &Path) -> Result<PathBuf, ApplyInstallError> {
+        let resolved = self.resolve_path(home);
+
+        if let Some(parent) = resolved.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| ApplyInstallError::Io(parent.to_path_buf(), e))?;
+        }
+
+        let is_json = resolved
+            .extension()
+            .map(|ext| ext == "json")
+            .unwrap_or(false);
+
+        if is_json {
+            self.apply_json_merge(&resolved)?;
+        } else {
+            // For non-JSON files (CLAUDE.md, instructions.md, config.toml),
+            // append if not already present.
+            let existing = std::fs::read_to_string(&resolved).unwrap_or_default();
+            if !existing.contains(&self.config_content) {
+                let mut content = existing;
+                if !content.is_empty() && !content.ends_with('\n') {
+                    content.push('\n');
+                }
+                content.push_str(&self.config_content);
+                std::fs::write(&resolved, content)
+                    .map_err(|e| ApplyInstallError::Io(resolved.clone(), e))?;
+            }
+        }
+
+        Ok(resolved)
+    }
+
+    fn apply_json_merge(&self, path: &Path) -> Result<(), ApplyInstallError> {
+        let existing_str = std::fs::read_to_string(path).unwrap_or_else(|_| "{}".to_string());
+        let mut existing: serde_json::Value = serde_json::from_str(&existing_str)
+            .map_err(|e| ApplyInstallError::Json(path.to_path_buf(), e))?;
+
+        let incoming: serde_json::Value = serde_json::from_str(&self.config_content)
+            .map_err(|e| ApplyInstallError::Json(path.to_path_buf(), e))?;
+
+        json_deep_merge(&mut existing, &incoming);
+
+        let output = serde_json::to_string_pretty(&existing)
+            .map_err(|e| ApplyInstallError::Json(path.to_path_buf(), e))?;
+        std::fs::write(path, output.as_bytes())
+            .map_err(|e| ApplyInstallError::Io(path.to_path_buf(), e))?;
+
+        Ok(())
+    }
+}
+
+/// Recursively merge `source` into `target`.  Objects are merged key-by-key;
+/// all other types overwrite.
+fn json_deep_merge(target: &mut serde_json::Value, source: &serde_json::Value) {
+    match (target, source) {
+        (serde_json::Value::Object(t), serde_json::Value::Object(s)) => {
+            for (key, value) in s {
+                json_deep_merge(
+                    t.entry(key.clone()).or_insert(serde_json::Value::Null),
+                    value,
+                );
+            }
+        }
+        (target, source) => {
+            *target = source.clone();
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum ApplyInstallError {
+    Io(PathBuf, std::io::Error),
+    Json(PathBuf, serde_json::Error),
+}
+
+impl std::fmt::Display for ApplyInstallError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io(path, e) => write!(f, "IO error at {}: {}", path.display(), e),
+            Self::Json(path, e) => write!(f, "JSON error at {}: {}", path.display(), e),
+        }
+    }
+}
+
+impl std::error::Error for ApplyInstallError {}
 
 /// A shared, data-driven definition for an ecosystem plugin.
 ///
@@ -330,5 +436,182 @@ mod tests {
         let result = plugin.detect("claude-code", tmp.path(), Some(&project));
         // Should not find project-scope match, falls through to None
         assert!(!result.installed || result.scope != InstallScope::Project);
+    }
+
+    // ── resolve_path tests ──────────────────────────────────────────
+
+    #[test]
+    fn test_resolve_path_tilde() {
+        let config = PluginInstallConfig {
+            agent: "claude-code".into(),
+            scope: InstallScope::User,
+            target_path: PathBuf::from("~/.claude/settings.json"),
+            config_content: "{}".into(),
+        };
+        let resolved = config.resolve_path(Path::new("/home/user"));
+        assert_eq!(resolved, PathBuf::from("/home/user/.claude/settings.json"));
+    }
+
+    #[test]
+    fn test_resolve_path_relative() {
+        let config = PluginInstallConfig {
+            agent: "claude-code".into(),
+            scope: InstallScope::Project,
+            target_path: PathBuf::from(".claude/settings.json"),
+            config_content: "{}".into(),
+        };
+        let resolved = config.resolve_path(Path::new("/home/user"));
+        assert_eq!(resolved, PathBuf::from(".claude/settings.json"));
+    }
+
+    // ── apply_install JSON merge tests ──────────────────────────────
+
+    #[test]
+    fn test_apply_install_creates_new_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = PluginInstallConfig {
+            agent: "claude-code".into(),
+            scope: InstallScope::User,
+            target_path: PathBuf::from("~/.claude/settings.json"),
+            config_content: r#"{"mcpServers":{"test":{"command":"npx"}}}"#.into(),
+        };
+        let path = config.apply_install(tmp.path()).unwrap();
+        let content: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(content["mcpServers"]["test"]["command"].as_str() == Some("npx"));
+    }
+
+    #[test]
+    fn test_apply_install_merges_into_existing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let claude_dir = tmp.path().join(".claude");
+        std::fs::create_dir_all(&claude_dir).unwrap();
+        std::fs::write(
+            claude_dir.join("settings.json"),
+            r#"{"mcpServers":{"existing":{"command":"node"}},"other":"keep"}"#,
+        )
+        .unwrap();
+
+        let config = PluginInstallConfig {
+            agent: "claude-code".into(),
+            scope: InstallScope::User,
+            target_path: PathBuf::from("~/.claude/settings.json"),
+            config_content: r#"{"mcpServers":{"new-plugin":{"command":"npx"}}}"#.into(),
+        };
+        let path = config.apply_install(tmp.path()).unwrap();
+        let content: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        // Existing entries preserved
+        assert_eq!(content["mcpServers"]["existing"]["command"], "node");
+        // New entry added
+        assert_eq!(content["mcpServers"]["new-plugin"]["command"], "npx");
+        // Other keys preserved
+        assert_eq!(content["other"], "keep");
+    }
+
+    #[test]
+    fn test_apply_install_idempotent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = PluginInstallConfig {
+            agent: "claude-code".into(),
+            scope: InstallScope::User,
+            target_path: PathBuf::from("~/.claude/settings.json"),
+            config_content: r#"{"mcpServers":{"test":{"command":"npx"}}}"#.into(),
+        };
+        config.apply_install(tmp.path()).unwrap();
+        config.apply_install(tmp.path()).unwrap();
+        let path = tmp.path().join(".claude/settings.json");
+        let content: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        // Only one entry, not duplicated
+        assert_eq!(content["mcpServers"].as_object().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_apply_install_invalid_existing_json() {
+        let tmp = tempfile::tempdir().unwrap();
+        let claude_dir = tmp.path().join(".claude");
+        std::fs::create_dir_all(&claude_dir).unwrap();
+        std::fs::write(claude_dir.join("settings.json"), "not json!!!").unwrap();
+
+        let config = PluginInstallConfig {
+            agent: "claude-code".into(),
+            scope: InstallScope::User,
+            target_path: PathBuf::from("~/.claude/settings.json"),
+            config_content: r#"{"mcpServers":{}}"#.into(),
+        };
+        let result = config.apply_install(tmp.path());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("JSON error"));
+    }
+
+    // ── apply_install non-JSON (append) tests ───────────────────────
+
+    #[test]
+    fn test_apply_install_appends_to_md() {
+        let tmp = tempfile::tempdir().unwrap();
+        let claude_dir = tmp.path().join(".claude");
+        std::fs::create_dir_all(&claude_dir).unwrap();
+        std::fs::write(claude_dir.join("CLAUDE.md"), "# Existing\n").unwrap();
+
+        let config = PluginInstallConfig {
+            agent: "claude-code".into(),
+            scope: InstallScope::User,
+            target_path: PathBuf::from("~/.claude/CLAUDE.md"),
+            config_content: "# Superpowers\n".into(),
+        };
+        config.apply_install(tmp.path()).unwrap();
+        let content = std::fs::read_to_string(claude_dir.join("CLAUDE.md")).unwrap();
+        assert!(content.contains("# Existing"));
+        assert!(content.contains("# Superpowers"));
+    }
+
+    #[test]
+    fn test_apply_install_md_idempotent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = PluginInstallConfig {
+            agent: "claude-code".into(),
+            scope: InstallScope::User,
+            target_path: PathBuf::from("~/.claude/CLAUDE.md"),
+            config_content: "# Superpowers\n".into(),
+        };
+        config.apply_install(tmp.path()).unwrap();
+        config.apply_install(tmp.path()).unwrap();
+        let content = std::fs::read_to_string(tmp.path().join(".claude/CLAUDE.md")).unwrap();
+        assert_eq!(content.matches("# Superpowers").count(), 1);
+    }
+
+    // ── json_deep_merge tests ───────────────────────────────────────
+
+    #[test]
+    fn test_json_deep_merge_objects() {
+        let mut target: serde_json::Value = serde_json::json!({"a": 1, "nested": {"x": 10}});
+        let source = serde_json::json!({"b": 2, "nested": {"y": 20}});
+        json_deep_merge(&mut target, &source);
+        assert_eq!(target["a"], 1);
+        assert_eq!(target["b"], 2);
+        assert_eq!(target["nested"]["x"], 10);
+        assert_eq!(target["nested"]["y"], 20);
+    }
+
+    #[test]
+    fn test_json_deep_merge_overwrite_scalar() {
+        let mut target: serde_json::Value = serde_json::json!({"a": 1});
+        let source = serde_json::json!({"a": 99});
+        json_deep_merge(&mut target, &source);
+        assert_eq!(target["a"], 99);
+    }
+
+    // ── ApplyInstallError display ───────────────────────────────────
+
+    #[test]
+    fn test_apply_install_error_display() {
+        let err = ApplyInstallError::Io(
+            PathBuf::from("/test"),
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied"),
+        );
+        let msg = err.to_string();
+        assert!(msg.contains("IO error"));
+        assert!(msg.contains("/test"));
     }
 }
