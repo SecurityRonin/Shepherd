@@ -29,9 +29,6 @@ pub struct PtyManager {
     output_tx: broadcast::Sender<PtyOutput>,
     max_agents: usize,
     sandbox: SandboxProfile,
-    /// When `true`, inject env vars that disable non-essential telemetry
-    /// in spawned agents (Claude Code, RTK).  Defaults to `false` so
-    /// telemetry remains enabled unless the user opts out.
     disable_agent_telemetry: bool,
 }
 
@@ -53,7 +50,6 @@ impl PtyManager {
         }
     }
 
-    /// Opt in to disabling non-essential telemetry in spawned agents.
     pub fn with_disable_telemetry(mut self, disable: bool) -> Self {
         self.disable_agent_telemetry = disable;
         self
@@ -230,15 +226,9 @@ impl PtyManager {
     }
 }
 
-/// Environment variables injected into every spawned agent to reduce
-/// unnecessary network traffic and telemetry token overhead.
 fn cost_saving_env_vars() -> &'static [(&'static str, &'static str)] {
     &[
-        // Disables Statsig telemetry, Sentry error reporting, and surveys
-        // in Claude Code.  No functional impact on the coding agent.
         ("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1"),
-        // Disables RTK's own anonymous usage telemetry when RTK is
-        // installed as a CLI proxy.  No-op if RTK is absent.
         ("RTK_TELEMETRY_DISABLED", "1"),
     ]
 }
@@ -372,35 +362,40 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_cost_saving_env_vars_present() {
-        let vars = cost_saving_env_vars();
-        assert!(vars.len() >= 2);
-        let keys: Vec<&str> = vars.iter().map(|(k, _)| *k).collect();
-        assert!(keys.contains(&"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"));
-        assert!(keys.contains(&"RTK_TELEMETRY_DISABLED"));
-        for (_, v) in vars {
-            assert_eq!(*v, "1");
-        }
-    }
+    // ── Telemetry injection TDD ────────────────────────────────────
 
     #[test]
-    fn test_disable_telemetry_defaults_false() {
+    fn telemetry_disabled_by_default() {
         let mgr = PtyManager::new(4, sandbox::SandboxProfile::disabled());
         assert!(!mgr.disable_agent_telemetry);
     }
 
     #[test]
-    fn test_disable_telemetry_opt_in() {
+    fn with_disable_telemetry_enables_flag() {
         let mgr =
             PtyManager::new(4, sandbox::SandboxProfile::disabled()).with_disable_telemetry(true);
         assert!(mgr.disable_agent_telemetry);
     }
 
     #[test]
-    fn test_disable_telemetry_opt_in_false() {
+    fn with_disable_telemetry_false_keeps_default() {
         let mgr =
             PtyManager::new(4, sandbox::SandboxProfile::disabled()).with_disable_telemetry(false);
         assert!(!mgr.disable_agent_telemetry);
+    }
+
+    #[test]
+    fn cost_saving_env_vars_contains_expected_keys() {
+        let vars = cost_saving_env_vars();
+        let keys: Vec<&str> = vars.iter().map(|(k, _)| *k).collect();
+        assert!(keys.contains(&"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"));
+        assert!(keys.contains(&"RTK_TELEMETRY_DISABLED"));
+    }
+
+    #[test]
+    fn cost_saving_env_vars_all_set_to_one() {
+        for (_, v) in cost_saving_env_vars() {
+            assert_eq!(*v, "1");
+        }
     }
 }

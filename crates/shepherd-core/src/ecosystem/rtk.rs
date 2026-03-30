@@ -2,13 +2,6 @@ use super::superpowers::InstallScope;
 use super::{EcosystemPlugin, PluginDetectionResult};
 use std::path::{Path, PathBuf};
 
-/// Return the shared plugin definition for RTK (Rust Token Killer).
-///
-/// RTK is hooks-based, not MCP-based.  It installs a PreToolUse hook that
-/// transparently rewrites Bash commands through `rtk` for 60-90% token
-/// reduction on CLI output.  Detection searches `settings.json` for the
-/// `"rtk"` feature key which is present in the hook entry that
-/// `rtk init -g` writes.
 pub fn plugin() -> EcosystemPlugin {
     EcosystemPlugin {
         name: "rtk",
@@ -23,7 +16,6 @@ pub fn plugin() -> EcosystemPlugin {
     }
 }
 
-/// Hooks configuration that `rtk init -g` merges into settings.json.
 const RTK_HOOKS_JSON: &str = r#"{
   "hooks": {
     "PreToolUse": [
@@ -34,8 +26,6 @@ const RTK_HOOKS_JSON: &str = r#"{
     ]
   }
 }"#;
-
-// ── Backward-compatible API ──────────────────────────────────────────
 
 #[derive(Debug, Clone)]
 pub struct DetectionResult {
@@ -60,9 +50,6 @@ pub struct InstallConfig {
     pub scope: InstallScope,
     pub target_path: PathBuf,
     pub hooks_json: String,
-    /// The shell command to run for installation.  RTK ships its own
-    /// installer that handles hook script creation, RTK.md, and
-    /// settings.json merging — prefer delegating to it.
     pub install_command: String,
 }
 
@@ -97,29 +84,72 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_detect_not_installed() {
+    fn plugin_name_is_rtk() {
+        let p = plugin();
+        assert_eq!(p.name, "rtk");
+    }
+
+    #[test]
+    fn plugin_feature_key_is_rtk() {
+        let p = plugin();
+        assert_eq!(p.feature_key, "rtk");
+    }
+
+    #[test]
+    fn plugin_description_mentions_token_reduction() {
+        let p = plugin();
+        assert!(p.description.contains("token"));
+    }
+
+    #[test]
+    fn plugin_has_no_cache_dirs() {
+        // RTK is hooks-based, not MCP — no cache directories
+        let p = plugin();
+        assert!(p.plugin_cache_dirs.is_empty());
+    }
+
+    #[test]
+    fn plugin_has_no_project_settings() {
+        // RTK only installs at user scope
+        let p = plugin();
+        assert!(p.project_settings_paths.is_empty());
+    }
+
+    #[test]
+    fn compatible_with_claude_code() {
+        assert!(is_rtk_compatible("claude-code"));
+    }
+
+    #[test]
+    fn incompatible_with_other_agents() {
+        assert!(!is_rtk_compatible("codex"));
+        assert!(!is_rtk_compatible("aider"));
+        assert!(!is_rtk_compatible(""));
+    }
+
+    #[test]
+    fn detect_not_installed_in_empty_home() {
         let tmp = tempfile::tempdir().unwrap();
         let result = detect_for_agent("claude-code", tmp.path(), None);
         assert!(!result.installed);
     }
 
     #[test]
-    fn test_detect_claude_code_user_scope() {
+    fn detect_installed_when_settings_contains_rtk() {
         let tmp = tempfile::tempdir().unwrap();
         let claude_dir = tmp.path().join(".claude");
         std::fs::create_dir_all(&claude_dir).unwrap();
         std::fs::write(
             claude_dir.join("settings.json"),
             r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":["~/.claude/hooks/rtk-rewrite.sh"]}]}}"#,
-        )
-        .unwrap();
+        ).unwrap();
         let result = detect_for_agent("claude-code", tmp.path(), None);
         assert!(result.installed);
         assert_eq!(result.scope, InstallScope::User);
     }
 
     #[test]
-    fn test_detect_settings_without_rtk() {
+    fn detect_not_installed_when_settings_has_no_rtk() {
         let tmp = tempfile::tempdir().unwrap();
         let claude_dir = tmp.path().join(".claude");
         std::fs::create_dir_all(&claude_dir).unwrap();
@@ -133,41 +163,33 @@ mod tests {
     }
 
     #[test]
-    fn test_install_config_user_scope() {
+    fn install_config_user_scope_has_init_global() {
         let config = InstallConfig::for_agent("claude-code", InstallScope::User).unwrap();
-        assert!(config.hooks_json.contains("rtk-rewrite"));
-        assert!(config.hooks_json.contains("PreToolUse"));
         assert_eq!(config.install_command, "rtk init -g");
+    }
+
+    #[test]
+    fn install_config_user_scope_has_hooks_json() {
+        let config = InstallConfig::for_agent("claude-code", InstallScope::User).unwrap();
+        assert!(config.hooks_json.contains("PreToolUse"));
+        assert!(config.hooks_json.contains("rtk-rewrite"));
+    }
+
+    #[test]
+    fn install_config_user_scope_targets_settings() {
+        let config = InstallConfig::for_agent("claude-code", InstallScope::User).unwrap();
         assert!(config.target_path.to_string_lossy().contains(".claude"));
     }
 
     #[test]
-    fn test_install_config_project_scope_returns_none() {
-        // RTK only has a user-scope install target
+    fn install_config_project_scope_returns_none() {
         let config = InstallConfig::for_agent("claude-code", InstallScope::Project);
         assert!(config.is_none());
     }
 
     #[test]
-    fn test_supported_agents() {
-        assert!(is_rtk_compatible("claude-code"));
-        assert!(!is_rtk_compatible("codex"));
-        assert!(!is_rtk_compatible("aider"));
-    }
-
-    #[test]
-    fn test_unsupported_agent_returns_none() {
+    fn install_config_unsupported_agent_returns_none() {
         let config = InstallConfig::for_agent("aider", InstallScope::User);
         assert!(config.is_none());
-    }
-
-    #[test]
-    fn test_plugin_metadata() {
-        let p = plugin();
-        assert_eq!(p.name, "rtk");
-        assert_eq!(p.feature_key, "rtk");
-        assert!(p.description.contains("token reduction"));
-        assert!(p.plugin_cache_dirs.is_empty());
-        assert!(p.project_settings_paths.is_empty());
     }
 }

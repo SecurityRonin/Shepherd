@@ -96,9 +96,6 @@ pub struct EcosystemConfig {
     pub auto_detect_rtk: bool,
     #[serde(default = "default_true")]
     pub offer_install_on_new_task: bool,
-    /// Disable non-essential telemetry (Statsig, Sentry, RTK analytics)
-    /// in spawned agents.  Defaults to `false` — telemetry stays enabled
-    /// unless the user explicitly opts out.
     #[serde(default)]
     pub disable_agent_telemetry: bool,
 }
@@ -209,5 +206,52 @@ mod tests {
     #[test]
     fn default_true_returns_true() {
         assert!(default_true());
+    }
+
+    // ── EcosystemConfig TDD ────────────────────────────────────────
+
+    #[test]
+    fn ecosystem_config_defaults_rtk_detection_enabled() {
+        let config = EcosystemConfig::default();
+        assert!(config.auto_detect_rtk);
+    }
+
+    #[test]
+    fn ecosystem_config_defaults_telemetry_enabled() {
+        // Telemetry should be ON by default — disable is opt-in
+        let config = EcosystemConfig::default();
+        assert!(!config.disable_agent_telemetry);
+    }
+
+    #[test]
+    fn ecosystem_config_toml_partial_override() {
+        let toml_str = r#"
+            auto_detect_rtk = false
+        "#;
+        let config: EcosystemConfig = toml::from_str(toml_str).unwrap();
+        assert!(!config.auto_detect_rtk);
+        // Other fields retain defaults
+        assert!(config.auto_detect_superpowers);
+        assert!(!config.disable_agent_telemetry);
+    }
+
+    #[test]
+    fn ecosystem_config_toml_telemetry_opt_out() {
+        let toml_str = r#"
+            disable_agent_telemetry = true
+        "#;
+        let config: EcosystemConfig = toml::from_str(toml_str).unwrap();
+        assert!(config.disable_agent_telemetry);
+        // Detection flags untouched
+        assert!(config.auto_detect_rtk);
+    }
+
+    #[test]
+    fn ecosystem_config_serde_roundtrip() {
+        let config = EcosystemConfig::default();
+        let json = serde_json::to_string(&config).unwrap();
+        let parsed: EcosystemConfig = serde_json::from_str(&json).unwrap();
+        assert!(parsed.auto_detect_rtk);
+        assert!(!parsed.disable_agent_telemetry);
     }
 }
