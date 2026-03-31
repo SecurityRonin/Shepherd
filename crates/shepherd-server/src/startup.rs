@@ -288,6 +288,8 @@ mod tests {
     use super::*;
     use shepherd_core::yolo::rules::RuleSet;
 
+    // ---- ServerInfo serde tests ----
+
     #[test]
     fn server_info_serde_roundtrip() {
         let info = ServerInfo {
@@ -303,6 +305,17 @@ mod tests {
     }
 
     #[test]
+    fn server_info_deserializes_from_json_string() {
+        let json = r#"{"pid":42,"port":3000,"started_at":"2026-01-01T00:00:00Z"}"#;
+        let info: ServerInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(info.pid, 42);
+        assert_eq!(info.port, 3000);
+        assert_eq!(info.started_at, "2026-01-01T00:00:00Z");
+    }
+
+    // ---- ServerInfo write_to / read_from tests ----
+
+    #[test]
     fn server_info_write_to_and_read_from() {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("sub/server.json");
@@ -311,9 +324,7 @@ mod tests {
             port: 8080,
             started_at: "2026-03-19T12:00:00Z".into(),
         };
-        // Use the actual write_to method (creates parent dirs)
         info.write_to(&path).unwrap();
-        // Use the actual read_from method
         let parsed = ServerInfo::read_from(&path).unwrap();
         assert_eq!(parsed.pid, 999);
         assert_eq!(parsed.port, 8080);
@@ -344,19 +355,18 @@ mod tests {
     }
 
     #[test]
-    fn server_info_path_ends_with_server_json() {
-        let path = ServerInfo::path();
-        assert!(path.ends_with("server.json"));
-        assert!(path.to_string_lossy().contains(".shepherd"));
-    }
-
-    #[test]
-    fn server_info_deserializes_from_json_string() {
-        let json = r#"{"pid":42,"port":3000,"started_at":"2026-01-01T00:00:00Z"}"#;
-        let info: ServerInfo = serde_json::from_str(json).unwrap();
-        assert_eq!(info.pid, 42);
-        assert_eq!(info.port, 3000);
-        assert_eq!(info.started_at, "2026-01-01T00:00:00Z");
+    fn server_info_write_to_creates_nested_dirs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("a/b/c/server.json");
+        let info = ServerInfo {
+            pid: 1,
+            port: 3000,
+            started_at: "2026-03-19T00:00:00Z".into(),
+        };
+        info.write_to(&path).unwrap();
+        assert!(path.exists());
+        let parsed = ServerInfo::read_from(&path).unwrap();
+        assert_eq!(parsed.port, 3000);
     }
 
     #[test]
@@ -383,34 +393,32 @@ mod tests {
         assert!(ServerInfo::read_from(&path).is_none());
     }
 
+    // ---- ServerInfo path() tests ----
+
     #[test]
-    fn server_info_write_to_creates_nested_dirs() {
-        let tmp = tempfile::tempdir().unwrap();
-        let path = tmp.path().join("a/b/c/server.json");
-        let info = ServerInfo {
-            pid: 1,
-            port: 3000,
-            started_at: "2026-03-19T00:00:00Z".into(),
-        };
-        info.write_to(&path).unwrap();
-        assert!(path.exists());
-        let parsed = ServerInfo::read_from(&path).unwrap();
-        assert_eq!(parsed.port, 3000);
+    fn server_info_path_ends_with_server_json() {
+        let path = ServerInfo::path();
+        assert!(path.ends_with("server.json"));
     }
+
+    #[test]
+    fn server_info_path_contains_shepherd_dir() {
+        let path = ServerInfo::path();
+        assert!(path.to_string_lossy().contains(".shepherd"));
+    }
+
+    // ---- ServerInfo remove() test ----
 
     #[test]
     fn server_info_remove_is_best_effort() {
-        // Calling remove() when the file doesn't exist should not panic
-        // We can't easily test this without touching the global path,
-        // but we can verify it doesn't panic by calling it.
-        // (This at least covers the remove() method body.)
+        // Calling remove() when the file doesn't exist should not panic.
         ServerInfo::remove();
     }
 
+    // ---- ServerInfo write/read global path tests ----
+
     #[test]
     fn server_info_write_and_read_global_path() {
-        // Exercise write() and read() through the global path delegates.
-        // These call write_to(path()) and read_from(path()) internally.
         let info = ServerInfo {
             pid: std::process::id(),
             port: 9999,
@@ -424,6 +432,8 @@ mod tests {
         ServerInfo::remove();
         assert!(ServerInfo::read().is_none());
     }
+
+    // ---- pty_output_to_event tests ----
 
     #[test]
     fn pty_output_to_event_converts_correctly() {
@@ -451,15 +461,32 @@ mod tests {
         match event {
             ServerEvent::TerminalOutput { task_id, data } => {
                 assert_eq!(task_id, 7);
-                // String::from_utf8_lossy replaces invalid bytes with U+FFFD
                 assert!(data.contains("Hi"));
             }
             other => panic!("Expected TerminalOutput, got {:?}", other),
         }
     }
 
+    #[test]
+    fn pty_output_to_event_empty_data() {
+        let output = PtyOutput {
+            task_id: 0,
+            data: vec![],
+        };
+        let event = super::pty_output_to_event(&output);
+        match event {
+            ServerEvent::TerminalOutput { task_id, data } => {
+                assert_eq!(task_id, 0);
+                assert_eq!(data, "");
+            }
+            other => panic!("Expected TerminalOutput, got {:?}", other),
+        }
+    }
+
+    // ---- forward_pty_to_dispatcher tests ----
+
     #[tokio::test]
-    async fn forward_pty_to_dispatcher_handles_output() {
+    async fn forward_pty_to_dispatcher_no_panic_for_unknown_task() {
         use shepherd_core::coordination::LockManager;
         use shepherd_core::dispatch::TaskDispatcher;
 
@@ -480,9 +507,11 @@ mod tests {
             task_id: 99,
             data: b"some agent output".to_vec(),
         };
-        // Should not panic — no monitor for task 99, returns None internally
+        // Should not panic -- no monitor for task 99, returns None internally
         super::forward_pty_to_dispatcher(&dispatcher, &output).await;
     }
+
+    // ---- replay recording test ----
 
     #[tokio::test]
     async fn pty_output_records_to_replay() {
@@ -491,7 +520,6 @@ mod tests {
 
         let conn = open_memory().unwrap();
 
-        // Record an event
         let id = replay::record_event(
             &conn,
             1, // task_id
@@ -504,10 +532,30 @@ mod tests {
         .unwrap();
         assert!(id > 0);
 
-        // Verify it shows in timeline
         let events = replay::get_timeline(&conn, 1).unwrap();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].content, "hello world");
         assert_eq!(events[0].event_type, replay::EventType::Output);
+    }
+
+    // ---- ServerInfo write_to produces pretty JSON ----
+
+    #[test]
+    fn server_info_write_to_produces_pretty_json() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("server.json");
+        let info = ServerInfo {
+            pid: 100,
+            port: 5000,
+            started_at: "2026-03-31T00:00:00Z".into(),
+        };
+        info.write_to(&path).unwrap();
+        let content = std::fs::read_to_string(&path).unwrap();
+        // Pretty JSON should contain newlines and indentation
+        assert!(content.contains('\n'));
+        assert!(content.contains("  "));
+        // Verify it still parses correctly
+        let parsed: ServerInfo = serde_json::from_str(&content).unwrap();
+        assert_eq!(parsed.pid, 100);
     }
 }
